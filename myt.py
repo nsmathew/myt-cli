@@ -137,8 +137,7 @@ def add(filters, desc, due, hide, group, tag):
     if desc is None:
         click.echo('No task information provided. Nothing to do...')
     else:    
-        add_task(desc, due, hide, group, tag, None, None)
-
+        add_task(desc, due, hide, group, tag, None, None, None)
 
 @myt.command()
 @click.argument('filters',nargs=-1)
@@ -227,7 +226,7 @@ def mark_task_inprogress(potential_filters):
         """
         tag_u = [element for itm in tags_list for element in itm]
         tag_u_str = ','.join(map(str, tag_u))
-        add_task(desc,due,hide,group,tag_u_str,task_uuid,task_id_u,status_u,area_u)
+        add_task(desc,due,hide,group,tag_u_str,task_uuid,task_id_u,None,status_u,area_u)
     return    
 
 def mark_task_done(potential_filters):
@@ -256,7 +255,7 @@ def mark_task_done(potential_filters):
         """
         tag_u = [element for itm in tags_list for element in itm]
         tag_u_str = ','.join(map(str, tag_u))
-        add_task(desc,due,hide,group,tag_u_str,task_uuid,task_id_u,status_u,area_u)
+        add_task(desc,due,hide,group,tag_u_str,task_uuid,task_id_u,None,status_u,area_u)
     return
 
 def reset_task(potential_filters):
@@ -285,7 +284,7 @@ def reset_task(potential_filters):
         """
         tag_u = [element for itm in tags_list for element in itm]
         tag_u_str = ','.join(map(str, tag_u))
-        add_task(desc,due,hide,group,tag_u_str,task_uuid,task_id_u,status_u,area_u)
+        add_task(desc,due,hide,group,tag_u_str,task_uuid,task_id_u,None,status_u,area_u)
     return
 
 def parse_filters(filters):
@@ -376,6 +375,8 @@ def modify_task(potential_filters, desc, due, hide, group, tag):
     global CONN
     cur = CONN.cursor()
     task_uuid_and_version = get_task_uuid_and_version(potential_filters)
+    event_id = datetime.now().strftime('%Y%m-%d%H-%M%S-') +\
+                str(uuid.uuid4())
     for task in task_uuid_and_version:
         #print(task)
         result = cur.execute("select description, due, hide, groups, uuid, id, area,status from workspace ws where ws.uuid=?\
@@ -432,7 +433,7 @@ def modify_task(potential_filters, desc, due, hide, group, tag):
                         #print("To Add %s" % t)
                         tag_u.append(t)
             tag_u_str = ','.join(map(str, tag_u)) 
-        add_task(desc_u, due_u, hide_u, group_u, tag_u_str, task_uuid, task_id, status, area)
+        add_task(desc_u, due_u, hide_u, group_u, tag_u_str, task_uuid, task_id, event_id,status, area)
     return
 
 def display_tasks(potential_filters):
@@ -683,7 +684,7 @@ def get_task_new_version(task_uuid):
         #print("default")
         return '1'
     
-def add_task(desc, due, hide, group, tag, task_uuid, task_id,status=TASK_TODO,area='pending'):
+def add_task(desc, due, hide, group, tag, task_uuid, task_id,event_id,status=TASK_TODO,area='pending'):
     global CONN
     cur = CONN.cursor()
     if task_id is None:
@@ -694,18 +695,24 @@ def add_task(desc, due, hide, group, tag, task_uuid, task_id,status=TASK_TODO,ar
     else:
         due_dt = None
     if hide is not None:
-        hide_dt = convert_hide(hide,parse(due_dt))
+        if due is not None: 
+        #Hide date relative to due date only if due date is available
+            hide_dt = convert_hide(hide,parse(due_dt))
+        else:
+            hide_dt = convert_hide(hide,None)
+
         #print(hide_dt)
     else:
         hide_dt = None
     try:
         if task_uuid is None:
             task_uuid = uuid.uuid4()
-        event_id = datetime.now().strftime('%Y%m-%d%H-%M%S-') +\
-            str(uuid.uuid4())
+        if event_id is None:
+            event_id = datetime.now().strftime('%Y%m-%d%H-%M%S-') +\
+                str(uuid.uuid4())
         now = datetime.now()
         task_ver = get_task_new_version(str(task_uuid))
-        print("Attempting to insert %s" % str(task_uuid)+'||'+str(task_id)+'||'+str(task_ver))
+        #print("Attempting to insert %s" % str(task_uuid)+'||'+str(task_id)+'||'+str(task_ver))
         cur.execute("""insert into workspace\
                 (uuid, version, id, description, status, groups, area,\
                 due,hide, modified, event_id) values\
