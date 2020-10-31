@@ -463,9 +463,9 @@ def display_tasks(potential_filters):
     todo = Style(color="white")
     todo_today = Style(color="dark_orange")
     todo_overdue = Style(color="red")
-    inprogress = Style(color="black", bgcolor="grey89")
-    inprogress_today = Style(color="dark_orange", bgcolor="grey89")
-    inprogress_overdue = Style(color="red", bgcolor="grey89")
+    inprogress = Style(color="black", bgcolor="grey93")
+    inprogress_today = Style(color="dark_orange", bgcolor="grey93")
+    inprogress_overdue = Style(color="red", bgcolor="grey93")
     done = Style(color="grey46")
 
     sql_view = """
