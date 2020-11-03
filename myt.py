@@ -965,6 +965,7 @@ def retrieve_sql():
                         modified text,
                         groups text,
                         version integer,
+                        event_id text,
                         primary key(uuid, version)
                     )"""
     workspace_tags_sql = """
@@ -988,6 +989,7 @@ def retrieve_sql():
               modified text,
               groups text,
               version integer,
+              event_id text
               primary key(uuid, version)
               )"""
     bin_tags_sql = """
@@ -997,4 +999,9 @@ def retrieve_sql():
                        version integer,
                        primary key(uuid, tags, version)
                    )"""
-    return [workspace_sql, workspace_tags_sql, bin_sql, bin_tags_sql]
+
+    event_stack_sql ="""
+                     CREATE TABLE "event_stack" (
+	                    "event_id"	text
+                     )"""
+    return [workspace_sql, workspace_tags_sql, bin_sql, bin_tags_sql, event_stack_sql]
