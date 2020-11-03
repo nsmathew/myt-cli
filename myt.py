@@ -517,7 +517,10 @@ def modify_task(potential_filters, desc, due, hide, group, tag):
         elif group is not None:
             group_u = group
 
-        tag_u_str = None
+        if tag != "clr":
+            tag_u_str = ",".join(map(str, tag_u))
+        else:
+            tag_u_str = None
         if tag != "clr" and tag is not None:
             tag_list = tag.split(",")
             for t in tag_list:
@@ -527,8 +530,6 @@ def modify_task(potential_filters, desc, due, hide, group, tag):
                         #print("To Remove: %s" % t)
                         tag_u.remove(t)
                 else:
-                    if t[0] == "+":
-                        t = str(t[1:])
                     if t not in tag_u:
                         #print("To Add %s" % t)
                         tag_u.append(t)
@@ -883,6 +884,7 @@ def add_task(desc, due, hide, group, tag,
                 (?,?,?,?,?,?,?,?,?,?,?)""", (str(task_uuid), task_ver,\
                 task_id, desc, status, group, area, due_dt,\
                 hide_dt, now, event_id))
+        tag_list = None
         if tag is not None:
             tag_list = tag.split(",")
             for t in tag_list:
@@ -896,7 +898,10 @@ def add_task(desc, due, hide, group, tag,
         print(str(e))
         return None, None
     CONN.commit()
-    click.echo("Added Task ID: %s" % task_id)
+    click.echo("Added/Updated Task ID: %s" % task_id)
+    click.echo("ID:{} Ver:{} Sts:{} Desc:{} Due:{} Hide:{} Group:{} Tags:{}"
+                .format(task_id, task_ver, status, desc, due_dt,
+                hide_dt, group, tag))
     get_and_printactive_task_count(print=True)
     return task_uuid, task_ver
 
