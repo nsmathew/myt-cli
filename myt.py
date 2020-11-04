@@ -564,12 +564,10 @@ def display_tasks(potential_filters):
     table.add_column("addl_info",justify="center")
     
     #Styles for the tables rows
-    todo = Style(color="white")
-    todo_today = Style(color="dark_orange")
-    todo_overdue = Style(color="red")
-    inprogress = Style(color="black", bgcolor="grey93")
-    inprogress_today = Style(color="dark_orange", bgcolor="grey93")
-    inprogress_overdue = Style(color="red", bgcolor="grey93")
+    default = Style(color="white")
+    today = Style(color="dark_orange")
+    overdue = Style(color="red")
+    inprogress = Style(color="cyan")
     done = Style(color="grey46")
 
     sql_view = """
@@ -597,31 +595,16 @@ def display_tasks(potential_filters):
     try:
         task_list = cur.execute(sql_view,task_uuid_and_version).fetchall()
         for task in task_list:
-            if task[3] == TASK_TODO and task[8] == TASK_OVERDUE:
+            if task[8] == TASK_OVERDUE:
                 table.add_row(str(task[0]),str(task[1]),str(task[2]),
                               str(task[3]),str(task[4]),str(task[5]),
                               str(task[6]),str(task[7]),str(task[8]),
-                              style=todo_overdue)
-            elif task[3] == TASK_TODO and task[8] == TASK_TODAY:
+                              style=overdue)
+            elif task[8] == TASK_TODAY:
                 table.add_row(str(task[0]),str(task[1]),str(task[2]),
                               str(task[3]),str(task[4]),str(task[5]),
                               str(task[6]),str(task[7]),str(task[8]),
-                              style=todo_today)
-            elif task[3] == TASK_TODO:
-                table.add_row(str(task[0]),str(task[1]),str(task[2]),
-                              str(task[3]),str(task[4]),str(task[5]),
-                              str(task[6]),str(task[7]),str(task[8]),
-                              style=todo)            
-            elif task[3] == TASK_INPROGRESS and task[8] == TASK_OVERDUE:
-                table.add_row(str(task[0]),str(task[1]),str(task[2]),
-                              str(task[3]),str(task[4]),str(task[5]),
-                              str(task[6]),str(task[7]),str(task[8]),
-                              style=inprogress_overdue)
-            elif task[3] == TASK_INPROGRESS and task[8] == TASK_TODAY:
-                table.add_row(str(task[0]),str(task[1]),str(task[2]),
-                              str(task[3]),str(task[4]),str(task[5]),
-                              str(task[6]),str(task[7]),str(task[8]),
-                              style=inprogress_today)
+                              style=today)
             elif task[3] == TASK_INPROGRESS:
                 table.add_row(str(task[0]),str(task[1]),str(task[2]),
                               str(task[3]),str(task[4]),str(task[5]),
@@ -631,12 +614,12 @@ def display_tasks(potential_filters):
                 table.add_row(str(task[0]),str(task[1]),str(task[2]),
                               str(task[3]),str(task[4]),str(task[5]),
                               str(task[6]),str(task[7]),str(task[8]),
-                              style=done)            
+                              style=done)                              
             else:
                 table.add_row(str(task[0]),str(task[1]),str(task[2]),
                               str(task[3]),str(task[4]),str(task[5]),
                               str(task[6]),str(task[7]),str(task[8]),
-                              style=todo)
+                              style=default)
             
     except sqlite3.ProgrammingError as e:
         click.echo(str(e))
@@ -989,7 +972,7 @@ def retrieve_sql():
               modified text,
               groups text,
               version integer,
-              event_id text
+              event_id text,
               primary key(uuid, version)
               )"""
     bin_tags_sql = """
