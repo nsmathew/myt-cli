@@ -113,9 +113,6 @@ def convert_hide(value, due):
     else:
         return None
 
-def get_filters():
-        return input("Filters: ")
-
 def yes_no(prompt):
     yes = set(["yes","y", "ye"])  
     choice = input(prompt).lower()
@@ -264,7 +261,46 @@ def view(filters):
         click.echo("Cannot perform this operation using uuid filters")
     connect_to_tasksdb()
     display_tasks(potential_filters) 
-    return  
+    return
+
+@myt.command()
+@click.argument("filters",nargs=-1)
+def delete(filters):
+    potential_filters = parse_filters(filters)
+    if potential_filters.get("uuid"):
+        click.echo("Cannot perform this operation using uuid filters")
+    connect_to_tasksdb()
+    delete_tasks(potential_filters) 
+    return
+
+def delete_tasks(potential_filters):
+    uuid_version_results = get_task_uuid_and_version(potential_filters)
+    """
+    Flatten the tuple from (uuid,version),(uuid,version)
+    to uuid,version,uuid,version...
+    """
+    task_uuid_and_version = [element for itm 
+                            in uuid_version_results for element in itm]
+    if not task_uuid_and_version:
+        click.echo("No applicable tasks to delete")
+        return
+    task_list = get_tasks(task_uuid_and_version)
+    for task in task_list:
+        #No changes to fields except the status, area and task Id
+        desc = task[2]
+        due = task[4]
+        hide = task[5]
+        group = task[6]
+        task_uuid = task[8]
+        task_id_u = task[0]
+        area_u = "bin"
+        status_u = task[3]
+        version = task[1]
+        tag_u_str = get_tags(task_uuid, version)
+        task_uuid, version = add_task(desc,due,hide,group,tag_u_str,
+                                      task_uuid,task_id_u,None,status_u,
+                                      area_u)
+    return
 
 def revert_task(potential_filters):
     uuid_version_results = get_task_uuid_and_version(potential_filters)
@@ -286,7 +322,7 @@ def revert_task(potential_filters):
         group = task[6]
         task_uuid = task[8]
         task_id_u = None
-        area_u = 'pending'
+        area_u = "pending"
         status_u = TASK_TODO
         version = task[1]
         tag_u_str = get_tags(task_uuid, version)
