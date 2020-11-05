@@ -18,8 +18,8 @@ from rich.style import Style
 DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "tasksdb.sqlite3")
 CONN = None
 TASK_TODO = "TO_DO"
-TASK_INPROGRESS = "IN_PROGRESS"
-TASK_DONE = "COMPLETE"
+TASK_STARTED = "STARTED"
+TASK_DONE = "DONE"
 TASK_OVERDUE = "OVERDUE"
 TASK_TODAY = "TODAY"
 TASK_HIDDEN = "HIDDEN"
@@ -194,6 +194,8 @@ def add(filters, desc, due, hide, group, tag):
 def modify(filters, desc, due, hide, group, tag):
     potential_filters = parse_filters(filters)
     #display_opt_and_args(ops, desc, due, hide, group, tag, filters)
+    if potential_filters.get("uuid"):
+        click.echo("Cannot perform this operation using uuid filters")
     connect_to_tasksdb()
     if potential_filters.get("all") == "yes":
         if not yes_no("No filters given for modify, are you sure? (yes/no)"):
@@ -204,52 +206,67 @@ def modify(filters, desc, due, hide, group, tag):
 @click.argument("filters",nargs=-1)
 def start(filters):
     potential_filters = parse_filters(filters)
+    if potential_filters.get("uuid"):
+        click.echo("Cannot perform this operation using uuid filters")
     connect_to_tasksdb()
     if potential_filters.get("all") == "yes":
         if not yes_no("No filters given for starting tasks,\
             are you sure? (yes/no)"):
             exit_app(0)
-    mark_task_inprogress(potential_filters)
+    start_task(potential_filters)
     return
 
 @myt.command()
 @click.argument("filters",nargs=-1)
 def done(filters):
     potential_filters = parse_filters(filters)
-    connect_to_tasksdb() 
+    if potential_filters.get("uuid"):
+        click.echo("Cannot perform this operation using uuid filters")
+    connect_to_tasksdb()
     if potential_filters.get("all") == "yes":
         if not yes_no("No filters given for marking tasks as done,\
             are you sure? (yes/no)"):
             exit_app(0)
-    mark_task_done(potential_filters)  
+    complete_task(potential_filters)  
     return
 
 @myt.command()
 @click.argument("filters",nargs=-1)
-def reset(filters):
-    return
-
-@myt.command()
-@click.argument("filters",nargs=-1)
-def pause(filters):
+def revert(filters):
     potential_filters = parse_filters(filters)
     connect_to_tasksdb()
     if potential_filters.get("all") == "yes":
-        if not yes_no("No filters given for starting tasks,\
+        if not yes_no("No filters given for reverting tasks,\
             are you sure? (yes/no)"):
             exit_app(0)
-    mark_task_paused(potential_filters)
+    revert_task(potential_filters)
+    return
+
+@myt.command()
+@click.argument("filters",nargs=-1)
+def stop(filters):
+    potential_filters = parse_filters(filters)
+    if potential_filters.get("uuid"):
+        click.echo("Cannot perform this operation using uuid filters")
+    connect_to_tasksdb()
+    if potential_filters.get("all") == "yes":
+        if not yes_no("No filters given for stopping tasks,\
+            are you sure? (yes/no)"):
+            exit_app(0)
+    stop_task(potential_filters)
     return
 
 @myt.command()
 @click.argument("filters",nargs=-1)
 def view(filters):
     potential_filters = parse_filters(filters)
+    if potential_filters.get("uuid"):
+        click.echo("Cannot perform this operation using uuid filters")
     connect_to_tasksdb()
     display_tasks(potential_filters) 
     return  
 
-def mark_task_inprogress(potential_filters):
+def revert_task(potential_filters):
     uuid_version_results = get_task_uuid_and_version(potential_filters)
     """
     Flatten the tuple from (uuid,version),(uuid,version)
@@ -257,6 +274,38 @@ def mark_task_inprogress(potential_filters):
     """
     task_uuid_and_version = [element for itm 
                             in uuid_version_results for element in itm]
+    if not task_uuid_and_version:
+        click.echo("No applicable tasks to revert")
+        return
+    task_list = get_tasks(task_uuid_and_version)
+    for task in task_list:
+        #No changes to fields except the status, area and task Id
+        desc = task[2]
+        due = task[4]
+        hide = task[5]
+        group = task[6]
+        task_uuid = task[8]
+        task_id_u = None
+        area_u = 'pending'
+        status_u = TASK_TODO
+        version = task[1]
+        tag_u_str = get_tags(task_uuid, version)
+        task_uuid, version = add_task(desc,due,hide,group,tag_u_str,
+                                      task_uuid,task_id_u,None,status_u,
+                                      area_u)
+    return
+
+def start_task(potential_filters):
+    uuid_version_results = get_task_uuid_and_version(potential_filters)
+    """
+    Flatten the tuple from (uuid,version),(uuid,version)
+    to uuid,version,uuid,version...
+    """
+    task_uuid_and_version = [element for itm 
+                            in uuid_version_results for element in itm]
+    if not task_uuid_and_version:
+        click.echo("No applicable tasks to start")
+        return
     task_list = get_tasks(task_uuid_and_version)
     for task in task_list:
         #No changes to fields except the status, area and task Id
@@ -267,21 +316,15 @@ def mark_task_inprogress(potential_filters):
         task_uuid = task[8]
         task_id_u = task[0]
         area_u = task[9]
-        status_u = TASK_INPROGRESS
+        status_u = TASK_STARTED
         version = task[1]
-        tags_list = get_tags(task_uuid, version)
-        """
-        Flatten the list of tuples to a list
-        [(a,),(b,)] to [a,b]
-        """
-        tag_u = [element for itm in tags_list for element in itm]
-        tag_u_str = ",".join(map(str, tag_u))
+        tag_u_str = get_tags(task_uuid, version)
         task_uuid, version = add_task(desc,due,hide,group,tag_u_str,
                                       task_uuid,task_id_u,None,status_u,
                                       area_u)
     return
     
-def mark_task_paused(potential_filters):
+def stop_task(potential_filters):
     uuid_version_results = get_task_uuid_and_version(potential_filters)
     """
     Flatten the tuple from (uuid,version),(uuid,version)
@@ -289,6 +332,9 @@ def mark_task_paused(potential_filters):
     """
     task_uuid_and_version = [element for itm 
                             in uuid_version_results for element in itm]
+    if not task_uuid_and_version:
+        click.echo("No applicable tasks to stop")
+        return
     task_list = get_tasks(task_uuid_and_version)
     for task in task_list:
         #No changes to fields except the status, area and task Id
@@ -301,18 +347,12 @@ def mark_task_paused(potential_filters):
         area_u = task[9]
         status_u = TASK_TODO
         version = task[1]
-        tags_list = get_tags(task_uuid, version)
-        """
-        Flatten the list of tuples to a list
-        [(a,),(b,)] to [a,b]
-        """
-        tag_u = [element for itm in tags_list for element in itm]
-        tag_u_str = ",".join(map(str, tag_u))
+        tag_u_str = get_tags(task_uuid, version)
         add_task(desc,due,hide,group,tag_u_str,
                  task_uuid,task_id_u,None,status_u,area_u)
     return    
 
-def mark_task_done(potential_filters):
+def complete_task(potential_filters):
     uuid_version_results = get_task_uuid_and_version(potential_filters)
     """
     Flatten the tuple from (uuid,version),(uuid,version)
@@ -320,6 +360,9 @@ def mark_task_done(potential_filters):
     """
     task_uuid_and_version = [element for itm 
                             in uuid_version_results for element in itm]
+    if not task_uuid_and_version:
+        click.echo("No applicable tasks to complete")
+        return
     task_list = get_tasks(task_uuid_and_version)
     for task in task_list:
         #No changes to fields except the status, area and task Id
@@ -332,48 +375,11 @@ def mark_task_done(potential_filters):
         area_u = "completed"
         status_u = TASK_DONE
         version = task[1]
-        tags_list = get_tags(task_uuid, version)
-        """
-        Flatten the list of tuples to a list
-        [(a,),(b,)] to [a,b]
-        """
-        tag_u = [element for itm in tags_list for element in itm]
-        tag_u_str = ",".join(map(str, tag_u))
+        tag_u_str = get_tags(task_uuid, version)
         add_task(desc,due,hide,group,tag_u_str,
                  task_uuid,task_id_u,None,status_u,area_u)
     return
-
-def reset_task(potential_filters):
-    uuid_version_results = get_task_uuid_and_version(potential_filters)
-    """
-    Flatten the tuple from (uuid,version),(uuid,version)
-    to uuid,version,uuid,version...
-    """
-    task_uuid_and_version = [element for itm 
-                            in uuid_version_results for element in itm]
-    task_list = get_tasks(task_uuid_and_version)
-    for task in task_list:
-        #No changes to fields except the status, area and task Id
-        desc = task[2]
-        due = task[4]
-        hide = task[5]
-        group = task[6]
-        task_uuid = task[8]
-        task_id_u = "-"
-        area_u = "completed"
-        status_u = TASK_DONE
-        version = task[1]
-        tags_list = get_tags(task_uuid, version)
-        """
-        Flatten the list of tuples to a list
-        [(a,),(b,)] to [a,b]
-        """
-        tag_u = [element for itm in tags_list for element in itm]
-        tag_u_str = ",".join(map(str, tag_u))
-        add_task(desc,due,hide,group,tag_u_str,
-                 task_uuid,task_id_u,None,status_u,area_u)
-    return
-
+    
 def parse_filters(filters):
     potential_filters={}
     if filters:
@@ -392,8 +398,11 @@ def parse_filters(filters):
                 potential_filters["group"] = (str(fl).split(":"))[1]
             if str(fl).startswith("tg:") or str(fl).startswith("tag:"):
                 potential_filters["tag"] = (str(fl).split(":"))[1]
+            if str(fl).startswith("uuid:"):
+                potential_filters["uuid"] = (str(fl).split(":"))[1]
     else:
         potential_filters = {"all":"yes"}
+    print(potential_filters)
     return potential_filters
 
 def get_tasks(task_uuid_and_version):
@@ -459,13 +468,22 @@ def get_tags(task_uuid, task_version):
                and ws.version=?
                """
     try:
-        tags = cur.execute(sql_tags
+        tags_list = cur.execute(sql_tags
             ,(task_uuid,task_version,)).fetchall()
     except sqlite3.ProgrammingError as e:
         click.echo(str(e))
         return None
     else:
-        return tags
+        """
+        Flatten the list of tuples to a list
+        [(a,),(b,)] to [a,b]
+        """
+        if tags_list:
+            tag_u = [element for itm in tags_list for element in itm]
+            tag_u_str = ",".join(map(str, tag_u))
+        else:
+            tag_u_str = None
+        return tag_u_str
 
 def modify_task(potential_filters, desc, due, hide, group, tag):
     global CONN
@@ -475,6 +493,12 @@ def modify_task(potential_filters, desc, due, hide, group, tag):
                 str(uuid.uuid4())
     for task in task_uuid_and_version:
         #print(task)
+        """
+        Populate values for the modify action
+        Retreive data from database
+        If user requested update or clearing then overwrite
+        If user has not requested update for field then retain original value
+        """
         result = cur.execute("select\
             description, due, hide, groups, uuid,id, area,status\
             from workspace ws\
@@ -489,14 +513,7 @@ def modify_task(potential_filters, desc, due, hide, group, tag):
         task_id = result[0][5]
         area = result[0][6]
         status = result[0][7]
-        results = list(cur.execute("select\
-            tags from workspace_tags ws\
-            where ws.uuid=? and ws.version=?",(task[0],task[1],)).fetchall())
-        """
-        Flatten the list of tuples to a list
-        [(a,),(b,)] to [a,b]
-        """
-        tag_u = [element for itm in results for element in itm]
+
         if desc == "clr":
             desc_u = None      
         elif desc is not None:
@@ -517,10 +534,24 @@ def modify_task(potential_filters, desc, due, hide, group, tag):
         elif group is not None:
             group_u = group
 
+        #If operation is not to clear tags then retrieve current tags
         if tag != "clr":
-            tag_u_str = ",".join(map(str, tag_u))
-        else:
-            tag_u_str = None
+            try:
+                results = list(cur.execute("select tags from workspace_tags\
+                               ws where ws.uuid=? and ws.version=?",
+                        (task[0],task[1],)).fetchall())
+            except sqlite3.ProgrammingError as e:
+                click.echo(str(e))
+            else:
+                # Flatten the list of tuples to a list [(a,),(b,)] to [a,b]
+                # Create a comma separated list of tags from this
+                if results:
+                    tag_u = [element for itm in results for element in itm]
+                    tag_u_str = ",".join(map(str, tag_u))
+                else:
+                    #No tags in current state
+                    tag_u_str = None
+        #Apply the user requested update
         if tag != "clr" and tag is not None:
             tag_list = tag.split(",")
             for t in tag_list:
@@ -533,7 +564,10 @@ def modify_task(potential_filters, desc, due, hide, group, tag):
                     if t not in tag_u:
                         #print("To Add %s" % t)
                         tag_u.append(t)
-            tag_u_str = ",".join(map(str, tag_u)) 
+            tag_u_str = ",".join(map(str, tag_u))
+        else:
+            tag_u_str = None
+
         add_task(desc_u, due_u, hide_u, group_u, tag_u_str,
                  task_uuid, task_id, event_id,status, area)
     return
@@ -551,27 +585,11 @@ def display_tasks(potential_filters):
     task_uuid_and_version = [element for itm 
                              in uuid_version_results for element in itm]
     cur = CONN.cursor()
-    console = Console()
-    table = Table(box=box.HORIZONTALS, show_header=True, header_style="bold")
-    table.add_column("id",width=4,justify="center")
-    table.add_column("version",width=4,justify="center")
-    table.add_column("description",justify="left")
-    table.add_column("status",justify="center")
-    table.add_column("due",justify="center")
-    table.add_column("hidden",justify="center")
-    table.add_column("groups",justify="center")
-    table.add_column("tags",justify="center")
-    table.add_column("addl_info",justify="center")
     
-    #Styles for the tables rows
-    default = Style(color="white")
-    today = Style(color="dark_orange")
-    overdue = Style(color="red")
-    inprogress = Style(color="cyan")
-    done = Style(color="grey46")
 
     sql_view = """
-        select ws.id,\
+        select case when ws.area = 'pending' then ws.id
+        when ws.area in ('completed','bin') then ws.uuid end id,\
         ws.version,\
         ws.description,\
         ws.status,\
@@ -580,7 +598,7 @@ def display_tasks(potential_filters):
         case when ws.groups is null then '-' else groups end groups,\
         case when tg.tags is null then '-' else tg.tags end tags,\
         case when ws.due<date('now') then 'OVERDUE' when ws.due=date('now')\
-            then 'TODAY' else '-' end addl_info\
+            then 'TODAY' else '-' end addl_info, ws.area\
         from workspace ws left join
         (select uuid ,version,\
             group_concat(tags) as tags\
@@ -594,36 +612,57 @@ def display_tasks(potential_filters):
     #print(sql_view)
     try:
         task_list = cur.execute(sql_view,task_uuid_and_version).fetchall()
-        for task in task_list:
-            if task[8] == TASK_OVERDUE:
-                table.add_row(str(task[0]),str(task[1]),str(task[2]),
-                              str(task[3]),str(task[4]),str(task[5]),
-                              str(task[6]),str(task[7]),str(task[8]),
-                              style=overdue)
-            elif task[8] == TASK_TODAY:
-                table.add_row(str(task[0]),str(task[1]),str(task[2]),
-                              str(task[3]),str(task[4]),str(task[5]),
-                              str(task[6]),str(task[7]),str(task[8]),
-                              style=today)
-            elif task[3] == TASK_INPROGRESS:
-                table.add_row(str(task[0]),str(task[1]),str(task[2]),
-                              str(task[3]),str(task[4]),str(task[5]),
-                              str(task[6]),str(task[7]),str(task[8]),
-                              style=inprogress)
-            elif task[3] == TASK_DONE:
-                table.add_row(str(task[0]),str(task[1]),str(task[2]),
-                              str(task[3]),str(task[4]),str(task[5]),
-                              str(task[6]),str(task[7]),str(task[8]),
-                              style=done)                              
-            else:
-                table.add_row(str(task[0]),str(task[1]),str(task[2]),
-                              str(task[3]),str(task[4]),str(task[5]),
-                              str(task[6]),str(task[7]),str(task[8]),
-                              style=default)
-            
     except sqlite3.ProgrammingError as e:
         click.echo(str(e))
         return
+    #Styles for the tables rows
+    default = Style(color="white")
+    today = Style(color="dark_orange")
+    overdue = Style(color="red")
+    started = Style(color="cyan")
+    done = Style(color="grey46")
+
+    console = Console()
+    table = Table(box=box.HORIZONTALS, show_header=True, header_style="bold")
+    if (task_list[0])[9] == 'pending':
+        table.add_column("id",justify="center")
+    else:
+        table.add_column("uuid",justify="center")
+    table.add_column("version"  ,justify="center")
+    table.add_column("description",justify="left")
+    table.add_column("status",justify="center")
+    table.add_column("due",justify="center")
+    table.add_column("hidden",justify="center")
+    table.add_column("groups",justify="center")
+    table.add_column("tags",justify="center")
+    table.add_column("addl_info",justify="center")
+    
+    for task in task_list:
+        if task[8] == TASK_OVERDUE:
+            table.add_row(str(task[0]),str(task[1]),str(task[2]),
+                            str(task[3]),str(task[4]),str(task[5]),
+                            str(task[6]),str(task[7]),str(task[8]),
+                            style=overdue)
+        elif task[8] == TASK_TODAY:
+            table.add_row(str(task[0]),str(task[1]),str(task[2]),
+                            str(task[3]),str(task[4]),str(task[5]),
+                            str(task[6]),str(task[7]),str(task[8]),
+                            style=today)
+        elif task[3] == TASK_STARTED:
+            table.add_row(str(task[0]),str(task[1]),str(task[2]),
+                            str(task[3]),str(task[4]),str(task[5]),
+                            str(task[6]),str(task[7]),str(task[8]),
+                            style=started)
+        elif task[3] == TASK_DONE:
+            table.add_row(str(task[0]),str(task[1]),str(task[2]),
+                            str(task[3]),str(task[4]),str(task[5]),
+                            str(task[6]),str(task[7]),str(task[8]),
+                            style=done)                              
+        else:
+            table.add_row(str(task[0]),str(task[1]),str(task[2]),
+                            str(task[3]),str(task[4]),str(task[5]),
+                            str(task[6]),str(task[7]),str(task[8]),
+                            style=default)
     console.print(table)
     get_and_printactive_task_count(print=True)
     
@@ -655,6 +694,9 @@ def get_and_printactive_task_count(print=True):
     VISIBLE    |  3
     HIDDEN     |  2
     """
+    total = 0
+    vis = 0
+    hid = 0
     if results:
         cnt = [x[1] for x in results]
         try:
@@ -676,7 +718,7 @@ def derive_task_id():
     global CONN
     cur = CONN.cursor()
     results = cur.execute("""select id from workspace where \
-        area='pending'""").fetchall()
+        area='pending' and id<>'-'""").fetchall()
     id_list =[]
     for row in results:
         id_list.append(row[0])
@@ -724,13 +766,13 @@ def get_task_uuid_and_version(potential_filters):
     cur = CONN.cursor()
     params = ()
     sql_list = []
-
     all_tasks = potential_filters.get("all")
     overdue_task = potential_filters.get(TASK_OVERDUE)
     today_task = potential_filters.get(TASK_TODAY)
     hidden_task = potential_filters.get(TASK_HIDDEN)
     done_task = potential_filters.get(TASK_DONE)
     idn = potential_filters.get("id")
+    uuidn = potential_filters.get("uuid")
     group = potential_filters.get("group")
     tag = potential_filters.get("tag")
 
@@ -754,6 +796,16 @@ def get_task_uuid_and_version(potential_filters):
             innrws where ws.uuid=innrws.uuid)\
             and ws.id in (%s)" % ",".join("?"*len(id_list))
         params = tuple(id_list)
+    elif uuidn is not None:
+        uuid_list = uuidn.split(",")
+        print(uuid_list)
+        sql = "select uuid,version from workspace ws where ws.area in\
+            ('completed','bin')\
+            and ws.version = (select max(innrws.version) from workspace \
+            innrws where ws.uuid=innrws.uuid)\
+            and ws.uuid in (%s)" % ",".join("?"*len(uuid_list))
+        print(sql)
+        params = tuple(uuid_list)
     else:
         """
         If it is not ID then try to get task list from combination of filters
@@ -824,8 +876,7 @@ def get_task_new_version(task_uuid):
     #print("INFO: Trying to get version for (%s)" % task_uuid)
     try:
         results = cur.execute("select max(version) from workspace ws\
-                               where ws.area = 'pending'\
-                               and uuid = ?",(task_uuid,)).fetchall()
+                               where uuid = ?",(task_uuid,)).fetchall()
     except sqlite3.ProgrammingError as e:
         click.echo(str(e))
     if (results[0])[0] is not None:  #Tasks exists so increment version
@@ -853,20 +904,22 @@ def add_task(desc, due, hide, group, tag,
             hide_dt = convert_hide(hide,None)
     else:
         hide_dt = None
+    if task_uuid is None:
+        task_uuid = uuid.uuid4()
+    if event_id is None:
+        event_id = datetime.now().strftime("%Y%m-%d%H-%M%S-") +\
+            str(uuid.uuid4())
+    now = datetime.now()
+    task_ver = get_task_new_version(str(task_uuid))
     try:
-        if task_uuid is None:
-            task_uuid = uuid.uuid4()
-        if event_id is None:
-            event_id = datetime.now().strftime("%Y%m-%d%H-%M%S-") +\
-                str(uuid.uuid4())
-        now = datetime.now()
-        task_ver = get_task_new_version(str(task_uuid))
+        # Insert the latest task version
         cur.execute("""insert into workspace\
                 (uuid, version, id, description, status, groups, area,\
                 due,hide, modified, event_id) values\
                 (?,?,?,?,?,?,?,?,?,?,?)""", (str(task_uuid), task_ver,\
                 task_id, desc, status, group, area, due_dt,\
                 hide_dt, now, event_id))
+        # Insert the latest tags
         tag_list = None
         if tag is not None:
             tag_list = tag.split(",")
@@ -875,12 +928,16 @@ def add_task(desc, due, hide, group, tag,
                     (uuid, version, tags) values(?, ?, ?)""",
                             (str(task_uuid), task_ver, t))
                 # datetime("now"),datetime("now")))
-        cur.execute("""insert into event_stack (event_id) values (?)"""\
-            ,(event_id,))
+        # For all older entries remove the task_id
+        sql = """
+              update workspace set id = ? where uuid =? and version<?
+              """
+        cur.execute(sql, ('-', str(task_uuid), task_ver))
     except sqlite3.ProgrammingError as e:
         print(str(e))
         return None, None
-    CONN.commit()
+    else:
+        CONN.commit()
     click.echo("Added/Updated Task ID: %s" % task_id)
     click.echo("ID:{} Ver:{} Sts:{} Desc:{} Due:{} Hide:{} Group:{} Tags:{}"
                 .format(task_id, task_ver, status, desc, due_dt,
@@ -959,32 +1016,4 @@ def retrieve_sql():
                              primary key(uuid, tags, version)
                          )
                          """
-    bin_sql = """
-              create table bin (
-              uuid text ,
-              id integer,
-              description text,
-              status text,
-              due text,
-              hide text,
-              done text,
-              area text,
-              modified text,
-              groups text,
-              version integer,
-              event_id text,
-              primary key(uuid, version)
-              )"""
-    bin_tags_sql = """
-                   create table bin_tags ( 
-                       uuid text,
-                       tags text,
-                       version integer,
-                       primary key(uuid, tags, version)
-                   )"""
-
-    event_stack_sql ="""
-                     CREATE TABLE "event_stack" (
-	                    "event_id"	text
-                     )"""
-    return [workspace_sql, workspace_tags_sql, bin_sql, bin_tags_sql, event_stack_sql]
+    return [workspace_sql, workspace_tags_sql]
