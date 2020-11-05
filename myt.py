@@ -402,7 +402,6 @@ def parse_filters(filters):
                 potential_filters["uuid"] = (str(fl).split(":"))[1]
     else:
         potential_filters = {"all":"yes"}
-    print(potential_filters)
     return potential_filters
 
 def get_tasks(task_uuid_and_version):
@@ -429,7 +428,6 @@ def get_tasks(task_uuid_and_version):
     Returns:
         list: List with details for each task
     """
-    global CONN
     cur = CONN.cursor()
     sql_tasks = """
         select ws.id,\
@@ -461,7 +459,6 @@ def get_tasks(task_uuid_and_version):
         return task_list
 
 def get_tags(task_uuid, task_version):
-    global CONN
     cur = CONN.cursor()
     sql_tags = """
                select tags from workspace_tags ws where ws.uuid=?\
@@ -486,12 +483,21 @@ def get_tags(task_uuid, task_version):
         return tag_u_str
 
 def modify_task(potential_filters, desc, due, hide, group, tag):
-    global CONN
     cur = CONN.cursor()
-    task_uuid_and_version = get_task_uuid_and_version(potential_filters)
+    uuid_version_results = get_task_uuid_and_version(potential_filters)    
     event_id = datetime.now().strftime("%Y%m-%d%H-%M%S-") +\
                 str(uuid.uuid4())
-    for task in task_uuid_and_version:
+    """
+    Flatten the tuple from (uuid,version),(uuid,version)
+    to uuid,version,uuid,version...
+    """                
+    task_uuid_and_version = [element for itm 
+                            in uuid_version_results for element in itm]
+    if not task_uuid_and_version:
+        click.echo("No applicable tasks to modify")
+        return
+    task_list = get_tasks(task_uuid_and_version)
+    for task in task_list:
         #print(task)
         """
         Populate values for the modify action
@@ -499,20 +505,15 @@ def modify_task(potential_filters, desc, due, hide, group, tag):
         If user requested update or clearing then overwrite
         If user has not requested update for field then retain original value
         """
-        result = cur.execute("select\
-            description, due, hide, groups, uuid,id, area,status\
-            from workspace ws\
-            where ws.uuid=?\
-            and ws.version=?",(task[0],task[1],)).fetchall()
-        #print(result)
-        desc_u = result[0][0]
-        due_u = result[0][1]
-        hide_u = result[0][2]
-        group_u = result[0][3]
-        task_uuid = result[0][4]
-        task_id = result[0][5]
-        area = result[0][6]
-        status = result[0][7]
+        desc_u = task[2]
+        due_u = task[4]
+        hide_u = task[5]
+        group_u = task[6]
+        task_uuid = task[8]
+        task_id = task[0]
+        area = task[9]
+        status = task[3]
+        version = task[1]
 
         if desc == "clr":
             desc_u = None      
@@ -534,23 +535,13 @@ def modify_task(potential_filters, desc, due, hide, group, tag):
         elif group is not None:
             group_u = group
 
+        tag_u_str = None
         #If operation is not to clear tags then retrieve current tags
         if tag != "clr":
             try:
-                results = list(cur.execute("select tags from workspace_tags\
-                               ws where ws.uuid=? and ws.version=?",
-                        (task[0],task[1],)).fetchall())
-            except sqlite3.ProgrammingError as e:
-                click.echo(str(e))
-            else:
-                # Flatten the list of tuples to a list [(a,),(b,)] to [a,b]
-                # Create a comma separated list of tags from this
-                if results:
-                    tag_u = [element for itm in results for element in itm]
-                    tag_u_str = ",".join(map(str, tag_u))
-                else:
-                    #No tags in current state
-                    tag_u_str = None
+                tag_u = get_tags(task_uuid, version).split(",")
+            except AttributeError:
+                tag_u = []
         #Apply the user requested update
         if tag != "clr" and tag is not None:
             tag_list = tag.split(",")
@@ -558,22 +549,16 @@ def modify_task(potential_filters, desc, due, hide, group, tag):
                 if t[0] == "-":
                     t = str(t[1:])
                     if t in tag_u:
-                        #print("To Remove: %s" % t)
                         tag_u.remove(t)
-                else:
-                    if t not in tag_u:
-                        #print("To Add %s" % t)
-                        tag_u.append(t)
-            tag_u_str = ",".join(map(str, tag_u))
-        else:
-            tag_u_str = None
-
+                elif t not in tag_u:
+                    tag_u.append(t)
+            if tag_u:
+                tag_u_str = ",".join(map(str, tag_u))
         add_task(desc_u, due_u, hide_u, group_u, tag_u_str,
                  task_uuid, task_id, event_id,status, area)
     return
 
 def display_tasks(potential_filters):
-    global CONN
     uuid_version_results = get_task_uuid_and_version(potential_filters)
     """
     Flatten the tuple from (uuid,version),(uuid,version)
@@ -585,8 +570,6 @@ def display_tasks(potential_filters):
     task_uuid_and_version = [element for itm 
                              in uuid_version_results for element in itm]
     cur = CONN.cursor()
-    
-
     sql_view = """
         select case when ws.area = 'pending' then ws.id
         when ws.area in ('completed','bin') then ws.uuid end id,\
@@ -669,7 +652,6 @@ def display_tasks(potential_filters):
     return 
 
 def get_and_printactive_task_count(print=True):
-    global CONN
     cur = CONN.cursor()
     sql_cnt = """
         select\
@@ -762,7 +744,6 @@ def get_task_uuid_and_version(potential_filters):
         list: List of tuples of (task UUID,Version)
 
     """
-    global CONN
     cur = CONN.cursor()
     params = ()
     sql_list = []
@@ -798,13 +779,11 @@ def get_task_uuid_and_version(potential_filters):
         params = tuple(id_list)
     elif uuidn is not None:
         uuid_list = uuidn.split(",")
-        print(uuid_list)
         sql = "select uuid,version from workspace ws where ws.area in\
             ('completed','bin')\
             and ws.version = (select max(innrws.version) from workspace \
             innrws where ws.uuid=innrws.uuid)\
             and ws.uuid in (%s)" % ",".join("?"*len(uuid_list))
-        print(sql)
         params = tuple(uuid_list)
     else:
         """
@@ -871,7 +850,6 @@ def get_task_uuid_and_version(potential_filters):
     return results
 
 def get_task_new_version(task_uuid):
-    global CONN
     cur = CONN.cursor()
     #print("INFO: Trying to get version for (%s)" % task_uuid)
     try:
@@ -887,7 +865,6 @@ def get_task_new_version(task_uuid):
     
 def add_task(desc, due, hide, group, tag,
              task_uuid, task_id,event_id,status=TASK_TODO,area="pending"):
-    global CONN
     cur = CONN.cursor()
     if task_id is None:
         task_id = derive_task_id()
@@ -945,33 +922,21 @@ def add_task(desc, due, hide, group, tag,
     get_and_printactive_task_count(print=True)
     return task_uuid, task_ver
 
-
-def display_opt_and_args(ops, desc, due, hide, group, tag, filters):
-    click.echo("Select Operation is %s" % ops)
-    click.echo("Description: %s" % desc)
-    click.echo("Due: %s" % due)
-    click.echo("Hide: %s" % hide)
-    click.echo("Group: %s" % group)
-    click.echo("Tags: %s" % tag)
-    #click.echo("Filters: %s" % filters)
-
-
-
 def connect_to_tasksdb(dbpath=DEFAULT_PATH):
     global CONN
     try:
         dburi = "file:{}?mode=rw".format(pathname2url(dbpath))
         CONN = sqlite3.connect(dburi, uri=True)
     except sqlite3.OperationalError:
-        click.echo("INFO: No database exists, intializing...")
+        click.echo("No database exists, intializing...")
         CONN = initialize_tasksdb(dbpath)
     #CONN.set_trace_callback(print)
     return CONN
 
-
 def exit_app(stat=0):
+    global CONN
+    CONN.close()
     sys.exit(stat)
-
 
 def initialize_tasksdb(dbpath):
     global CONN
@@ -984,10 +949,10 @@ def initialize_tasksdb(dbpath):
             cur.execute(sql)
         cur.close()
     except sqlite3.OperationalError as e:
-        click.echo("ERROR: Database creation could be partial.")
+        click.echo("Error! Database creation could be partial.")
         click.echo(str(e))
         exit_app(1)
-    click.echo("INFO: Database initialized...")
+    click.echo("Database initialized...")
     return CONN
 
 
