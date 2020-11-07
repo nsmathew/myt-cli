@@ -1,14 +1,18 @@
-
 import sys
 import pytest
 from click.testing import CliRunner
 from datetime import date
 from dateutil.relativedelta import relativedelta
+import mock
 
 from myt import add
 from myt import modify
 from myt import delete
-
+from myt import start
+from myt import stop
+from myt import revert
+from myt import done
+from myt import empty
 
 runner = CliRunner()
 def test_add_1():
@@ -138,3 +142,60 @@ def test_modify_10(create_task):
     assert "Added/Updated Task ID:" in result.output
     assert "Tags:None" in result.output
     runner.invoke(delete, ['id:'+str(create_task)])
+
+
+@pytest.fixture
+def create_task2():
+    result = runner.invoke(add, ['-de','Test task8','-du','2020-12-25', '-gr', 'GRPL1.GRPL2', '-tg', 'tag1,tag2,tag3'])
+    temp = result.output.replace("\n"," ")
+    return temp.split(" ")[3]
+
+def test_start_1(create_task2):
+    result = runner.invoke(start, ['id:'+str(create_task2)])
+    assert result.exit_code == 0
+    assert "Added/Updated Task ID:" in result.output
+    assert "Sts:STARTED" in result.output
+    runner.invoke(delete, ['id:'+str(create_task2)])
+
+def test_stop_1(create_task2):
+    result = runner.invoke(start, ['id:'+str(create_task2)])
+    result = runner.invoke(stop, ['id:'+str(create_task2)])
+    assert result.exit_code == 0
+    assert "Added/Updated Task ID:" in result.output
+    assert "Sts:TO_DO" in result.output
+    runner.invoke(delete, ['id:'+str(create_task2)])
+
+def test_revert_1(create_task2):
+    result = runner.invoke(start, ['id:'+str(create_task2)])
+    result = runner.invoke(revert, ['id:'+str(create_task2)])    
+    temp = result.output.replace("\n"," ")
+    new_id = temp.split(" ")[3]
+    assert result.exit_code == 0
+    assert "Added/Updated Task ID:" in result.output
+    assert "Sts:TO_DO" in result.output
+    runner.invoke(delete, ['id:'+str(new_id)])
+
+def test_done_1(create_task2):
+    result = runner.invoke(done, ['id:'+str(create_task2)])
+    assert result.exit_code == 0
+    assert "Added/Updated Task ID:" in result.output
+    assert "Sts:DONE" in result.output
+    runner.invoke(delete, ['DONE','tg:'+'tag1'])
+
+def test_delete_1(create_task2):
+    runner.invoke(done, ['id:'+str(create_task2)])
+    result = runner.invoke(delete, ['id:999'])
+    assert result.exit_code == 0
+    assert "No applicable tasks to delete" in result.output
+    runner.invoke(delete, ['DONE','tg:'+'tag1'])
+
+def test_delete_2(create_task2):
+    runner.invoke(done, ['id:'+str(create_task2)])
+    result = runner.invoke(delete, ['DONE', 'tg:'+'tag1'])
+    assert result.exit_code == 0
+    assert "Added/Updated Task ID: -" in result.output
+
+def test_empty_1():
+    with mock.patch('builtins.input', return_value="yes"):
+        result = runner.invoke(empty)
+        assert "Bin emptied!" in result.output

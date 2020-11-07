@@ -4,6 +4,7 @@ import sqlite3
 import uuid
 import sys
 from urllib.request import pathname2url
+import logging
 
 import click
 from datetime import date
@@ -24,6 +25,10 @@ TASK_OVERDUE = "OVERDUE"
 TASK_TODAY = "TODAY"
 TASK_HIDDEN = "HIDDEN"
 TASK_BIN = "BIN"
+HL_FILTERS_ONLY = "HL_FILTERS_ONLY"
+lFormat = "%(levelname)s|%(filename)s|%(lineno)d|%(funcName)s - %(message)s"
+logging.basicConfig(format=lFormat, level=logging.ERROR)
+LOGGER = logging.getLogger()
 
 def is_date_short_format(string):
     """
@@ -122,6 +127,9 @@ def yes_no(prompt):
     else:
         return False
 
+def set_versbose_logging():
+    LOGGER.setLevel(level=logging.DEBUG)
+
 @click.group()
 def myt():
     pass
@@ -153,7 +161,15 @@ def myt():
               type=str,
               help="Tags for the task.",
               )
-def add(filters, desc, due, hide, group, tag):
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable Verbose Logging.",
+              )
+              
+def add(filters, desc, due, hide, group, tag, verbose):
+    if verbose:
+        LOGGER.setLevel(level=logging.DEBUG)    
     connect_to_tasksdb()
     if desc is None:
         click.echo("No task information provided. Nothing to do...")
@@ -189,74 +205,137 @@ def add(filters, desc, due, hide, group, tag):
               type=str,
               help="Tags for the task.",
               )
-def modify(filters, desc, due, hide, group, tag):
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable Verbose Logging.",
+              )           
+def modify(filters, desc, due, hide, group, tag, verbose):
+    if verbose:
+        set_versbose_logging()        
     potential_filters = parse_filters(filters)
-    #display_opt_and_args(ops, desc, due, hide, group, tag, filters)
+    LOGGER.debug("Values for update: desc - {} due - {} hide - {} group - {}"
+                 " tag - {}".format(desc, due, hide, group, tag))
+    if (desc is None and due is None and hide is None and group is None 
+            and tag is None):
+        click.echo("No modification values provided. Nothing to do...")
+        return
     if potential_filters.get("uuid"):
         click.echo("Cannot perform this operation using uuid filters")
     connect_to_tasksdb()
     if potential_filters.get("all") == "yes":
-        if not yes_no("No filters given for modify, are you sure? (yes/no)"):
+        prompt = ("No filters given for modifying tasks,"
+                  " are you sure? (yes/no)")
+        if not yes_no(prompt):
             exit_app(0)
     modify_task(potential_filters, desc, due, hide, group, tag)
 
 @myt.command()
-@click.argument("filters",nargs=-1)
-def start(filters):
+@click.argument("filters",
+                nargs=-1,
+                )
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable Verbose Logging.",
+              )                
+def start(filters, verbose):
+    if verbose:
+        set_versbose_logging()        
     potential_filters = parse_filters(filters)
     if potential_filters.get("uuid"):
         click.echo("Cannot perform this operation using uuid filters")
     connect_to_tasksdb()
     if potential_filters.get("all") == "yes":
-        if not yes_no("No filters given for starting tasks,\
-            are you sure? (yes/no)"):
+        prompt = ("No filters given for starting tasks,"
+                  " are you sure? (yes/no)")
+        if not yes_no(prompt):
             exit_app(0)
     start_task(potential_filters)
     return
 
 @myt.command()
-@click.argument("filters",nargs=-1)
-def done(filters):
+@click.argument("filters",
+                nargs=-1,
+                )
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable Verbose Logging.",
+              )
+def done(filters, verbose):
+    if verbose:
+        set_versbose_logging()        
     potential_filters = parse_filters(filters)
     if potential_filters.get("uuid"):
         click.echo("Cannot perform this operation using uuid filters")
     connect_to_tasksdb()
     if potential_filters.get("all") == "yes":
-        if not yes_no("No filters given for marking tasks as done,\
-            are you sure? (yes/no)"):
+        prompt = ("No filters given for marking tasks as done,"
+                  " are you sure? (yes/no)")
+        if not yes_no(prompt):
             exit_app(0)
     complete_task(potential_filters)  
     return
 
 @myt.command()
-@click.argument("filters",nargs=-1)
-def revert(filters):
+@click.argument("filters",
+                nargs=-1,
+                )
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable Verbose Logging.",
+              )
+def revert(filters, verbose):
+    if verbose:
+        set_versbose_logging()        
     potential_filters = parse_filters(filters)
     connect_to_tasksdb()
     if potential_filters.get("all") == "yes":
-        if not yes_no("No filters given for reverting tasks,\
-            are you sure? (yes/no)"):
+        prompt = ("No filters given for reverting tasks,"
+                  " are you sure? (yes/no)")
+        if not yes_no(prompt):
             exit_app(0)
     revert_task(potential_filters)
     return
 
 @myt.command()
-@click.argument("filters",nargs=-1)
-def stop(filters):
+@click.argument("filters",
+                nargs=-1,
+                )
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable Verbose Logging.",
+              )
+def stop(filters, verbose):
+    if verbose:
+        set_versbose_logging()        
     potential_filters = parse_filters(filters)
     if potential_filters.get("uuid"):
         click.echo("Cannot perform this operation using uuid filters")
     connect_to_tasksdb()
     if potential_filters.get("all") == "yes":
-        if not yes_no("No filters given for stopping tasks,\
-            are you sure? (yes/no)"):
+        prompt = ("No filters given for stopping tasks,"
+                  " are you sure? (yes/no)")
+        if not yes_no(prompt):
             exit_app(0)
     stop_task(potential_filters)
     return
 
 @myt.command()
-@click.argument("filters",nargs=-1)
-def view(filters):
+@click.argument("filters",
+                nargs=-1,
+                )
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable Verbose Logging.",
+              )
+def view(filters, verbose):
+    if verbose:
+        set_versbose_logging()        
     potential_filters = parse_filters(filters)
     if potential_filters.get("uuid"):
         click.echo("Cannot perform this operation using uuid filters")
@@ -265,35 +344,64 @@ def view(filters):
     return
 
 @myt.command()
-@click.argument("filters",nargs=-1)
-def delete(filters):
+@click.argument("filters",
+                nargs=-1,
+                )
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable Verbose Logging.",
+              )
+def delete(filters, verbose):
+    if verbose:
+        set_versbose_logging()
     potential_filters = parse_filters(filters)
+    if potential_filters.get(HL_FILTERS_ONLY) == "yes":
+        prompt = ("No detailed filters given for deleting tasks,"
+                   " are you sure? (yes/no)")
+        if not yes_no(prompt):
+            exit_app(0)    
     connect_to_tasksdb()
-    delete_tasks(potential_filters) 
+    delete_tasks(potential_filters)
     return
 
 @myt.command()
-def empty():
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable Verbose Logging.",
+              )
+def empty(verbose):
+    """
+    Empty the bin area. All tasks are deleted permanently.
+    Undo operation does not work here. No filters are accepted
+    by this operation.
+    """
+    if verbose:
+        set_versbose_logging()        
     connect_to_tasksdb()
     empty_bin() 
     return
 
 def empty_bin():
     uuid_version_results = get_task_uuid_and_version({TASK_BIN:"yes"},"bin")
+    LOGGER.debug("Got list of UUID and Version for emptying:")
+    LOGGER.debug(uuid_version_results)
     if uuid_version_results:
-        prompt = "Deleting all version of " +\
-                  str(len(uuid_version_results)) +\
-                 " tasks, are your sure (yes/no)"
+        prompt = ("Deleting all version of " +
+                  str(len(uuid_version_results)) +
+                 " tasks, are your sure (yes/no)")
         if not yes_no(prompt):
             exit_app(0)
         #Extract the UUIDs from the list of Tuples
         uuid_list = list(list(zip(*uuid_version_results))[0])
         cur = CONN.cursor()
         sql0 = ""
-        sql1 = "delete from workspace_tags\
-                where uuid in (select uuid from temp_uuid_version)"
-        sql2 = "delete from workspace\
-                where uuid in (select uuid from temp_uuid_version)"
+        sql1 = ("delete from workspace_tags where uuid in "
+                "(select temp_uuid from temp_uuid_version)")
+        sql2 = ("delete from workspace where uuid in "
+                "(select temp_uuid from temp_uuid_version)")
+        LOGGER.debug("Attempting delete using:\n {}\n{}".format(sql1,sql2))
         try:
             cur.execute(sql1)
             cur.execute(sql2)
@@ -302,6 +410,7 @@ def empty_bin():
             return
         else:
             CONN.commit()
+            click.echo("Bin emptied!")
             return
     else:
         click.echo("Bin is already empty, nothing to do")
@@ -474,6 +583,11 @@ def parse_filters(filters):
                 potential_filters["uuid"] = (str(fl).split(":"))[1]
     else:
         potential_filters = {"all":"yes"}
+    #If only High LEvel Filters provided then set a key to use to warn users
+    if ("id" not in potential_filters and "group" not in potential_filters
+            and "tag" not in potential_filters
+            and "uuid" not in potential_filters):
+        potential_filters[HL_FILTERS_ONLY] = "yes"
     return potential_filters
 
 def get_tasks(task_uuid_and_version):
@@ -501,26 +615,25 @@ def get_tasks(task_uuid_and_version):
         list: List with details for each task
     """
     cur = CONN.cursor()
-    sql_tasks = """
-        select ws.id,\
-        ws.version,\
-        ws.description,\
-        ws.status,\
-        ws.due,\
-        ws.hide,\
-        ws.groups,\
-        tg.tags,\
-        ws.uuid,\
-        ws.area
-        from workspace ws left join 
-        (select uuid ,version, group_concat(tags) as tags\
-            from workspace_tags wt\
-            group by uuid,version) tg\
-        on ws.uuid=tg.uuid and tg.version = ws.version\
-        where (ws.uuid, ws.version ) in (values %s)\
-        order by modified desc\
-        """ % ",".join(["(?,?)"]*int(len(task_uuid_and_version)/2))
-    #print(sql_tasks)
+    sql_tasks = ("select ws.id, "
+        "ws.version, "
+        "ws.description, "
+        "ws.status, "
+        "ws.due, "
+        "ws.hide, "
+        "ws.groups, "
+        "tg.tags, "
+        "ws.uuid, "
+        "ws.area "
+        "from workspace ws left join "
+        "(select uuid ,version, group_concat(tags) as tags "
+        "from workspace_tags wt "
+        "group by uuid,version) tg "
+        "on ws.uuid=tg.uuid and tg.version = ws.version "
+        "where (ws.uuid, ws.version ) in (values %s) "
+        "order by modified desc "
+        % ",".join(["(?,?)"]*int(len(task_uuid_and_version)/2)))
+    LOGGER.debug("SQL:\n" + sql_tasks)
     #return
     try:
         task_list = cur.execute(sql_tasks,task_uuid_and_version).fetchall()
@@ -631,7 +744,6 @@ def modify_task(potential_filters, desc, due, hide, group, tag):
     return
 
 def display_tasks(potential_filters):
-    print(potential_filters)
     uuid_version_results = get_task_uuid_and_version(potential_filters,"pending")
     """
     Flatten the tuple from (uuid,version),(uuid,version)
@@ -653,8 +765,12 @@ def display_tasks(potential_filters):
         case when ws.hide is null then '-' else hide end hide,\
         case when ws.groups is null then '-' else groups end groups,\
         case when tg.tags is null then '-' else tg.tags end tags,\
-        case when ws.due<date('now') then 'OVERDUE' when ws.due=date('now')\
-            then 'TODAY' else '-' end addl_info, ws.area\
+        case when ws.area='completed' then 'DONE'\
+            when ws.area='bin' then 'BIN'\
+            when ws.due<date('now') then 'OVERDUE'\
+            when ws.due=date('now') then 'TODAY'\
+            else '-' end addl_info,\
+        ws.area\
         from workspace ws left join
         (select uuid ,version,\
             group_concat(tags) as tags\
@@ -675,8 +791,9 @@ def display_tasks(potential_filters):
     default = Style(color="white")
     today = Style(color="dark_orange")
     overdue = Style(color="red")
-    started = Style(color="cyan")
+    started = Style(color="green")
     done = Style(color="grey46")
+    binn = Style(color="grey46")
 
     console = Console()
     table = Table(box=box.HORIZONTALS, show_header=True, header_style="bold")
@@ -694,7 +811,17 @@ def display_tasks(potential_filters):
     table.add_column("addl_info",justify="center")
     
     for task in task_list:
-        if task[8] == TASK_OVERDUE:
+        if task[8] == TASK_DONE:
+            table.add_row(str(task[0]),str(task[1]),str(task[2]),
+                            str(task[3]),str(task[4]),str(task[5]),
+                            str(task[6]),str(task[7]),str(task[8]),
+                            style=done)
+        elif task[8] == TASK_BIN:
+            table.add_row(str(task[0]),str(task[1]),str(task[2]),
+                            str(task[3]),str(task[4]),str(task[5]),
+                            str(task[6]),str(task[7]),str(task[8]),
+                            style=binn)           
+        elif task[8] == TASK_OVERDUE:
             table.add_row(str(task[0]),str(task[1]),str(task[2]),
                             str(task[3]),str(task[4]),str(task[5]),
                             str(task[6]),str(task[7]),str(task[8]),
@@ -708,41 +835,55 @@ def display_tasks(potential_filters):
             table.add_row(str(task[0]),str(task[1]),str(task[2]),
                             str(task[3]),str(task[4]),str(task[5]),
                             str(task[6]),str(task[7]),str(task[8]),
-                            style=started)
-        elif task[3] == TASK_DONE:
-            table.add_row(str(task[0]),str(task[1]),str(task[2]),
-                            str(task[3]),str(task[4]),str(task[5]),
-                            str(task[6]),str(task[7]),str(task[8]),
-                            style=done)                              
+                            style=started)                     
         else:
             table.add_row(str(task[0]),str(task[1]),str(task[2]),
                             str(task[3]),str(task[4]),str(task[5]),
                             str(task[6]),str(task[7]),str(task[8]),
                             style=default)
     console.print(table)
-    get_and_printactive_task_count(print=True)
-    
+    get_and_print_task_count(print=True)
+    if potential_filters.get(TASK_DONE) == "yes":
+        get_and_print_task_count(True, "completed")
+    elif potential_filters.get(TASK_BIN) == "yes":
+        get_and_print_task_count(True, "bin")
     return 
 
-def get_and_printactive_task_count(print=True):
+def get_and_print_task_count(print=True, area="pending"):
     cur = CONN.cursor()
-    sql_cnt = """
-        select\
-        case when (hide>date('now') and hide is not null)\
-            then 'HIDDEN'\
-            else 'VISIBLE'\
-            end VSIBILITY,\
-        count( distinct uuid) CNT\
-        from workspace ws\
-        where ws.area='pending' and 
-        ws.version = (select max(innrws.version)\
-            from workspace \
-            innrws where innrws.uuid = ws.uuid) 
-        group by case when (hide>date('now') and  hide is not null)\
-            then 'HIDDEN' else 'VISIBLE' end\
-        order by VSIBILITY desc\
-        """
-    results = cur.execute(sql_cnt).fetchall()
+    sql_cnt_pend = """
+                  select\
+                  case when (hide>date('now') and hide is not null)\
+                      then 'HIDDEN'\
+                      else 'VISIBLE'\
+                      end VSIBILITY,\
+                  count( distinct uuid) CNT\
+                  from workspace ws\
+                  where ws.area='pending' and 
+                  ws.version = (select max(innrws.version)\
+                      from workspace \
+                      innrws where innrws.uuid = ws.uuid) 
+                  group by case when (hide>date('now') and  hide is not null)\
+                      then 'HIDDEN' else 'VISIBLE' end\
+                  order by VSIBILITY desc\
+                  """
+    sql_cnt_compl = """
+                    select count( distinct uuid) from workspace ws\
+                    where ws.area='completed' and ws.version >\
+                    (select max(innrws.version) from workspace\
+                    innrws where innrws.area <>'completed' and\
+                    innrws.uuid=ws.uuid)
+                    """
+    sql_cnt_bin = """
+                  select count(distinct uuid) from workspace ws\
+                  where ws.area='bin' and ws.version >\
+                  (select max(innrws.version) from workspace\
+                  innrws where innrws.area <>'bin' and\
+                  innrws.uuid=ws.uuid)
+                  """
+    results_pend = cur.execute(sql_cnt_pend).fetchall()
+    results_compl = cur.execute(sql_cnt_compl).fetchall()
+    results_bin = cur.execute(sql_cnt_bin).fetchall()
     """
     VISIBILITY | CNT
     ----------   ---
@@ -752,8 +893,8 @@ def get_and_printactive_task_count(print=True):
     total = 0
     vis = 0
     hid = 0
-    if results:
-        cnt = [x[1] for x in results]
+    if results_pend:
+        cnt = [x[1] for x in results_pend]
         try:
             vis = cnt[0]
         except IndexError:
@@ -763,9 +904,18 @@ def get_and_printactive_task_count(print=True):
         except IndexError:
             hid = 0
         total = vis + hid
+    if results_compl:
+        compl = (results_compl[0])[0]
+    if results_bin:
+        binn = (results_bin[0])[0]
     if print:
-        click.echo("Total Pending Tasks: %s, of which Hidden: %s"% (total,hid))
-    return ([total,hid])
+        if area == "pending":
+            click.echo("Total Pending Tasks: %s, of which Hidden: %s"% (total,hid))
+        if area == "completed":
+            click.echo("Total Completed tasks: %s"% compl)
+        if area == "bin":
+            click.echo("Total tasks in Bin: %s"% binn)
+    return ([total,hid,])
 
 def derive_task_id():
     """Get next available task ID from  active area in the workspace"""
@@ -849,6 +999,9 @@ def get_task_uuid_and_version(potential_filters, area="pending"):
                ws.version = (select max(innrws.version) from workspace\
                innrws where ws.uuid=innrws.uuid)"
         params = (area,)
+        LOGGER.debug("Inside all_tasks filter with below params and SQL")
+        LOGGER.debug(params)
+        LOGGER.debug("SQL: \n{}".format(sql))
     elif idn is not None:
         """
         If id(s) is provided extract tasks only based on ID as it is most 
@@ -861,6 +1014,9 @@ def get_task_uuid_and_version(potential_filters, area="pending"):
                workspace innrws where ws.uuid=innrws.uuid)\
                and ws.id in (%s)" % ",".join("?"*len(id_list))
         params = tuple(id_list)
+        LOGGER.debug("Inside id filter with below params and SQL")
+        LOGGER.debug(params)
+        LOGGER.debug("SQL: \n{}".format(sql))
     elif uuidn is not None:
         """
         If uuid(s) is provided extract tasks only based on UUID as it is most 
@@ -874,6 +1030,9 @@ def get_task_uuid_and_version(potential_filters, area="pending"):
                and ws.uuid in (%s)" % ",".join("?"*len(uuid_list))
         params = (area,)
         params = params + tuple(uuid_list)
+        LOGGER.debug("Inside UUID filter with below params and SQL")
+        LOGGER.debug(params)
+        LOGGER.debug("SQL: \n{}".format(sql))
     else:
         """
         Filter provided is not a ID or UUID, so try to get task list from 
@@ -890,7 +1049,10 @@ def get_task_uuid_and_version(potential_filters, area="pending"):
                        (select max(innrws.version) from workspace innrws\
                        where innrws.uuid=ws.uuid)"
             params = (group+"%",)
-            sql_list.append(sql_grp)   
+            sql_list.append(sql_grp)
+            LOGGER.debug("Inside group filter with below params and SQL")
+            LOGGER.debug(params)
+            LOGGER.debug("SQL: \n{}".format(sql_grp))
         if tag is not None:
             """
             Query to get a list of uuid and version for matchiing tags
@@ -906,6 +1068,11 @@ def get_task_uuid_and_version(potential_filters, area="pending"):
                 % ",".join("?"*len(tag_list))
             params = params + tuple(tag_list)
             sql_list.append(sql_tag)
+            LOGGER.debug("Inside tag filter with below params and SQL")
+            LOGGER.debug(params)
+            LOGGER.debug("SQL: \n{}".format(sql_tag))
+        LOGGER.debug("sql_list after group, tag:")
+        LOGGER.debug(sql_list)
 
         """
         Look for modifiers that work in the pending area
@@ -921,6 +1088,8 @@ def get_task_uuid_and_version(potential_filters, area="pending"):
                                (select max(innrws.version) from\
                                workspace innrws where innrws.uuid=ws.uuid)"
                 sql_list.append(sql_overdue)
+                LOGGER.debug("Inside overdue filter with below SQL")
+                LOGGER.debug("SQL: \n{}".format(sql_overdue))
             if today_task is not None:
                 #print("for today")
                 sql_today = "select uuid,version from workspace ws where \
@@ -929,6 +1098,8 @@ def get_task_uuid_and_version(potential_filters, area="pending"):
                             and ws.version=(select max(innrws.version) from\
                             workspace innrws where innrws.uuid=ws.uuid)"                                
                 sql_list.append(sql_today)
+                LOGGER.debug("Inside today filter with below SQL")
+                LOGGER.debug("SQL: \n{}".format(sql_today))
             if hidden_task is not None:
                 #print("for hidden")
                 sql_hidden = "select uuid,version from workspace ws where \
@@ -938,6 +1109,10 @@ def get_task_uuid_and_version(potential_filters, area="pending"):
                               from workspace innrws\
                               where innrws.uuid=ws.uuid)"                                
                 sql_list.append(sql_hidden)
+                LOGGER.debug("Inside hidden filter with below SQL")
+                LOGGER.debug("SQL: \n{}".format(sql_hidden))
+            LOGGER.debug("sql_list after overdue, today, hidden:")
+            LOGGER.debug(sql_list)
         elif done_task is not None:
             """
             If none of the pending area modifiers are given look for other 
@@ -952,15 +1127,19 @@ def get_task_uuid_and_version(potential_filters, area="pending"):
                        innrws where innrws.area <>'completed' and\
                        innrws.uuid=ws.uuid)"
             sql_list.append(sql_done)
+            LOGGER.debug("Inside done filter with below SQL")
+            LOGGER.debug("SQL: \n{}".format(sql_done))
         elif bin_task is not None:
             # Get all tasks in the bin
             #print("for bin")
-            sql_done = "select distinct uuid,version from workspace ws\
+            sql_bin = "select distinct uuid,version from workspace ws\
                         where ws.area='bin' and ws.version >\
                         (select max(innrws.version) from workspace\
                         innrws where innrws.area <>'bin' and\
                         innrws.uuid=ws.uuid)"
-            sql_list.append(sql_done)
+            sql_list.append(sql_bin)
+            LOGGER.debug("Inside bin filter with below SQL")
+            LOGGER.debug("SQL: \n{}".format(sql_bin))
         # If no modifiers provided then default to tasks in pending area
         else:
             sql_all = "select distinct uuid,version from workspace ws\
@@ -970,17 +1149,25 @@ def get_task_uuid_and_version(potential_filters, area="pending"):
                         innrws where innrws.area =ws.area and\
                         innrws.uuid=ws.uuid and ws.id<>'-')"
             sql_list.append(sql_all)
+            LOGGER.debug("Inside default filter with below SQL")
+            LOGGER.debug("SQL: \n{}".format(sql_all))
+        LOGGER.debug("final sql_list:")
+        LOGGER.debug(sql_list)
         if sql_list is None:
             return None
         sql = " intersect ".join(sql_list)
-        sql = "insert into temp_uuid_version (temp_uuid, temp_version)\
-               select uuid, version\
-               from (%s) unionws where unionws.version =\
-               (select max(verws.version) from workspace verws where\
-               unionws.uuid=verws.uuid)" % sql
-    sql_retreive = "select temp_uuid, temp_version from\
-                        temp_uuid_version"
+        sql = ("insert into temp_uuid_version (temp_uuid, temp_version) "
+               "select uuid, version "
+               "from (%s) unionws where unionws.version = "
+               "(select max(verws.version) from workspace verws where "
+               "unionws.uuid=verws.uuid)") % sql
+        LOGGER.debug("Final SQL for getting task UUID/Version:\n{}"
+                     .format(sql))
+    sql_retreive = ("select temp_uuid, temp_version from "
+                    "temp_uuid_version")
     try:
+        LOGGER.debug(("Deleting from temp_uuid_version and inserting"
+                      "the filter results of task UUIDs and versions"))
         cur.execute("delete from temp_uuid_version")
         cur.execute(sql, params)
         #Tuple of rows, UUID,Version        
@@ -990,6 +1177,8 @@ def get_task_uuid_and_version(potential_filters, area="pending"):
         return None
     else:
         CONN.commit()
+        LOGGER.debug("List of resulting Task UUIDs and Versions:")
+        LOGGER.debug(results)
         return results
 
 def get_task_new_version(task_uuid):
@@ -1062,12 +1251,15 @@ def add_task(desc, due, hide, group, tag,
     click.echo("ID:{} Ver:{} Sts:{} Desc:{} Due:{} Hide:{} Group:{} Tags:{}"
                 .format(task_id, task_ver, status, desc, due_dt,
                 hide_dt, group, tag))
-    get_and_printactive_task_count(print=True)
+    LOGGER.debug("Added/Updated Task UUID: {} and Area: {}"
+                 .format(task_uuid,area))
+    get_and_print_task_count(print=True)
     return task_uuid, task_ver
 
 def connect_to_tasksdb(dbpath=DEFAULT_PATH):
     global CONN
     try:
+        LOGGER.debug("Using database at %s" % dbpath)
         dburi = "file:{}?mode=rw".format(pathname2url(dbpath))
         CONN = sqlite3.connect(dburi, uri=True)
     except sqlite3.OperationalError:
@@ -1078,15 +1270,21 @@ def connect_to_tasksdb(dbpath=DEFAULT_PATH):
 
 def exit_app(stat=0):
     global CONN
-    CONN.close()
-    sys.exit(stat)
+    try:
+        CONN.close()
+    except:
+        sys.exit(stat)
+    else:
+        sys.exit(stat)
 
 def initialize_tasksdb(dbpath):
     global CONN
     try:
+        LOGGER.debug("Attempting to intialize db")
         dburi = "file:{}?mode=rwc".format(pathname2url(dbpath))
         CONN = sqlite3.connect(dburi, uri=True)
         sql_list = retrieve_sql()
+        LOGGER.debug("Executing following SQLs:\n" + sql_list)
         cur = CONN.cursor()
         for sql in sql_list:
             cur.execute(sql)
