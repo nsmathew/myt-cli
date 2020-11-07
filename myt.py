@@ -23,6 +23,7 @@ TASK_DONE = "DONE"
 TASK_OVERDUE = "OVERDUE"
 TASK_TODAY = "TODAY"
 TASK_HIDDEN = "HIDDEN"
+TASK_BIN = "BIN"
 
 def is_date_short_format(string):
     """
@@ -267,14 +268,47 @@ def view(filters):
 @click.argument("filters",nargs=-1)
 def delete(filters):
     potential_filters = parse_filters(filters)
-    if potential_filters.get("uuid"):
-        click.echo("Cannot perform this operation using uuid filters")
     connect_to_tasksdb()
     delete_tasks(potential_filters) 
     return
 
+@myt.command()
+def empty():
+    connect_to_tasksdb()
+    empty_bin() 
+    return
+
+def empty_bin():
+    uuid_version_results = get_task_uuid_and_version({TASK_BIN:"yes"},"bin")
+    if uuid_version_results:
+        prompt = "Deleting all version of " +\
+                  str(len(uuid_version_results)) +\
+                 " tasks, are your sure (yes/no)"
+        if not yes_no(prompt):
+            exit_app(0)
+        #Extract the UUIDs from the list of Tuples
+        uuid_list = list(list(zip(*uuid_version_results))[0])
+        cur = CONN.cursor()
+        sql0 = ""
+        sql1 = "delete from workspace_tags\
+                where uuid in (select uuid from temp_uuid_version)"
+        sql2 = "delete from workspace\
+                where uuid in (select uuid from temp_uuid_version)"
+        try:
+            cur.execute(sql1)
+            cur.execute(sql2)
+        except sqlite3.ProgrammingError as e:
+            click.echo(str(e))
+            return
+        else:
+            CONN.commit()
+            return
+    else:
+        click.echo("Bin is already empty, nothing to do")
+        return
+
 def delete_tasks(potential_filters):
-    uuid_version_results = get_task_uuid_and_version(potential_filters)
+    uuid_version_results = get_task_uuid_and_version(potential_filters,"pending")
     """
     Flatten the tuple from (uuid,version),(uuid,version)
     to uuid,version,uuid,version...
@@ -292,7 +326,7 @@ def delete_tasks(potential_filters):
         hide = task[5]
         group = task[6]
         task_uuid = task[8]
-        task_id_u = task[0]
+        task_id_u = "-"
         area_u = "bin"
         status_u = task[3]
         version = task[1]
@@ -303,7 +337,7 @@ def delete_tasks(potential_filters):
     return
 
 def revert_task(potential_filters):
-    uuid_version_results = get_task_uuid_and_version(potential_filters)
+    uuid_version_results = get_task_uuid_and_version(potential_filters,"pending")
     """
     Flatten the tuple from (uuid,version),(uuid,version)
     to uuid,version,uuid,version...
@@ -331,8 +365,8 @@ def revert_task(potential_filters):
                                       area_u)
     return
 
-def start_task(potential_filters):
-    uuid_version_results = get_task_uuid_and_version(potential_filters)
+def start_task(potential_filters,):
+    uuid_version_results = get_task_uuid_and_version(potential_filters,"pending")
     """
     Flatten the tuple from (uuid,version),(uuid,version)
     to uuid,version,uuid,version...
@@ -361,7 +395,7 @@ def start_task(potential_filters):
     return
     
 def stop_task(potential_filters):
-    uuid_version_results = get_task_uuid_and_version(potential_filters)
+    uuid_version_results = get_task_uuid_and_version(potential_filters,"pending")
     """
     Flatten the tuple from (uuid,version),(uuid,version)
     to uuid,version,uuid,version...
@@ -389,7 +423,7 @@ def stop_task(potential_filters):
     return    
 
 def complete_task(potential_filters):
-    uuid_version_results = get_task_uuid_and_version(potential_filters)
+    uuid_version_results = get_task_uuid_and_version(potential_filters,"pending")
     """
     Flatten the tuple from (uuid,version),(uuid,version)
     to uuid,version,uuid,version...
@@ -427,7 +461,9 @@ def parse_filters(filters):
             if str(fl) == TASK_HIDDEN:
                 potential_filters[TASK_HIDDEN] = "yes"
             if str(fl) == TASK_DONE:
-                potential_filters[TASK_DONE] = "yes"                
+                potential_filters[TASK_DONE] = "yes"
+            if str(fl) == TASK_BIN:
+                potential_filters[TASK_BIN] = "yes"    
             if str(fl).startswith("id:"):
                 potential_filters["id"] = (str(fl).split(":"))[1]
             if str(fl).startswith("gr:") or str(fl).startswith("group:"):
@@ -520,7 +556,7 @@ def get_tags(task_uuid, task_version):
 
 def modify_task(potential_filters, desc, due, hide, group, tag):
     cur = CONN.cursor()
-    uuid_version_results = get_task_uuid_and_version(potential_filters)    
+    uuid_version_results = get_task_uuid_and_version(potential_filters,"pending")    
     event_id = datetime.now().strftime("%Y%m-%d%H-%M%S-") +\
                 str(uuid.uuid4())
     """
@@ -595,7 +631,8 @@ def modify_task(potential_filters, desc, due, hide, group, tag):
     return
 
 def display_tasks(potential_filters):
-    uuid_version_results = get_task_uuid_and_version(potential_filters)
+    print(potential_filters)
+    uuid_version_results = get_task_uuid_and_version(potential_filters,"pending")
     """
     Flatten the tuple from (uuid,version),(uuid,version)
     to uuid,version,uuid,version...
@@ -643,7 +680,7 @@ def display_tasks(potential_filters):
 
     console = Console()
     table = Table(box=box.HORIZONTALS, show_header=True, header_style="bold")
-    if (task_list[0])[9] == 'pending':
+    if (task_list[0])[9] == "pending":
         table.add_column("id",justify="center")
     else:
         table.add_column("uuid",justify="center")
@@ -748,36 +785,45 @@ def derive_task_id():
     return available_list[0]
 
 
-def get_task_uuid_and_version(potential_filters):
+def get_task_uuid_and_version(potential_filters, area="pending"):
     """
     Return task UUID and version by applying filters on tasks
 
     Using a list of filters identify the relevant task UUIDs and their
     latest versions. The filters come in the form of a dictionary and
     expected keys include:
-        - For All Pending Items
-        - Overdue Tasks
-        - Tasks due today
-        - Hidden Tasks
-        - Completed Tasks
-        - Task id based filters
-        - Task group based filters
-        - Task tags based filters
+        - For all pending - Default when non filter provided
+        - Overdue Tasks - Works only on pending
+        - Tasks due today - Works only on pending
+        - Hidden Tasks - Works only on pending
+        - Completed Tasks - Works only on completed
+        - Task in Bin - Works only on tasks in the bin
+        - Task id based filters - Works only on pending
+        - Task group based filters - Works in pending, completed or bin
+        - Task tags based filters - Works in pending, completed or bin
     No validations are performed on the filters. Using the priority set 
     in function the filters are applied onto the tasks table.
-    As multiple filters can be provided, priority is followed as below:
-        1. All Pending Tasks
-        2. IDs
-        3. Groups, Tags, Overdue, Today (these can be combined)
-        4. Hidden
-        5. Completed
+    As multiple filters can be provided, priority is followed as below.
+    Filters indicated with numbers are mutually exclusive.
+        1. No Filters - Decision is made in parse_filters function
+                        to be more efficient
+        2. IDs for Pending tasks only
+        3. UUIDs for Completed or Bin tasks only
+        4. Groups, Tags
+            a. Overdue, Today, Hidden
+            b. Done tasks
+            c. Bin Tasks
+            d. Defaults to all Pending Tasks
 
     Parameters:
         potential_filters(dict): Dictionary with the various types of
                                  filters
+        area(str): Area from which the tasks have to be retrieved
+                   Default - 'pending'
     
     Returns:
-        list: List of tuples of (task UUID,Version)
+        list: List of tuples of (task UUID,Version) or None if there
+              is an exception
 
     """
     cur = CONN.cursor()
@@ -788,102 +834,163 @@ def get_task_uuid_and_version(potential_filters):
     today_task = potential_filters.get(TASK_TODAY)
     hidden_task = potential_filters.get(TASK_HIDDEN)
     done_task = potential_filters.get(TASK_DONE)
+    bin_task = potential_filters.get(TASK_BIN)
     idn = potential_filters.get("id")
     uuidn = potential_filters.get("uuid")
     group = potential_filters.get("group")
     tag = potential_filters.get("tag")
-
     if all_tasks:
         """
         When no filter is provided retrieve all tasks from pending area
         """
-        sql = "select uuid,version from workspace ws where ws.area='pending'\
-            and (ws.hide <= date('now') or ws.hide is null) and \
-            ws.version = (select max(innrws.version) from workspace innrws\
-            where ws.uuid=innrws.uuid)"
-        params = {}
+        sql = "insert into temp_uuid_version (temp_uuid, temp_version)\
+               select uuid,version from workspace ws where ws.area=?\
+               and (ws.hide <= date('now') or ws.hide is null) and \
+               ws.version = (select max(innrws.version) from workspace\
+               innrws where ws.uuid=innrws.uuid)"
+        params = (area,)
     elif idn is not None:
         """
         If id(s) is provided extract tasks only based on ID as it is most 
-        specific
+        specific. Works only in pending area
         """
         id_list = idn.split(",")
-        sql = "select uuid,version from workspace ws where ws.area='pending'\
-            and ws.version = (select max(innrws.version) from workspace \
-            innrws where ws.uuid=innrws.uuid)\
-            and ws.id in (%s)" % ",".join("?"*len(id_list))
+        sql = "insert into temp_uuid_version (temp_uuid, temp_version)\
+               select uuid,version from workspace ws where ws.area='pending'\
+               and ws.version = (select max(innrws.version) from\
+               workspace innrws where ws.uuid=innrws.uuid)\
+               and ws.id in (%s)" % ",".join("?"*len(id_list))
         params = tuple(id_list)
     elif uuidn is not None:
+        """
+        If uuid(s) is provided extract tasks only based on UUID as it is most 
+        specific. Works only in completed or bin area
+        """        
         uuid_list = uuidn.split(",")
-        sql = "select uuid,version from workspace ws where ws.area in\
-            ('completed','bin')\
-            and ws.version = (select max(innrws.version) from workspace \
-            innrws where ws.uuid=innrws.uuid)\
-            and ws.uuid in (%s)" % ",".join("?"*len(uuid_list))
-        params = tuple(uuid_list)
+        sql = "insert into temp_uuid_version (temp_uuid, temp_version)\
+               select uuid,version from workspace ws where ws.area =?\
+               and ws.version = (select max(innrws.version) from workspace\
+               innrws where ws.uuid=innrws.uuid)\
+               and ws.uuid in (%s)" % ",".join("?"*len(uuid_list))
+        params = (area,)
+        params = params + tuple(uuid_list)
     else:
         """
-        If it is not ID then try to get task list from combination of filters
-        provided by user
+        Filter provided is not a ID or UUID, so try to get task list from 
+        combination of other filters provided by user
         """
         if group is not None:
+            """
+            Query to get a list of uuid and version for matchiing groups
+            from all 3 areas
+            """
             #print("for group")
             sql_grp = "select uuid,version from workspace ws\
-                       where ws.groups like ?\
-                       and ws.area='pending'"
+                       where ws.groups like ? and ws.version=\
+                       (select max(innrws.version) from workspace innrws\
+                       where innrws.uuid=ws.uuid)"
             params = (group+"%",)
-            sql_list.append(sql_grp)
+            sql_list.append(sql_grp)   
         if tag is not None:
+            """
+            Query to get a list of uuid and version for matchiing tags
+            from all 3 areas
+            """            
             #print("for tag")
             tag_list = tag.split(",")
-            sql_tag = "select uuid,version from workspace_tags tg\
+            sql_tag = "select distinct uuid,version from workspace_tags tg\
                        where tg.tags \
-                       in (%s) and tg.uuid in\
-                       (select innrws.uuid from workspace\
-                       innrws where innrws.area='pending')"\
+                       in (%s) and tg.version =\
+                       (select max(innrws.version) from workspace\
+                       innrws where innrws.uuid=tg.uuid)"\
                 % ",".join("?"*len(tag_list))
             params = params + tuple(tag_list)
             sql_list.append(sql_tag)
-        if overdue_task is not None:
-            #print("for overdue")
-            sql_overdue = "select uuid,version from workspace ws where \
-                           ws.due<date('now') and area='pending'\
-                           and (ws.hide <= date('now') or ws.hide is null)"
-            sql_list.append(sql_overdue)
-        if today_task is not None:
-            #print("for today")
-            sql_today = "select uuid,version from workspace ws where \
-                         ws.due=date('now') and area='pending'\
-                         and (ws.hide <= date('now') or ws.hide is null)"
-            sql_list.append(sql_today)
-        elif hidden_task is not None:
-            #print("for hidden")
-            sql_hidden = "select uuid,version from workspace ws where \
-                          ws.area='pending' and\
-                          (ws.hide>date('now') and  ws.hide is not null)"
-            sql_list.append(sql_hidden)
+
+        """
+        Look for modifiers that work in the pending area
+        """  
+        if (overdue_task is not None or today_task is not None and
+                hidden_task is not None):
+            if overdue_task is not None:
+                #print("for overdue")
+                sql_overdue = "select uuid,version from workspace ws where\
+                               ws.due<date('now') and area='pending'\
+                               and (ws.hide <= date('now') or\
+                               ws.hide is null) and ws.version=\
+                               (select max(innrws.version) from\
+                               workspace innrws where innrws.uuid=ws.uuid)"
+                sql_list.append(sql_overdue)
+            if today_task is not None:
+                #print("for today")
+                sql_today = "select uuid,version from workspace ws where \
+                            ws.due=date('now') and area='pending'\
+                            and (ws.hide <= date('now') or ws.hide is null)\
+                            and ws.version=(select max(innrws.version) from\
+                            workspace innrws where innrws.uuid=ws.uuid)"                                
+                sql_list.append(sql_today)
+            if hidden_task is not None:
+                #print("for hidden")
+                sql_hidden = "select uuid,version from workspace ws where \
+                              ws.area='pending' and\
+                              (ws.hide>date('now') and  ws.hide is not null)\
+                              and ws.version=(select max(innrws.version)\
+                              from workspace innrws\
+                              where innrws.uuid=ws.uuid)"                                
+                sql_list.append(sql_hidden)
         elif done_task is not None:
+            """
+            If none of the pending area modifiers are given look for other 
+            modifiers. Preference is given to DONE over BIN and they are 
+            mutually exclusive
+            """
+            # Get all completed tasks
             #print("for done")
-            sql_done = "select uuid,version from workspace ws where \
-                        ws.area='completed'"
+            sql_done = "select distinct uuid,version from workspace ws where\
+                        ws.area='completed' and ws.version >\
+                       (select max(innrws.version) from workspace\
+                       innrws where innrws.area <>'completed' and\
+                       innrws.uuid=ws.uuid)"
             sql_list.append(sql_done)
-                  
-        if not sql_list:
-            #No valid filters provided
+        elif bin_task is not None:
+            # Get all tasks in the bin
+            #print("for bin")
+            sql_done = "select distinct uuid,version from workspace ws\
+                        where ws.area='bin' and ws.version >\
+                        (select max(innrws.version) from workspace\
+                        innrws where innrws.area <>'bin' and\
+                        innrws.uuid=ws.uuid)"
+            sql_list.append(sql_done)
+        # If no modifiers provided then default to tasks in pending area
+        else:
+            sql_all = "select distinct uuid,version from workspace ws\
+                        where ws.area='pending' and ws.id<>'-'\
+                        and ws.version =\
+                        (select max(innrws.version) from workspace\
+                        innrws where innrws.area =ws.area and\
+                        innrws.uuid=ws.uuid and ws.id<>'-')"
+            sql_list.append(sql_all)
+        if sql_list is None:
             return None
-        sql = " union ".join(sql_list)
-        sql = "select uuid, version from (%s) unionws\
-               where unionws.version =\
+        sql = " intersect ".join(sql_list)
+        sql = "insert into temp_uuid_version (temp_uuid, temp_version)\
+               select uuid, version\
+               from (%s) unionws where unionws.version =\
                (select max(verws.version) from workspace verws where\
                unionws.uuid=verws.uuid)" % sql
-
-    #print(sql)
+    sql_retreive = "select temp_uuid, temp_version from\
+                        temp_uuid_version"
     try:
-        #Tuple of rows, UUID,Version
-        results = cur.execute(sql, params).fetchall() 
+        cur.execute("delete from temp_uuid_version")
+        cur.execute(sql, params)
+        #Tuple of rows, UUID,Version        
+        results = cur.execute(sql_retreive).fetchall() 
     except sqlite3.ProgrammingError as e:
         click.echo(str(e))
-    return results
+        return None
+    else:
+        CONN.commit()
+        return results
 
 def get_task_new_version(task_uuid):
     cur = CONN.cursor()
@@ -1017,4 +1124,19 @@ def retrieve_sql():
                              primary key(uuid, tags, version)
                          )
                          """
-    return [workspace_sql, workspace_tags_sql]
+    ws_uuid_ver__area_idx_sql = """
+                                CREATE UNIQUE INDEX "ws_uuid_ver__area_idx" 
+                                ON "workspace" (
+                                "uuid"	ASC,
+                                "version"	DESC,
+                                "area"	DESC
+                                )
+                                """
+    temp_uuid_version_sql = """
+                        CREATE TABLE "temp_uuid_version" (
+                        "temp_uuid"	TEXT,
+                        "temp_version"	INTEGER
+                        )
+                        """
+    return [workspace_sql, workspace_tags_sql, ws_uuid_ver__area_idx_sql,
+            temp_uuid_table]
