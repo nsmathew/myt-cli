@@ -16,7 +16,8 @@ from myt import empty
 
 runner = CliRunner()
 def test_add_1():
-    result = runner.invoke(add, ['-de','Test task1','-gr','ABC.XYZ','-tg','qwerty,asdfgh,zxcvb'])
+    result = runner.invoke(add, ['-de','Test task1','-gr','ABC.XYZ','-tg',
+                           'qwerty,asdfgh,zxcvb'])
     assert result.exit_code == 0
     assert "Added/Updated Task ID:" in result.output
     assert "Desc:Test task1" in result.output
@@ -25,7 +26,6 @@ def test_add_1():
     temp = result.output.replace("\n"," ")
     create_task = temp.split(" ")[3]
     create_task = runner.invoke(delete, ['id:'+str(create_task)])
-
 
 def test_add_2():
     result = runner.invoke(add, ['-de','Test task2','-du','2020-12-25'])
@@ -38,7 +38,8 @@ def test_add_2():
     create_task = runner.invoke(delete, ['id:'+str(create_task)])
 
 def test_add_3():
-    result = runner.invoke(add, ['-de','Test task3','-du','2020-12-25','-hi','2020-12-21'])
+    result = runner.invoke(add, ['-de','Test task3','-du','2020-12-25','-hi',
+                           '2020-12-21'])
     assert result.exit_code == 0
     assert "Added/Updated Task ID:" in result.output
     assert "Desc:Test task3" in result.output
@@ -49,7 +50,8 @@ def test_add_3():
     create_task = runner.invoke(delete, ['id:'+str(create_task)])
 
 def test_add_4():
-    result = runner.invoke(add, ['-de','Test task4','-du','2020-12-25','-hi','-4'])
+    result = runner.invoke(add, ['-de','Test task4','-du','2020-12-25','-hi',
+                           '-4'])
     assert result.exit_code == 0
     assert "Added/Updated Task ID:" in result.output
     assert "Desc:Test task4" in result.output
@@ -61,12 +63,14 @@ def test_add_4():
 
 @pytest.fixture
 def create_task():
-    result = runner.invoke(add, ['-de','Test task5','-du','2020-12-25', '-gr', 'GRPL1.GRPL2', '-tg', 'tag1,tag2,tag3'])
+    result = runner.invoke(add, ['-de','Test task5','-du','2020-12-25', '-gr',
+                           'GRPL1.GRPL2', '-tg', 'tag1,tag2,tag3'])
     temp = result.output.replace("\n"," ")
     return temp.split(" ")[3]
 
 def test_modify_1(create_task):
-    result = runner.invoke(modify, ['id:'+str(create_task),'-de','Test task5.1'])
+    result = runner.invoke(modify, ['id:'+str(create_task),'-de',
+                           'Test task5.1'])
     assert result.exit_code == 0
     assert "Added/Updated Task ID:" in result.output
     assert "Desc:Test task5.1" in result.output
@@ -121,7 +125,8 @@ def test_modify_7(create_task):
     runner.invoke(delete, ['id:'+str(create_task)])
 
 def test_modify_8(create_task):
-    result = runner.invoke(modify, ['id:'+str(create_task),'-du','clr','-gr','GRPL1.GRPL2_1'])
+    result = runner.invoke(modify, ['id:'+str(create_task),'-du','clr','-gr',
+                           'GRPL1.GRPL2_1'])
     assert result.exit_code == 0
     assert "Added/Updated Task ID:" in result.output
     assert "Due:None" in result.output
@@ -129,7 +134,8 @@ def test_modify_8(create_task):
     runner.invoke(delete, ['id:'+str(create_task)])
 
 def test_modify_9(create_task):
-    result = runner.invoke(modify, ['id:'+str(create_task),'-gr','clr','-tg', '-tag1,-tag6,tag8,tag9'])
+    result = runner.invoke(modify, ['id:'+str(create_task),'-gr','clr','-tg',
+                           '-tag1,-tag6,tag8,tag9'])
     assert result.exit_code == 0
     assert "Added/Updated Task ID:" in result.output
     assert "Group:None" in result.output
@@ -140,13 +146,13 @@ def test_modify_10(create_task):
     result = runner.invoke(modify, ['id:'+str(create_task),'-tg','clr'])
     assert result.exit_code == 0
     assert "Added/Updated Task ID:" in result.output
-    assert "Tags:None" in result.output
+    assert "Tags:-" in result.output
     runner.invoke(delete, ['id:'+str(create_task)])
-
 
 @pytest.fixture
 def create_task2():
-    result = runner.invoke(add, ['-de','Test task8','-du','2020-12-25', '-gr', 'GRPL1.GRPL2', '-tg', 'tag1,tag2,tag3'])
+    result = runner.invoke(add, ['-de','Test task8','-du','2020-12-25', '-gr',
+                           'GRPL1.GRPL2', '-tg', 'tag1,tag2,tag3'])
     temp = result.output.replace("\n"," ")
     return temp.split(" ")[3]
 
@@ -175,10 +181,23 @@ def test_revert_1(create_task2):
     assert "Sts:TO_DO" in result.output
     runner.invoke(delete, ['id:'+str(new_id)])
 
+def test_revert_2(create_task2):
+    result = runner.invoke(start, ['id:'+str(create_task2)])
+    result = runner.invoke(done, ['id:'+str(create_task2)])    
+    temp = result.output.replace("\n"," ")
+    uuid = temp.split(" ")[3]
+    result = runner.invoke(revert, ['DONE','uuid:'+str(uuid)])
+    temp = result.output.replace("\n"," ")
+    new_id = temp.split(" ")[3]
+    assert result.exit_code == 0
+    assert "Added/Updated Task ID:" in result.output
+    assert "Sts:TO_DO" in result.output
+    runner.invoke(delete, ['id:'+str(new_id)])
+
 def test_done_1(create_task2):
     result = runner.invoke(done, ['id:'+str(create_task2)])
     assert result.exit_code == 0
-    assert "Added/Updated Task ID:" in result.output
+    assert "Updated Task UUID:" in result.output
     assert "Sts:DONE" in result.output
     runner.invoke(delete, ['DONE','tg:'+'tag1'])
 
@@ -193,7 +212,7 @@ def test_delete_2(create_task2):
     runner.invoke(done, ['id:'+str(create_task2)])
     result = runner.invoke(delete, ['DONE', 'tg:'+'tag1'])
     assert result.exit_code == 0
-    assert "Added/Updated Task ID: -" in result.output
+    assert "Updated Task UUID:" in result.output
 
 def test_empty_1():
     with mock.patch('builtins.input', return_value="yes"):
