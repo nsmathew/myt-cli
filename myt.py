@@ -4,6 +4,7 @@ import sqlite3
 import uuid
 import sys
 from urllib.request import pathname2url
+from pathlib import Path
 import logging
 
 import click
@@ -22,7 +23,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.exc import SQLAlchemyError
 
 #Global
-DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "tasksdb.sqlite3")
+DEFAULT_FOLDER = os.path.join(str(Path.home()), "myt-cli")
+DEFAULT_DB_NAME = "tasksdb.sqlite3"
 CONN = None
 ENGINE = None
 SESSION = None
@@ -117,7 +119,8 @@ def myt():
 def add(filters, desc, due, hide, group, tag, verbose):
     if verbose:
         LOGGER.setLevel(level=logging.DEBUG)    
-    connect_to_tasksdb()
+    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        exit_app(FAILURE)
     if desc is None:
         click.echo("No task information provided. Nothing to do...")
         return SUCCESS
@@ -175,7 +178,8 @@ def modify(filters, desc, due, hide, group, tag, verbose):
         return
     if potential_filters.get("uuid"):
         click.echo("Cannot perform this operation using uuid filters")
-    connect_to_tasksdb(verbose=verbose)
+    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        exit_app(FAILURE)
     if potential_filters.get("all") == "yes":
         prompt = ("No filters given for modifying tasks,"
                   " are you sure? (yes/no)")
@@ -201,7 +205,8 @@ def start(filters, verbose):
     potential_filters = parse_filters(filters)
     if potential_filters.get("uuid"):
         click.echo("Cannot perform this operation using uuid filters")
-    connect_to_tasksdb(verbose)
+    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        exit_app(FAILURE)
     if potential_filters.get("all") == "yes":
         prompt = ("No filters given for starting tasks,"
                   " are you sure? (yes/no)")
@@ -226,7 +231,8 @@ def done(filters, verbose):
     potential_filters = parse_filters(filters)
     if potential_filters.get("uuid"):
         click.echo("Cannot perform this operation using uuid filters")
-    connect_to_tasksdb()
+    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        exit_app(FAILURE)
     if potential_filters.get("all") == "yes":
         prompt = ("No filters given for marking tasks as done,"
                   " are you sure? (yes/no)")
@@ -249,7 +255,8 @@ def revert(filters, verbose):
     if verbose:
         set_versbose_logging()        
     potential_filters = parse_filters(filters)
-    connect_to_tasksdb()
+    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        exit_app(FAILURE)
     if potential_filters.get("all") == "yes":
         prompt = ("No filters given for reverting tasks,"
                   " are you sure? (yes/no)")
@@ -258,8 +265,8 @@ def revert(filters, verbose):
     if potential_filters.get(HL_FILTERS_ONLY) == "yes":
         prompt = ("No detailed filters given for deleting tasks,"
                 " are you sure? (yes/no)")
-    if not yes_no(prompt):
-        exit_app(0)
+        if not yes_no(prompt):
+            exit_app(0)
     ret = revert_task(potential_filters)
     get_and_print_task_count(to_print=True)
     exit_app(ret)
@@ -279,7 +286,8 @@ def stop(filters, verbose):
     potential_filters = parse_filters(filters)
     if potential_filters.get("uuid"):
         click.echo("Cannot perform this operation using uuid filters")
-    connect_to_tasksdb(verbose)
+    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        exit_app(FAILURE)
     if potential_filters.get("all") == "yes":
         prompt = ("No filters given for stopping tasks,"
                   " are you sure? (yes/no)")
@@ -304,7 +312,8 @@ def view(filters, verbose):
     potential_filters = parse_filters(filters)
     if potential_filters.get("uuid"):
         click.echo("Cannot perform this operation using uuid filters")
-    connect_to_tasksdb(verbose=verbose)
+    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        exit_app(FAILURE)
     ret = display_tasks(potential_filters)
     exit_app(ret)
 
@@ -326,7 +335,8 @@ def delete(filters, verbose):
                    " are you sure? (yes/no)")
         if not yes_no(prompt):
             exit_app(0)    
-    connect_to_tasksdb(verbose=verbose)
+    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        exit_app(FAILURE)
     ret = delete_tasks(potential_filters)
     get_and_print_task_count(True)
     exit_app(ret)
@@ -345,31 +355,52 @@ def empty(verbose):
     """
     if verbose:
         set_versbose_logging()        
-    connect_to_tasksdb(verbose=verbose)
+    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        exit_app(FAILURE)
     ret = empty_bin()
     exit_app(ret)
 
-def connect_to_tasksdb(verbose=False,dbpath=DEFAULT_PATH):
+def connect_to_tasksdb(verbose=False):
     global SESSION, ENGINE
-    ENGINE = create_engine("sqlite:///"+DEFAULT_PATH, echo=verbose)
-    LOGGER.debug("Trying to use tasks database at %s" % dbpath)
-    if not os.path.exists(DEFAULT_PATH):
-        click.echo("No tasks database exists, intializing...")
-        Base.metadata.create_all(bind=ENGINE)
-        click.echo("Tasks database initialized...")        
+    full_db_path = os.path.join(DEFAULT_FOLDER,DEFAULT_DB_NAME)
+    ENGINE = create_engine("sqlite:///"+full_db_path, echo=verbose)
+    LOGGER.debug("Trying to use tasks database at {}".format(full_db_path))
     
-    Session = sessionmaker(bind=ENGINE)
-    SESSION = Session()
+    if not os.path.exists(full_db_path):
+        click.echo("No tasks database exists, intializing at {}"
+                    .format(full_db_path))
+        try:
+            Path(DEFAULT_FOLDER).mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            LOGGER.error("Error in creating tasks database")
+            LOGGER.error(str(e))
+            return FAILURE
+        try:
+            Base.metadata.create_all(bind=ENGINE)
+        except SQLAlchemyError as e:
+            LOGGER.error("Error in creating tables")
+            LOGGER.error(str(e))
+            return FAILURE
+        click.echo("Tasks database initialized...")
+    
+    LOGGER.debug("Creating session...")
+    try:
+        Session = sessionmaker(bind=ENGINE)
+        SESSION = Session()
+    except SQLAlchemyError as e:
+        LOGGER.error("Error in creating session")
+        LOGGER.error(str(e))
+        return FAILURE
     global CONN
     try:
-        LOGGER.debug("Using database at %s" % dbpath)
-        dburi = "file:{}?mode=rw".format(pathname2url(dbpath))
+        LOGGER.debug("Using database at {}".format(full_db_path))
+        dburi = "file:{}?mode=rw".format(pathname2url(full_db_path))
         CONN = sqlite3.connect(dburi, uri=True)
     except sqlite3.OperationalError:
         click.echo("No database exists, intializing...")
-        CONN = initialize_tasksdb(dbpath)
+        CONN = initialize_tasksdb(full_db_path)
     #CONN.set_trace_callback(print)
-    return CONN
+    return SUCCESS
 
 def set_versbose_logging():
     LOGGER.setLevel(level=logging.DEBUG)
