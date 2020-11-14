@@ -16,6 +16,7 @@ from rich.console import Console
 from rich.table import Column, Table as RichTable, box
 from rich.style import Style
 from rich.theme import Theme
+from rich.progress import Progress
 from sqlalchemy import create_engine, Column, Integer, String, Table, Index
 from sqlalchemy import ForeignKeyConstraint, tuple_, and_, case, func
 from sqlalchemy import distinct, cast, Date, inspect
@@ -47,8 +48,6 @@ TASK_ALL = "ALL"
 HL_FILTERS_ONLY = "HL_FILTERS_ONLY"
 #To print the number of tasks shown in the filtered view
 CURR_VIEW_CNT = "CURR_VIEW_CNT"
-#Pager Request for task view
-PAGER_REQUEST = "^"
 """
 Domain Values for the application
 """
@@ -411,12 +410,21 @@ def stop(filters, verbose):
 @click.argument("filters",
                 nargs=-1,
                 )
+@click.option("--pager",
+              "-p",
+              is_flag=True,
+              help="Determine if task should be displayed via a pager",
+              )
+@click.option("--top",
+              "-t",
+              help="Display only the top 'x' number of tasks",
+              )              
 @click.option("--verbose",
               "-v",
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def view(filters, verbose):
+def view(filters, verbose, pager, top):
     if verbose:
         set_versbose_logging()        
     potential_filters = parse_filters(filters)
@@ -427,8 +435,8 @@ def view(filters, verbose):
                    " using uuid filters", style="default")
         exit_app(SUCCESS)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
-        exit_app(FAILURE)
-    ret = display_tasks(potential_filters)
+        exit_app(FAILURE)  
+    ret = display_tasks(potential_filters, pager, top)
     exit_app(ret)
 
 @myt.command()
@@ -802,15 +810,15 @@ def parse_filters(filters):
     potential_filters={}
     if filters:
         for fl in filters:
-            if str(fl) == TASK_OVERDUE:
+            if str(fl).upper() == TASK_OVERDUE:
                 potential_filters[TASK_OVERDUE] = "yes"
-            if str(fl) == TASK_TODAY:
+            if str(fl).upper() == TASK_TODAY:
                 potential_filters[TASK_TODAY] ="yes"
-            if str(fl) == TASK_HIDDEN:
+            if str(fl).upper() == TASK_HIDDEN:
                 potential_filters[TASK_HIDDEN] = "yes"
-            if str(fl) == TASK_DONE:
+            if str(fl).upper() == TASK_DONE:
                 potential_filters[TASK_DONE] = "yes"
-            if str(fl) == TASK_BIN:
+            if str(fl).upper() == TASK_BIN:
                 potential_filters[TASK_BIN] = "yes"    
             if str(fl).startswith("id:"):
                 potential_filters["id"] = (str(fl).split(":"))[1]
@@ -822,8 +830,6 @@ def parse_filters(filters):
                 potential_filters["tag"] = (str(fl).split(":"))[1]
             if str(fl).startswith("uuid:"):
                 potential_filters["uuid"] = (str(fl).split(":"))[1]
-            if str(fl) == PAGER_REQUEST:
-                potential_filters[PAGER_REQUEST] = "yes"
     if not potential_filters:
         potential_filters = {TASK_ALL:"yes"}
     #If only High Level Filters provided then set a key to use to warn users
@@ -958,12 +964,13 @@ def modify_task(potential_filters, ws_task_src, tag):
         task = None
     return SUCCESS
 
-def display_tasks(potential_filters):
+def display_tasks(potential_filters, pager=False, top=None):
     uuid_version_results = get_task_uuid_n_ver(potential_filters,
                                                WS_AREA_PENDING)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
         return SUCCESS
+    CONSOLE.print("Preparing view...", style="default")   
     curr_day = datetime.now() 
     try:
         id_xpr = (case([(Workspace.area == WS_AREA_PENDING,Workspace.id),
@@ -1038,59 +1045,62 @@ def display_tasks(potential_filters):
         table.add_column("deleted_date",justify="center")
     else:
         table.add_column("modifed_date",justify="center")
-    
-    for task in task_list:
-        #print(task.diff_to_today())
-        
+    if top is None:
+        top = len(task_list)
+    else:
+        top = int(top)
+    for cnt, task in enumerate(task_list, start=1):
+        if cnt > top:
+            break
         if task.status == TASK_STATUS_DONE:
             table.add_row(
-                          str(task.id_or_uuid),
-                          str(task.description),str(task.priority),
-                          str(task.due_in),str(task.due),str(task.groups),
-                          str(task.tags),str(task.status),
-                          str(task.hide),str(task.version),str(task.created),
-                          style="done")
+                        str(task.id_or_uuid),
+                        str(task.description),str(task.priority),
+                        str(task.due_in),str(task.due),str(task.groups),
+                        str(task.tags),str(task.status),
+                        str(task.hide),str(task.version),str(task.created),
+                        style="done")
         elif task.area == WS_AREA_BIN:
             table.add_row(
-                          str(task.id_or_uuid),
-                          str(task.description),str(task.priority),
-                          str(task.due_in),str(task.due),str(task.groups),
-                          str(task.tags),str(task.status),
-                          str(task.hide),str(task.version),str(task.created),
-                          style="binn")           
+                        str(task.id_or_uuid),
+                        str(task.description),str(task.priority),
+                        str(task.due_in),str(task.due),str(task.groups),
+                        str(task.tags),str(task.status),
+                        str(task.hide),str(task.version),str(task.created),
+                        style="binn")           
         elif task.due_in == TASK_OVERDUE:
             table.add_row(
-                          str(task.id_or_uuid),
-                          str(task.description),str(task.priority),
-                          str(task.due_in),str(task.due),str(task.groups),
-                          str(task.tags),str(task.status),
-                          str(task.hide),str(task.version),str(task.created),
-                          style="overdue")
+                        str(task.id_or_uuid),
+                        str(task.description),str(task.priority),
+                        str(task.due_in),str(task.due),str(task.groups),
+                        str(task.tags),str(task.status),
+                        str(task.hide),str(task.version),str(task.created),
+                        style="overdue")
         elif task.due_in == TASK_TODAY:
             table.add_row(
-                          str(task.id_or_uuid),
-                          str(task.description),str(task.priority),
-                          str(task.due_in),str(task.due),str(task.groups),
-                          str(task.tags),str(task.status),
-                          str(task.hide),str(task.version),str(task.created),
-                          style="today")
+                        str(task.id_or_uuid),
+                        str(task.description),str(task.priority),
+                        str(task.due_in),str(task.due),str(task.groups),
+                        str(task.tags),str(task.status),
+                        str(task.hide),str(task.version),str(task.created),
+                        style="today")
         elif task.status == TASK_STATUS_STARTED:
             table.add_row(
-                          str(task.id_or_uuid),
-                          str(task.description),str(task.priority),
-                          str(task.due_in),str(task.due),str(task.groups),
-                          str(task.tags),str(task.status),
-                          str(task.hide),str(task.version),str(task.created),
-                          style="started")                     
+                        str(task.id_or_uuid),
+                        str(task.description),str(task.priority),
+                        str(task.due_in),str(task.due),str(task.groups),
+                        str(task.tags),str(task.status),
+                        str(task.hide),str(task.version),str(task.created),
+                        style="started")                     
         else:
             table.add_row(
-                          str(task.id_or_uuid),
-                          str(task.description),str(task.priority),
-                          str(task.due_in),str(task.due),str(task.groups),
-                          str(task.tags),str(task.status),
-                          str(task.hide),str(task.version),str(task.created),
-                          style="default")
-    if potential_filters.get(PAGER_REQUEST):
+                        str(task.id_or_uuid),
+                        str(task.description),str(task.priority),
+                        str(task.due_in),str(task.due),str(task.groups),
+                        str(task.tags),str(task.status),
+                        str(task.hide),str(task.version),str(task.created),
+                        style="default")
+    if pager:
         with CONSOLE.pager(styles=True):
             CONSOLE.print(table)
     else:
@@ -1538,10 +1548,6 @@ def reflect_object_n_print(src_object,to_print=False):
 def add_task_and_tags(ws_task_src, ws_tags_list=None):
     LOGGER.debug("Incoming values for task:\n{}"
                   .format(reflect_object_n_print(ws_task_src,to_print=False)))
-    #LOGGER.debug("Incoming values Desc-{} Due-{} Hide-{} Group-{} Tag-{} "
-    #             "Task_UUID-{} Task_ID-{} Event ID-{} status-{} area-{}"
-    #             .format(desc, due, hide, group, tag,task_uuid, task_id,
-    #             event_id,status,area))
     ws_task = Workspace()
     if ws_task_src.id is None:
         ws_task.id = derive_task_id()
