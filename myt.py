@@ -15,55 +15,126 @@ from dateutil.parser import parse
 from rich.console import Console
 from rich.table import Column, Table as RichTable, box
 from rich.style import Style
-from sqlalchemy import create_engine, Column, Integer, String, Table
+from rich.theme import Theme
+from sqlalchemy import create_engine, Column, Integer, String, Table, Index
 from sqlalchemy import ForeignKeyConstraint, tuple_, and_, case, func
-from sqlalchemy import distinct
+from sqlalchemy import distinct, cast, Date, inspect
 from sqlalchemy.orm import relationship, sessionmaker, make_transient
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.hybrid import hybrid_property
 
-#Global
+#Global - START
+#SQL Connection Related
 DEFAULT_FOLDER = os.path.join(str(Path.home()), "myt-cli")
 DEFAULT_DB_NAME = "tasksdb.sqlite3"
-CONN = None
+CONN = None  # Legacy
 ENGINE = None
 SESSION = None
+#Return Statuses
 SUCCESS = 0
 FAILURE = 1
-TASK_TODO = "TO_DO"
-TASK_STARTED = "STARTED"
-TASK_DONE = "DONE"
+#Task Search Modifiers
 TASK_OVERDUE = "OVERDUE"
 TASK_TODAY = "TODAY"
 TASK_HIDDEN = "HIDDEN"
 TASK_BIN = "BIN"
+TASK_DONE = "DONE"
+TASK_STARTED = "STARTED"
+#For Search, when no filters are provided or only area filters provided
+TASK_ALL = "ALL"
+#For Search, when no task property filters are provided
+HL_FILTERS_ONLY = "HL_FILTERS_ONLY"
+#To print the number of tasks shown in the filtered view
+CURR_VIEW_CNT = "CURR_VIEW_CNT"
+#Pager Request for task view
+PAGER_REQUEST = "^"
+"""
+Domain Values for the application
+"""
+#Task Status Domain
+TASK_STATUS_TODO = "TO_DO"
+TASK_STATUS_STARTED = "STARTED"
+TASK_STATUS_DONE = "DONE"
+#Task Area Domain
 WS_AREA_PENDING = "pending"
 WS_AREA_COMPLETED = "completed"
 WS_AREA_BIN = "bin"
-HL_FILTERS_ONLY = "HL_FILTERS_ONLY"
+#Task Priority Domain
+PRIORITY_HIGH = ["High", "H", "h"]
+PRIORITY_MEDIUM = ["Medium", "M", "m"]
+PRIORITY_LOW = ["Low", "L", "l"]
+PRIORITY_NORMAL = ["Normal", "N", "n"]
+#Logger Config
 lFormat = ("**-**|%(levelname)s|%(filename)s|%(lineno)d|%(funcName)s "
            "- %(message)s")
 logging.basicConfig(format=lFormat, level=logging.ERROR)
 LOGGER = logging.getLogger()
+#Rich Formatting Config
+#Styles
+myt_theme = Theme({
+    "default" : "white",
+    "today" : "dark_orange",
+    "overdue" : "red",
+    "started" : "green",
+    "done" : "grey46",
+    "binn" : "grey46",
+    "info" : "yellow",
+    "summary_info" : "bold yellow",
+    "repr.none" : "italic magenta"
+}, inherit=False)
+CONSOLE = Console(theme=myt_theme)
+#Printable attributes
+PRINT_ATTR = ["description","priority","due","hide","groups","tags","status"]
 
 Base = declarative_base()
 class Workspace(Base):
+    """
+    ORM for the 'workspace' table which holds all primary information
+    for the tasks.
+        Primary Key: uuid, version
+        Indexes: idx_ws_due(due)
+    """
     __tablename__ = "workspace"
     uuid = Column(String, primary_key=True)
     version = Column(Integer, primary_key=True)
     id = Column(Integer)
     description = Column(String)
+    priority = Column(String)    
     status = Column(String)
     due = Column(String)
     hide = Column(String)
-    done = Column(String)
     area = Column(String)
     created = Column(String)
-    modified = Column(String)
     groups = Column(String)
     event_id = Column(String)
+    #To get due date difference to today
+    @hybrid_property
+    def due_diff_today(self):
+        curr_date = datetime.now().date()
+        return datetime.strptime(self.due,"%Y-%m-%d").date() - curr_date
+    @due_diff_today.expression
+    def due_diff_today(cls):
+        curr_date = datetime.now().date().strftime("%Y-%m-%d")
+        date_diff = func.julianday(cls.due) - func.julianday(curr_date)
+        """
+        For some reason cast as Integer forces an addition in the sql
+        when trying to concatenate with a string. Forcing as string causes
+        the expression to be returned as a literal string rather than the 
+        calculation. Hence using substr and instr instead.
+        """
+        return func.substr(date_diff, 1, func.instr(date_diff,".")-1)
+
+Index("idx_ws_due", Workspace.due)
 
 class WorkspaceTags(Base):
+    """
+    ORM for the 'workspace_tags' table which holds all the tags for each task.
+    Every tags is stored as a row.
+        Primary Key: uuid, version, tag
+        Foreign Key: uuid->workspace.uuid, version->workspace.version
+        Indexes: idx_ws_tg_uuid_ver(uuid, version)
+    """    
     __tablename__ = "workspace_tags"
     uuid = Column(String, primary_key=True)
     tags = Column(String, primary_key=True)
@@ -72,17 +143,21 @@ class WorkspaceTags(Base):
         ForeignKeyConstraint(["uuid", "version"],
                     ["workspace.uuid", "workspace.version"]),{}
     )
+Index("idx_ws_tg_uuid_ver", WorkspaceTags.uuid, WorkspaceTags.version)
+#Global - END
 
-class TempUUIDVersion(Base):
-    __tablename__ = "temp_uuid_version"
-    rowid = Column(Integer, primary_key=True)
-    temp_uuid = Column(String)
-    temp_version = Column(Integer)
-
+#Start Commands Config
 @click.group()
 def myt():
+    """
+    myt - my tASK MANAGER
+    
+    An application to manage your tasks through the command line using
+    simple options.
+    """
     pass
 
+#Add
 @myt.command()
 @click.argument("filters",nargs=-1)
 @click.option("--desc", 
@@ -90,6 +165,11 @@ def myt():
               type=str,
               help="Short description of task",
               )
+@click.option("--priority", 
+              "-pr",
+              type=str,
+              help="Priority for Task -H, M, L or leave empty for Normal",
+              )              
 @click.option("--due",
               "-du",
               type=str,
@@ -103,33 +183,40 @@ def myt():
 @click.option("--group",
               "-gr",
               type=str,
-              help="Hierachical grouping for tasks using '.'.",
+              help="Hierachical grouping for tasks using '.'",
               )
 @click.option("--tag",
               "-tg",
               type=str,
-              help="Tags for the task.",
+              help="Comma separated tags for the task",
               )
 @click.option("--verbose",
               "-v",
               is_flag=True,
-              help="Enable Verbose Logging.",
+              help="Enable verbose Logging.",
               )
               
-def add(filters, desc, due, hide, group, tag, verbose):
+def add(filters, desc, priority, due, hide, group, tag, verbose):
+    """
+    Add a task, provide details using the various options available.
+    Task gets added with a TO_DO status. If the task has a 'hide' date it
+    will not be visible with the 'myt view' command until the 'hide' date.
+    Use 'myt view HIDDEN' to view.
+    """
     if verbose:
         LOGGER.setLevel(level=logging.DEBUG)    
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
     if desc is None:
-        click.echo("No task information provided. Nothing to do...")
+        CONSOLE.print("No task information provided. Nothing to do...",
+                       style="default")
         return SUCCESS
     else:
-        ws_task = Workspace(description=desc, due=due, hide=hide, 
-                            groups=group)
+        ws_task = Workspace(description=desc, priority=priority, 
+                            due=due, hide=hide, groups=group)
         ws_tags_list = generate_tags(tag)
         ret, uuid, version = add_task_and_tags(ws_task, ws_tags_list)
-        get_and_print_task_count(to_print=True)
+        get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
         exit_app(ret)
 
 @myt.command()
@@ -141,6 +228,11 @@ def add(filters, desc, due, hide, group, tag, verbose):
               type=str,
               help="Short description of task",
               )
+@click.option("--priority", 
+              "-pr",
+              type=str,
+              help="Priority for Task -H, M, L or leave empty for Normal",
+              )                 
 @click.option("--due",
               "-du",
               type=str,
@@ -154,40 +246,55 @@ def add(filters, desc, due, hide, group, tag, verbose):
 @click.option("--group",
               "-gr",
               type=str,
-              help="Hierachical grouping for tasks using '.'.",
+              help="Hierachical grouping for tasks using '.'",
               )
 @click.option("--tag",
               "-tg",
               type=str,
-              help="Tags for the task.",
+              help="Comma separated tags for the task",
               )
 @click.option("--verbose",
               "-v",
               is_flag=True,
-              help="Enable Verbose Logging.",
+              help="Enable verbose Logging.",
               )           
-def modify(filters, desc, due, hide, group, tag, verbose):
+def modify(filters, desc, priority, due, hide, group, tag, verbose):
+    """
+    Modify task details. Specify 1 or more filters and provide the details to
+    be modified using the options. FILTERS can take various forms, some 
+    examples are given below. Format is 'field:value'.
+
+    id:2 - Filter task id =1 and apply modification
+    
+    tg:bills,finance - Filter on tasks tagged as bills or finance and modify
+
+    id and tags can take comma separated values
+    group takes only a single value
+    """
     if verbose:
         set_versbose_logging()        
     potential_filters = parse_filters(filters)
     LOGGER.debug("Values for update: desc - {} due - {} hide - {} group - {}"
                  " tag - {}".format(desc, due, hide, group, tag))
-    if (desc is None and due is None and hide is None and group is None 
-            and tag is None):
-        click.echo("No modification values provided. Nothing to do...")
+    if (desc is None and priority is None and due is None and hide is None 
+            and group is None and tag is None):
+        CONSOLE.print("No modification values provided. Nothing to do...",
+                      style="default")
         return
     if potential_filters.get("uuid"):
-        click.echo("Cannot perform this operation using uuid filters")
+        CONSOLE.print("Cannot perform this operation using uuid filters",
+                    style="default")
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if potential_filters.get("all") == "yes":
+    if potential_filters.get(TASK_ALL) == "yes":
         prompt = ("No filters given for modifying tasks,"
                   " are you sure? (yes/no)")
         if not yes_no(prompt):
             exit_app(0)
-    ws_task = Workspace(description=desc, due=due, hide=hide, groups=group)
+    ws_task = Workspace(description=desc, priority=priority, 
+                        due=due, hide=hide, groups=group)
     ret = modify_task(potential_filters, ws_task, tag)
-    get_and_print_task_count(to_print=True)
+    get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
     exit_app(ret)
 
 @myt.command()
@@ -197,23 +304,24 @@ def modify(filters, desc, due, hide, group, tag, verbose):
 @click.option("--verbose",
               "-v",
               is_flag=True,
-              help="Enable Verbose Logging.",
+              help="Enable verbose Logging.",
               )                
 def start(filters, verbose):
     if verbose:
         set_versbose_logging()        
     potential_filters = parse_filters(filters)
     if potential_filters.get("uuid"):
-        click.echo("Cannot perform this operation using uuid filters")
+        CONSOLE.print("Cannot perform this operation using uuid filters",
+                       style="default")
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if potential_filters.get("all") == "yes":
+    if potential_filters.get(TASK_ALL) == "yes":
         prompt = ("No filters given for starting tasks,"
                   " are you sure? (yes/no)")
         if not yes_no(prompt):
             exit_app(0)
     ret = start_task(potential_filters)
-    get_and_print_task_count(to_print=True)
+    get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
     exit_app(ret)
 
 @myt.command()
@@ -223,23 +331,24 @@ def start(filters, verbose):
 @click.option("--verbose",
               "-v",
               is_flag=True,
-              help="Enable Verbose Logging.",
+              help="Enable verbose Logging.",
               )
 def done(filters, verbose):
     if verbose:
         set_versbose_logging()        
     potential_filters = parse_filters(filters)
     if potential_filters.get("uuid"):
-        click.echo("Cannot perform this operation using uuid filters")
+        CONSOLE.print("Cannot perform this operation using uuid filters",
+                       style="default")
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if potential_filters.get("all") == "yes":
+    if potential_filters.get(TASK_ALL) == "yes":
         prompt = ("No filters given for marking tasks as done,"
                   " are you sure? (yes/no)")
         if not yes_no(prompt):
             exit_app(0)
     ret = complete_task(potential_filters)
-    get_and_print_task_count(to_print=True)
+    get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
     exit_app(ret)
 
 @myt.command()
@@ -249,7 +358,7 @@ def done(filters, verbose):
 @click.option("--verbose",
               "-v",
               is_flag=True,
-              help="Enable Verbose Logging.",
+              help="Enable verbose Logging.",
               )
 def revert(filters, verbose):
     if verbose:
@@ -257,7 +366,7 @@ def revert(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if potential_filters.get("all") == "yes":
+    if potential_filters.get(TASK_ALL) == "yes":
         prompt = ("No filters given for reverting tasks,"
                   " are you sure? (yes/no)")
         if not yes_no(prompt):
@@ -268,7 +377,7 @@ def revert(filters, verbose):
         if not yes_no(prompt):
             exit_app(0)
     ret = revert_task(potential_filters)
-    get_and_print_task_count(to_print=True)
+    get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
     exit_app(ret)
 
 @myt.command()
@@ -278,23 +387,24 @@ def revert(filters, verbose):
 @click.option("--verbose",
               "-v",
               is_flag=True,
-              help="Enable Verbose Logging.",
+              help="Enable verbose Logging.",
               )
 def stop(filters, verbose):
     if verbose:
         set_versbose_logging()        
     potential_filters = parse_filters(filters)
     if potential_filters.get("uuid"):
-        click.echo("Cannot perform this operation using uuid filters")
+        CONSOLE.print("Cannot perform this operation using uuid filters",
+                       style="default")
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if potential_filters.get("all") == "yes":
+    if potential_filters.get(TASK_ALL) == "yes":
         prompt = ("No filters given for stopping tasks,"
                   " are you sure? (yes/no)")
         if not yes_no(prompt):
             exit_app(0)
     ret = stop_task(potential_filters)
-    get_and_print_task_count(to_print=True)
+    get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
     exit_app(ret)
 
 @myt.command()
@@ -304,14 +414,18 @@ def stop(filters, verbose):
 @click.option("--verbose",
               "-v",
               is_flag=True,
-              help="Enable Verbose Logging.",
+              help="Enable verbose Logging.",
               )
 def view(filters, verbose):
     if verbose:
         set_versbose_logging()        
     potential_filters = parse_filters(filters)
-    if potential_filters.get("uuid"):
-        click.echo("Cannot perform this operation using uuid filters")
+    if (potential_filters.get("uuid") 
+            and not  potential_filters.get(TASK_DONE)
+            and not potential_filters.get(TASK_BIN)):
+        CONSOLE.print("Cannot perform this operation against pending tasks"
+                   " using uuid filters", style="default")
+        exit_app(SUCCESS)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
     ret = display_tasks(potential_filters)
@@ -324,7 +438,7 @@ def view(filters, verbose):
 @click.option("--verbose",
               "-v",
               is_flag=True,
-              help="Enable Verbose Logging.",
+              help="Enable verbose Logging.",
               )
 def delete(filters, verbose):
     if verbose:
@@ -338,14 +452,14 @@ def delete(filters, verbose):
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
     ret = delete_tasks(potential_filters)
-    get_and_print_task_count(True)
+    get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
     exit_app(ret)
 
 @myt.command()
 @click.option("--verbose",
               "-v",
               is_flag=True,
-              help="Enable Verbose Logging.",
+              help="Enable verbose Logging.",
               )
 def empty(verbose):
     """
@@ -367,8 +481,8 @@ def connect_to_tasksdb(verbose=False):
     LOGGER.debug("Trying to use tasks database at {}".format(full_db_path))
     
     if not os.path.exists(full_db_path):
-        click.echo("No tasks database exists, intializing at {}"
-                    .format(full_db_path))
+        CONSOLE.print("No tasks database exists, intializing at {}"
+                    .format(full_db_path), style="default")
         try:
             Path(DEFAULT_FOLDER).mkdir(parents=True, exist_ok=True)
         except OSError as e:
@@ -381,7 +495,7 @@ def connect_to_tasksdb(verbose=False):
             LOGGER.error("Error in creating tables")
             LOGGER.error(str(e))
             return FAILURE
-        click.echo("Tasks database initialized...")
+        CONSOLE.print("Tasks database initialized...", style="default")
     
     LOGGER.debug("Creating session...")
     try:
@@ -397,7 +511,7 @@ def connect_to_tasksdb(verbose=False):
         dburi = "file:{}?mode=rw".format(pathname2url(full_db_path))
         CONN = sqlite3.connect(dburi, uri=True)
     except sqlite3.OperationalError:
-        click.echo("No database exists, intializing...")
+        CONSOLE.print("No database exists, intializing...", style="default")
         CONN = initialize_tasksdb(full_db_path)
     #CONN.set_trace_callback(print)
     return SUCCESS
@@ -537,27 +651,30 @@ def empty_bin():
                             .filter(Workspace.uuid.in_(uuid_list))
                             .delete(synchronize_session=False))
         except SQLAlchemyError as e:
-            LOGGER.debug(str(e))
+            LOGGER.error(str(e))
             return FAILURE
         SESSION.commit()
-        click.echo("Bin emptied!")
+        with CONSOLE.capture() as capture:
+            CONSOLE.print("Bin emptied!", style="info")
+        click.echo(capture.get(), nl=False)
         return SUCCESS
     else:
-        click.echo("Bin is already empty, nothing to do")
+        CONSOLE.print("Bin is already empty, nothing to do", style="default")
         return SUCCESS
 
 def delete_tasks(potential_filters):
     uuid_version_results = get_task_uuid_n_ver(potential_filters,
                                                WS_AREA_PENDING)
     if not uuid_version_results:
-        click.echo("No applicable tasks to delete")
+        with CONSOLE.capture() as capture:
+            CONSOLE.print("No applicable tasks to delete", style="default")
+        click.echo(capture.get(), nl=False)
         return SUCCESS
     task_list = get_tasks(uuid_version_results)
     for task in task_list:
         LOGGER.debug("Working on Task UUID {} and Task ID {}"
                       .format(task.uuid, task.id))        
         make_transient(task)
-        task._oid = None
         ws_task = Workspace()
         ws_task = task
         ws_task.id = "-"
@@ -571,25 +688,26 @@ def delete_tasks(potential_filters):
             LOGGER.error("Error encountered in adding task version, stopping")
             return ret
         task = []
+        CONSOLE.print("{} task(s) deleted".format(str(len(task_list))),
+                       style="info")
     return SUCCESS
 
 def revert_task(potential_filters):
     uuid_version_results = get_task_uuid_n_ver(potential_filters,
                                                WS_AREA_PENDING)
     if not uuid_version_results:
-        click.echo("No applicable tasks to revert")
+        CONSOLE.print("No applicable tasks to revert", style="default")
         return SUCCESS
     task_list = get_tasks(uuid_version_results)
     for task in task_list:
         LOGGER.debug("Working on Task UUID {} and Task ID {}"
                     .format(task.uuid, task.id))
         make_transient(task)
-        task._oid = None
         ws_task = Workspace()
         ws_task = task
         ws_task.id = None
         ws_task.area = WS_AREA_PENDING
-        ws_task.status = TASK_TODO
+        ws_task.status = TASK_STATUS_TODO
         ws_task.event_id = None
         LOGGER.debug("Reverting Task UUID {} and Task ID {}"\
                       .format(ws_task.uuid,ws_task.id))
@@ -605,7 +723,7 @@ def start_task(potential_filters,):
     uuid_version_results = get_task_uuid_n_ver(potential_filters,
                                                WS_AREA_PENDING)
     if not uuid_version_results:
-        click.echo("No applicable tasks to start")
+        CONSOLE.print("No applicable tasks to start", style="default")
         return SUCCESS
     task_list = get_tasks(uuid_version_results)
     LOGGER.debug("Total Tasks to Start {}".format(len(task_list)))
@@ -613,10 +731,9 @@ def start_task(potential_filters,):
         LOGGER.debug("Working on Task UUID {} and Task ID {}"
                       .format(task.uuid, task.id))
         make_transient(task)
-        task._oid = None
         ws_task = Workspace()
         ws_task = task
-        ws_task.status = TASK_STARTED
+        ws_task.status = TASK_STATUS_STARTED
         ws_task.event_id = None
         LOGGER.debug("Starting Task UUID {} and Task ID {}"\
                       .format(ws_task.uuid,ws_task.id))
@@ -632,7 +749,7 @@ def stop_task(potential_filters):
     uuid_version_results = get_task_uuid_n_ver(potential_filters,
                                                WS_AREA_PENDING)
     if not uuid_version_results:
-        click.echo("No applicable tasks to stop")
+        CONSOLE.print("No applicable tasks to stop", style="default")
         return SUCCESS
     task_list = get_tasks(uuid_version_results)
     LOGGER.debug("Total Tasks to Stop {}".format(len(task_list)))
@@ -640,10 +757,9 @@ def stop_task(potential_filters):
         LOGGER.debug("Working on Task UUID {} and Task ID {}"
                       .format(task.uuid, task.id))
         make_transient(task)
-        task._oid = None
         ws_task = Workspace()
         ws_task = task
-        ws_task.status = TASK_TODO
+        ws_task.status = TASK_STATUS_TODO
         ws_task.event_id = None
         LOGGER.debug("Stopping Task UUID {} and Task ID {}"\
                       .format(ws_task.uuid,ws_task.id))
@@ -659,19 +775,18 @@ def complete_task(potential_filters):
     uuid_version_results = get_task_uuid_n_ver(potential_filters,
                                                WS_AREA_PENDING)
     if not uuid_version_results:
-        click.echo("No applicable tasks to complete")
+        CONSOLE.print("No applicable tasks to complete", style="default")
         return
     task_list = get_tasks(uuid_version_results)
     for task in task_list:
         LOGGER.debug("Working on Task UUID {} and Task ID {}"
                       .format(task.uuid, task.id))        
         make_transient(task)
-        task._oid = None
         ws_task = Workspace()
         ws_task = task
         ws_task.id = "-"
         ws_task.area = WS_AREA_COMPLETED
-        ws_task.status = TASK_DONE
+        ws_task.status = TASK_STATUS_DONE
         ws_task.event_id = None
         LOGGER.debug("Completing Task UUID {} and Task ID {}"\
                       .format(ws_task.uuid,ws_task.id))
@@ -699,16 +814,21 @@ def parse_filters(filters):
                 potential_filters[TASK_BIN] = "yes"    
             if str(fl).startswith("id:"):
                 potential_filters["id"] = (str(fl).split(":"))[1]
+            if str(fl).startswith("pr:") or str(fl).startswith("priority:"):
+                potential_filters["priority"] = (str(fl).split(":"))[1]                
             if str(fl).startswith("gr:") or str(fl).startswith("group:"):
                 potential_filters["group"] = (str(fl).split(":"))[1]
             if str(fl).startswith("tg:") or str(fl).startswith("tag:"):
                 potential_filters["tag"] = (str(fl).split(":"))[1]
             if str(fl).startswith("uuid:"):
                 potential_filters["uuid"] = (str(fl).split(":"))[1]
-    else:
-        potential_filters = {"all":"yes"}
-    #If only High LEvel Filters provided then set a key to use to warn users
-    if ("id" not in potential_filters and "group" not in potential_filters
+            if str(fl) == PAGER_REQUEST:
+                potential_filters[PAGER_REQUEST] = "yes"
+    if not potential_filters:
+        potential_filters = {TASK_ALL:"yes"}
+    #If only High Level Filters provided then set a key to use to warn users
+    if ("id" not in potential_filters and "priority" not in potential_filters 
+            and "group" not in potential_filters
             and "tag" not in potential_filters
             and "uuid" not in potential_filters):
         potential_filters[HL_FILTERS_ONLY] = "yes"
@@ -731,6 +851,7 @@ def get_tasks(uuid_version=None):
         ws_task_list = (SESSION.query(Workspace)
                         .filter(tuple_(Workspace.uuid,Workspace.version).
                         in_(uuid_version)).all())
+        SESSION.expunge_all()
     except SQLAlchemyError as e:
         LOGGER.error(str(e))
         return None
@@ -742,6 +863,7 @@ def get_tags(task_uuid, task_version):
         ws_tags_list = (SESSION.query(WorkspaceTags)
                     .filter(and_(WorkspaceTags.uuid == task_uuid,
                     WorkspaceTags.version == task_version)).all())
+        SESSION.expunge_all()
     except SQLAlchemyError as e:
         LOGGER.error(str(e))
         return None
@@ -752,7 +874,7 @@ def modify_task(potential_filters, ws_task_src, tag):
     uuid_version_results = get_task_uuid_n_ver(potential_filters,
                                                WS_AREA_PENDING)    
     if not uuid_version_results:
-        click.echo("No applicable tasks to modify")
+        CONSOLE.print("No applicable tasks to modify", style=-"default")
         return
     event_id = datetime.now().strftime("%Y%m-%d%H-%M%S-") +\
                 str(uuid.uuid4())
@@ -765,8 +887,8 @@ def modify_task(potential_filters, ws_task_src, tag):
         If user requested update or clearing then overwrite
         If user has not requested update for field then retain original value
         """ 
+        SESSION.expunge
         make_transient(task)
-        task._oid = None
         ws_task = Workspace()
         ws_task = task        
         LOGGER.debug("Modification for Task UUID {} and Task ID {}"\
@@ -775,6 +897,11 @@ def modify_task(potential_filters, ws_task_src, tag):
             ws_task.description = None      
         elif ws_task_src.description is not None:
             ws_task.description = ws_task_src.description
+
+        if ws_task_src.priority == "clr":
+            ws_task.priority = PRIORITY_NORMAL
+        elif ws_task_src.priority is not None:
+            ws_task.priority = ws_task_src.priority
 
         if ws_task_src.due == "clr":
             ws_task.due = None
@@ -828,13 +955,14 @@ def modify_task(potential_filters, ws_task_src, tag):
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
             return ret
+        task = None
     return SUCCESS
 
 def display_tasks(potential_filters):
     uuid_version_results = get_task_uuid_n_ver(potential_filters,
                                                WS_AREA_PENDING)
     if not uuid_version_results:
-        click.echo("No tasks to display...")
+        CONSOLE.print("No tasks to display...", style="default")
         return SUCCESS
     curr_day = datetime.now() 
     try:
@@ -853,24 +981,27 @@ def display_tasks(potential_filters):
                             .subquery())
         #Sub Query for Tags - END
         #Additional information
-        addl_info_xpr = (case([(Workspace.area == WS_AREA_COMPLETED,TASK_DONE),
-                               (Workspace.area == WS_AREA_BIN, TASK_BIN),
+        addl_info_xpr = (case([(Workspace.area == WS_AREA_COMPLETED,'-'),
+                               (Workspace.area == WS_AREA_BIN, '-'),
                                (Workspace.due < curr_day.date(), TASK_OVERDUE),
-                               (Workspace.due == curr_day.date(),TASK_TODAY),],
-                               else_ = "-").label("addl_info"))
-
+                               (Workspace.due == curr_day.date(),TASK_TODAY),
+                               (Workspace.due != None, 
+                                    Workspace.due_diff_today + " DAY(S)"),],
+                               else_ = "-"))
         #Main query
         task_list = (SESSION.query(id_xpr.label("id_or_uuid"), 
                                 Workspace.version.label("version"),
                                 Workspace.description.label("description"),
+                                Workspace.priority.label("priority"),
                                 Workspace.status.label("status"),
                                 due_xpr.label("due"),
                                 hide_xpr.label("hide"),
                                 groups_xpr.label("groups"),
                                 case([(tags_subqr.c.tags == None, "-"),],
                                     else_ = tags_subqr.c.tags).label("tags"),
-                                addl_info_xpr.label("addl_info"),
-                                Workspace.area.label("area"))
+                                addl_info_xpr.label("due_in"),
+                                Workspace.area.label("area"),
+                                Workspace.created.label("created"))
                             .outerjoin(tags_subqr, 
                                         and_(Workspace.uuid == 
                                                 tags_subqr.c.uuid,
@@ -885,14 +1016,6 @@ def display_tasks(potential_filters):
     
     LOGGER.debug("Task Details for display:\n{}".format(task_list))
     
-    #Styles and config for the 'rich' tables rows
-    default = Style(color="white")
-    today = Style(color="dark_orange")
-    overdue = Style(color="red")
-    started = Style(color="green")
-    done = Style(color="grey46")
-    binn = Style(color="grey46")
-    console = Console()
     table = RichTable(box=box.HORIZONTALS, show_header=True, 
                       header_style="bold")
     #Column and Header Names
@@ -901,77 +1024,95 @@ def display_tasks(potential_filters):
     else:
         table.add_column("uuid",justify="center")
     table.add_column("description",justify="left")
+    table.add_column("priority",justify="center")
+    table.add_column("due in",justify="center")
     table.add_column("due on",justify="center")
     table.add_column("groups",justify="center")
     table.add_column("tags",justify="center")
     table.add_column("status",justify="center")
-    table.add_column("addl_info",justify="center")
     table.add_column("hide until",justify="center")
     table.add_column("version"  ,justify="center")
+    if(task_list[0].area == WS_AREA_COMPLETED):
+        table.add_column("done_date",justify="center")
+    elif(task_list[0].area == WS_AREA_BIN):
+        table.add_column("deleted_date",justify="center")
+    else:
+        table.add_column("modifed_date",justify="center")
     
     for task in task_list:
-        if task.status == TASK_DONE:
+        #print(task.diff_to_today())
+        
+        if task.status == TASK_STATUS_DONE:
             table.add_row(
                           str(task.id_or_uuid),
-                          str(task.description),str(task.due),
-                          str(task.groups),str(task.tags),
-                          str(task.status),str(task.addl_info),
-                          str(task.hide),str(task.version),
-                          style=done)
-        elif task.addl_info == TASK_BIN:
+                          str(task.description),str(task.priority),
+                          str(task.due_in),str(task.due),str(task.groups),
+                          str(task.tags),str(task.status),
+                          str(task.hide),str(task.version),str(task.created),
+                          style="done")
+        elif task.area == WS_AREA_BIN:
             table.add_row(
                           str(task.id_or_uuid),
-                          str(task.description),str(task.due),
-                          str(task.groups),str(task.tags),
-                          str(task.status),str(task.addl_info),
-                          str(task.hide),str(task.version),
-                          style=binn)           
-        elif task.addl_info == TASK_OVERDUE:
+                          str(task.description),str(task.priority),
+                          str(task.due_in),str(task.due),str(task.groups),
+                          str(task.tags),str(task.status),
+                          str(task.hide),str(task.version),str(task.created),
+                          style="binn")           
+        elif task.due_in == TASK_OVERDUE:
             table.add_row(
                           str(task.id_or_uuid),
-                          str(task.description),str(task.due),
-                          str(task.groups),str(task.tags),
-                          str(task.status),str(task.addl_info),
-                          str(task.hide),str(task.version),
-                          style=overdue)
-        elif task.addl_info == TASK_TODAY:
+                          str(task.description),str(task.priority),
+                          str(task.due_in),str(task.due),str(task.groups),
+                          str(task.tags),str(task.status),
+                          str(task.hide),str(task.version),str(task.created),
+                          style="overdue")
+        elif task.due_in == TASK_TODAY:
             table.add_row(
                           str(task.id_or_uuid),
-                          str(task.description),str(task.due),
-                          str(task.groups),str(task.tags),
-                          str(task.status),str(task.addl_info),
-                          str(task.hide),str(task.version),
-                          style=today)
-        elif task.status == TASK_STARTED:
+                          str(task.description),str(task.priority),
+                          str(task.due_in),str(task.due),str(task.groups),
+                          str(task.tags),str(task.status),
+                          str(task.hide),str(task.version),str(task.created),
+                          style="today")
+        elif task.status == TASK_STATUS_STARTED:
             table.add_row(
                           str(task.id_or_uuid),
-                          str(task.description),str(task.due),
-                          str(task.groups),str(task.tags),
-                          str(task.status),str(task.addl_info),
-                          str(task.hide),str(task.version),
-                          style=started)                     
+                          str(task.description),str(task.priority),
+                          str(task.due_in),str(task.due),str(task.groups),
+                          str(task.tags),str(task.status),
+                          str(task.hide),str(task.version),str(task.created),
+                          style="started")                     
         else:
             table.add_row(
                           str(task.id_or_uuid),
-                          str(task.description),str(task.due),
-                          str(task.groups),str(task.tags),
-                          str(task.status),str(task.addl_info),
-                          str(task.hide),str(task.version),
-                          style=default)
-    console.print(table)
-    get_and_print_task_count(to_print=True)
+                          str(task.description),str(task.priority),
+                          str(task.due_in),str(task.due),str(task.groups),
+                          str(task.tags),str(task.status),
+                          str(task.hide),str(task.version),str(task.created),
+                          style="default")
+    if potential_filters.get(PAGER_REQUEST):
+        with CONSOLE.pager(styles=True):
+            CONSOLE.print(table)
+    else:
+        CONSOLE.print(table)
+
+    print_dict = {}
+    print_dict[CURR_VIEW_CNT] = len(task_list)
+    print_dict[WS_AREA_PENDING] = "yes"
     if potential_filters.get(TASK_DONE) == "yes":
-        get_and_print_task_count(True, WS_AREA_COMPLETED)
+        print_dict[WS_AREA_COMPLETED] = "yes"
     elif potential_filters.get(TASK_BIN) == "yes":
-        get_and_print_task_count(True, WS_AREA_BIN)
+        print_dict[WS_AREA_COMPLETED] = "yes"
+    get_and_print_task_count(print_dict, to_print=True)
     return SUCCESS
 
-def get_and_print_task_count(to_print=True, area=WS_AREA_PENDING):
+def get_and_print_task_count(print_dict, to_print=True):
     curr_day = datetime.now()
     try:
         #Get count of pending tasks split by HIDDEN and VISIBLE
         #Build case expression separately to simplify readability
-        visib_xpr = case([(and_(Workspace.hide>curr_day.date(), Workspace.hide!=None), 
+        visib_xpr = case([(and_(Workspace.hide>curr_day.date(), 
+                                Workspace.hide!=None), 
                          "HIDDEN"),], else_ = "VISIBLE").label("VISIBILITY")
         #Inner query to match max version for a UUID
         max_ver_xpr = (SESSION.query(Workspace.uuid,
@@ -1020,7 +1161,7 @@ def get_and_print_task_count(to_print=True, area=WS_AREA_PENDING):
                              Workspace.version > max_ver3_xpr.c.maxver))
                      .all())
     except SQLAlchemyError as e:
-        LOGGER.debug(str(e))
+        LOGGER.error(str(e))
     
     LOGGER.debug("Pending: {}".format(results_pend))
     LOGGER.debug("Completed: {}".format(results_compl))
@@ -1047,13 +1188,23 @@ def get_and_print_task_count(to_print=True, area=WS_AREA_PENDING):
     if results_bin:
         binn = (results_bin[0])[0]
     if to_print:
-        if area == WS_AREA_COMPLETED:
-            click.echo("Total Completed tasks: {}".format(compl))
-        if area == WS_AREA_BIN:
-            click.echo("Total tasks in Bin: {}".format(binn))
-        if area == WS_AREA_PENDING:
-            click.echo("Total Pending Tasks: {}, of which Hidden: {}"
-                       .format(total,hid))
+        if print_dict.get(CURR_VIEW_CNT):
+            CONSOLE.print(("Displayed Tasks: [magenta]{}[/magenta]"
+                           .format(print_dict.get(CURR_VIEW_CNT))),
+                           style="summary_info")
+        if print_dict.get(WS_AREA_COMPLETED) == "yes":
+            CONSOLE.print("Total Completed tasks: "
+                          "[magenta]{}[/magenta]"
+                           .format(compl), style="summary_info")
+        if print_dict.get(WS_AREA_BIN) == "yes":
+            CONSOLE.print("Total tasks in Bin: [magenta]{}[/magenta]"
+                           .format(binn),style="summary_info")
+        if print_dict.get(WS_AREA_PENDING) == "yes":
+           CONSOLE.print("Total Pending Tasks: "
+                         "[magenta]{}[/magenta], "
+                         "of which Hidden: "
+                         "[magenta]{}[/magenta]"
+                       .format(total,hid), style="summary_info")
     return ([total,hid,])
 
 def derive_task_id():
@@ -1124,7 +1275,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
     cur = CONN.cursor()
     params = ()
     sql_list = []
-    all_tasks = potential_filters.get("all")
+    all_tasks = potential_filters.get(TASK_ALL)
     overdue_task = potential_filters.get(TASK_OVERDUE)
     today_task = potential_filters.get(TASK_TODAY)
     hidden_task = potential_filters.get(TASK_HIDDEN)
@@ -1138,8 +1289,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
         """
         When no filter is provided retrieve all tasks from pending area
         """
-        sql = "insert into temp_uuid_version (temp_uuid, temp_version)\
-               select uuid,version from workspace ws where ws.area=?\
+        sql = "select uuid,version from workspace ws where ws.area=?\
                and (ws.hide <= date('now') or ws.hide is null) and \
                ws.version = (select max(innrws.version) from workspace\
                innrws where ws.uuid=innrws.uuid)"
@@ -1153,8 +1303,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
         specific. Works only in pending area
         """
         id_list = idn.split(",")
-        sql = "insert into temp_uuid_version (temp_uuid, temp_version)\
-               select uuid,version from workspace ws where ws.area='pending'\
+        sql = "select uuid,version from workspace ws where ws.area='pending'\
                and ws.version = (select max(innrws.version) from\
                workspace innrws where ws.uuid=innrws.uuid)\
                and ws.id in (%s)" % ",".join("?"*len(id_list))
@@ -1305,24 +1454,17 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
         if sql_list is None:
             return None
         sql = " intersect ".join(sql_list)
-        sql = ("insert into temp_uuid_version (temp_uuid, temp_version) "
-               "select uuid, version "
+        sql = ("select uuid, version "
                "from (%s) unionws where unionws.version = "
                "(select max(verws.version) from workspace verws where "
                "unionws.uuid=verws.uuid)") % sql
     LOGGER.debug("Final SQL for getting task UUID/Version:\n{}"
                      .format(sql))
-    sql_retreive = ("select temp_uuid, temp_version from "
-                    "temp_uuid_version")
     try:
-        LOGGER.debug(("Deleting from temp_uuid_version and inserting"
-                      "the filter results of task UUIDs and versions"))
-        cur.execute("delete from temp_uuid_version")
-        cur.execute(sql, params)
-        #Tuple of rows, UUID,Version        
-        results = cur.execute(sql_retreive).fetchall() 
+        #Tuple of rows, UUID,Version 
+        results = cur.execute(sql, params).fetchall()       
     except sqlite3.ProgrammingError as e:
-        click.echo(str(e))
+        LOGGER.error(str(e))
         return None
     else:
         CONN.commit()
@@ -1346,7 +1488,56 @@ def get_task_new_version(task_uuid):
         LOGGER.debug("Task does not exist, so returning 1")
         return "1"
 
+def translate_priority(priority):
+    """
+    Determine if the priority requested is valid and accordingly return
+    the right domain value as below. If the priority is not a valid priority
+    it defaults to Nomral priority.
+
+        High - H, h
+        Medium - M, m
+        Low - L, l
+        Normal - N, n (This is the default)
+
+    Parameters:
+        priority(str): Priority to translate
+    
+    Returns:
+        priority(str): Priority as a valid domain value
+    """
+    if priority in PRIORITY_HIGH:
+        return PRIORITY_HIGH[0]
+    if priority in PRIORITY_MEDIUM:
+        return PRIORITY_MEDIUM[0]
+    if priority in PRIORITY_LOW:
+        return PRIORITY_LOW[0] 
+    if priority in PRIORITY_NORMAL:
+        return PRIORITY_NORMAL[0]
+    else:
+        return PRIORITY_NORMAL[0]
+
+def reflect_object_n_print(src_object,to_print=False):
+    inst = inspect(src_object)
+    attr_names = [c_attr.key for c_attr in inst.mapper.column_attrs]
+    if to_print:
+        for attr in attr_names:
+            if attr in PRINT_ATTR:
+                with CONSOLE.capture() as capture:
+                    CONSOLE.print("{} : [magenta]{}[/magenta]"
+                                .format(attr,getattr(src_object,attr)),
+                                style="info")
+                click.echo(capture.get(), nl=False)
+        return
+    else:
+        ret_str=""
+        for attr in attr_names:
+            ret_str = ret_str + ("{0} : {1}\n"
+                                 .format(attr,getattr(src_object,attr)))
+        return ret_str
+
 def add_task_and_tags(ws_task_src, ws_tags_list=None):
+    LOGGER.debug("Incoming values for task:\n{}"
+                  .format(reflect_object_n_print(ws_task_src,to_print=False)))
     #LOGGER.debug("Incoming values Desc-{} Due-{} Hide-{} Group-{} Tag-{} "
     #             "Task_UUID-{} Task_ID-{} Event ID-{} status-{} area-{}"
     #             .format(desc, due, hide, group, tag,task_uuid, task_id,
@@ -1377,9 +1568,9 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None):
             str(uuid.uuid4())
     else:
         ws_task.event_id = ws_task_src.event_id
+    ws_task.priority = translate_priority(ws_task_src.priority)
     now = datetime.now().strftime("%Y-%m-%d")
     ws_task.created = now
-    ws_task.modified = now
     ws_task.version = get_task_new_version(str(ws_task.uuid))
     ws_task.description = ws_task_src.description
     ws_task.groups = ws_task_src.groups
@@ -1388,10 +1579,12 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None):
     else:
         ws_task.area = ws_task_src.area
     if not ws_task_src.status:
-        ws_task.status = TASK_TODO
+        ws_task.status = TASK_STATUS_TODO
     else:
-        ws_task.status = ws_task_src.status   
+        ws_task.status = ws_task_src.status
     try:
+        LOGGER.debug("Adding values for task:\n{}"
+                      .format(reflect_object_n_print(ws_task,to_print=False)))        
         # Insert the latest task version
         SESSION.add(ws_task)
         tags_str = "" #Only for display
@@ -1402,6 +1595,8 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None):
                 ws_tags.uuid = ws_task.uuid
                 ws_tags.version = ws_task.version
                 ws_tags.tags = t.tags
+                LOGGER.debug("Adding values for tags:")
+                LOGGER.debug(reflect_object_n_print(ws_tags,to_print=False))
                 SESSION.add(ws_tags)
                 tags_str =tags_str + "," +t.tags
         # For all older entries remove the task_id
@@ -1415,15 +1610,33 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None):
 
     SESSION.commit()
     if ws_task.id == '-':
-        click.echo("Updated Task UUID: {}".format(ws_task.uuid))
-    else:        
-        click.echo("Added/Updated Task ID: {}".format(ws_task.id))
+        """
+        Using a context manager to capture output from print and pass
+        it onto click's echo for the pytests to receive the input.
+        This is done only where the output is required for pytest.
+        CONSOLE.print gives a simpler management of coloured printing
+        compared to click's echo.
+        Suppress the newline for echo to ensure double line breaks
+        are not printed, 1 from print and another from echo.
+        """         
+        with CONSOLE.capture() as capture:
+            CONSOLE.print("Updated Task UUID: [magenta]{}[/magenta]"
+                            .format(ws_task.uuid),
+                            style="info")
+        click.echo(capture.get(), nl=False)
+    else:
+        with CONSOLE.capture() as capture:
+            CONSOLE.print("Added/Updated Task ID: [magenta]{}[/magenta]"
+                            .format(ws_task.id),
+                            style="info")
+        click.echo(capture.get(), nl=False)
     if not tags_str:
-        tags_str = "--"
-    click.echo("ID:{} Ver:{} Sts:{} Desc:{} Due:{} Hide:{} Group:{} Tags:{}"
-                .format(ws_task.id, ws_task.version, ws_task.status, 
-                        ws_task.description, ws_task.due, ws_task.hide, 
-                        ws_task.groups, tags_str[1:]))
+        tags_str = "-None"
+    reflect_object_n_print(ws_task, to_print=True)
+    with CONSOLE.capture() as capture:
+        CONSOLE.print("tags : [magenta]{}[/magenta]"
+                       .format(tags_str[1:]),style="info")
+    click.echo(capture.get(), nl=False)
     LOGGER.debug("Added/Updated Task UUID: {} and Area: {}"
                  .format(ws_task.uuid,ws_task.area))
     return SUCCESS, ws_task.uuid, ws_task.version
@@ -1452,10 +1665,10 @@ def initialize_tasksdb(dbpath):
             cur.execute(sql)
         cur.close()
     except sqlite3.OperationalError as e:
-        click.echo("Error! Database creation could be partial.")
-        click.echo(str(e))
+        LOGGER.error("Error! Database creation could be partial.")
+        LOGGER.error(str(e))
         exit_app(1)
-    click.echo("Database initialized...")
+    CONSOLE.print("Database initialized...", style="default")
     return CONN
 
 def retrieve_sql():
@@ -1467,9 +1680,7 @@ def retrieve_sql():
                         status text,
                         due text,
                         hide text,
-                        done text,
                         area text,
-                        modified text,
                         groups text,
                         version integer,
                         event_id text,
@@ -1491,11 +1702,5 @@ def retrieve_sql():
                                 "area"	DESC
                                 )
                                 """
-    temp_uuid_version_sql = """
-                        CREATE TABLE "temp_uuid_version" (
-                        "temp_uuid"	TEXT,
-                        "temp_version"	INTEGER
-                        )
-                        """
     return [workspace_sql, workspace_tags_sql, ws_uuid_ver__area_idx_sql,
             temp_uuid_table]
