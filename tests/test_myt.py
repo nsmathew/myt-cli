@@ -13,6 +13,7 @@ from myt import stop
 from myt import revert
 from myt import done
 from myt import admin
+from myt import view
 
 runner = CliRunner()
 def test_add_1():
@@ -311,7 +312,72 @@ def test_delete_2(create_task2):
     assert result.exit_code == 0
     assert "Updated Task UUID:" in result.output
 
+@pytest.fixture
+def create_task3():
+    duedt = (date.today() + relativedelta(days=+5)).strftime("%Y-%m-%d")
+    result = runner.invoke(add, ['-de','Test task9','-du',duedt, '-gr',
+                                 'GRPL1AB.GRPL2CD', '-tg', 
+                                 'view1,view2,view3,view4'])
+    temp = result.output.replace("\n"," ")
+    return temp.split(" ")[3]
+
+@pytest.fixture
+def delete_all():
+    with mock.patch('builtins.input', return_value="yes"):
+        result = runner.invoke(delete)
+        result = runner.invoke(delete, ['hidden'])
+
+def test_view1(delete_all, create_task3):
+    duedt = date.today().strftime("%Y-%m-%d")
+    runner.invoke(add, ['-de', 'Test task 9.1', '-tg','view1', '-du', duedt])
+    result = runner.invoke(view, ['TODAY'])
+    assert result.exit_code == 0
+    assert "Displayed Tasks: 1" in result.output
+    assert "Total Pending Tasks: 2, of which Hidden: 0" in result.output
+    runner.invoke(delete, ['tg:view1'])
+
+def test_view2(delete_all, create_task3):
+    duedt = (date.today() + relativedelta(days=-4)).strftime("%Y-%m-%d")
+    runner.invoke(add, ['-de', 'Test task 9.1', '-tg','view2','-du', duedt])
+    result = runner.invoke(view, ['overdue'])
+    assert result.exit_code == 0
+    assert "Displayed Tasks: 1" in result.output
+    assert "Total Pending Tasks: 2, of which Hidden: 0" in result.output
+    runner.invoke(delete, ['tg:view2'])
+
+def test_view3(delete_all, create_task3):
+    duedt = (date.today() + relativedelta(days=+10)).strftime("%Y-%m-%d")
+    hidedt = (date.today() + relativedelta(days=+8)).strftime("%Y-%m-%d")
+    runner.invoke(add, ['-de', 'Test task 9.1', '-tg','view3','-du', 
+                        duedt, '-hi', hidedt])
+    result = runner.invoke(view, ['hidden'])
+    assert result.exit_code == 0
+    assert "Displayed Tasks: 1" in result.output
+    assert "Total Pending Tasks: 2, of which Hidden: 1" in result.output
+    runner.invoke(delete, ['tg:view3'])
+
+def test_view4(delete_all, create_task3):
+    duedt = (date.today() + relativedelta(days=+10)).strftime("%Y-%m-%d")
+    result = runner.invoke(add, ['-de', 'Test task 9.1', '-tg','view4','-du', 
+                        duedt])
+    temp = result.output.replace("\n"," ")
+    idn = temp.split(" ")[3]
+    runner.invoke(start, ['id:' + idn])
+    result = runner.invoke(view, ['started'])
+    assert result.exit_code == 0
+    assert "Displayed Tasks: 1" in result.output
+    assert "Total Pending Tasks: 2, of which Hidden: 0" in result.output
+    runner.invoke(delete, ['tg:view4'])
+
 def test_admin_empty_1():
+    result = runner.invoke(add, ['-de', 'Test task 10.1'])
+    temp = result.output.replace("\n"," ")
+    idn = temp.split(" ")[3]
+    runner.invoke(delete, ['id:' + idn])
+    result = runner.invoke(add, ['-de', 'Test task 10.2'])
+    temp = result.output.replace("\n"," ")
+    idn = temp.split(" ")[3]
+    runner.invoke(delete, ['id:' + idn])
     with mock.patch('builtins.input', return_value="yes"):
         result = runner.invoke(admin, ['--empty'])
         assert "Bin emptied!" in result.output
@@ -321,3 +387,6 @@ def test_admin_reinit_1():
         result = runner.invoke(admin, ['--reinit'])
         assert "Database removed..." in result.output
         assert "Tasks database initialized..." in result.output
+
+
+

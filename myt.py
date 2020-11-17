@@ -835,7 +835,9 @@ def parse_filters(filters):
             if str(fl).upper() == TASK_DONE:
                 potential_filters[TASK_DONE] = "yes"
             if str(fl).upper() == TASK_BIN:
-                potential_filters[TASK_BIN] = "yes"    
+                potential_filters[TASK_BIN] = "yes"
+            if str(fl).upper() == TASK_STARTED:
+                potential_filters[TASK_STARTED] = "yes"            
             if str(fl).startswith("id:"):
                 potential_filters["id"] = (str(fl).split(":"))[1]
             if str(fl).startswith("pr:") or str(fl).startswith("priority:"):
@@ -985,6 +987,7 @@ def display_tasks(potential_filters, pager=False, top=None):
                                                WS_AREA_PENDING)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
+        get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
         return SUCCESS
     CONSOLE.print("Preparing view...", style="default")   
     curr_day = datetime.now() 
@@ -1218,23 +1221,25 @@ def get_and_print_task_count(print_dict, to_print=True):
     if results_bin:
         binn = (results_bin[0])[0]
     if to_print:
-        if print_dict.get(CURR_VIEW_CNT):
-            CONSOLE.print(("Displayed Tasks: [magenta]{}[/magenta]"
-                           .format(print_dict.get(CURR_VIEW_CNT))),
-                           style="info")
-        if print_dict.get(WS_AREA_COMPLETED) == "yes":
-            CONSOLE.print("Total Completed tasks: "
-                          "[magenta]{}[/magenta]"
-                           .format(compl), style="info")
-        if print_dict.get(WS_AREA_BIN) == "yes":
-            CONSOLE.print("Total tasks in Bin: [magenta]{}[/magenta]"
-                           .format(binn),style="info")
-        if print_dict.get(WS_AREA_PENDING) == "yes":
-           CONSOLE.print("Total Pending Tasks: "
-                         "[magenta]{}[/magenta], "
-                         "of which Hidden: "
-                         "[magenta]{}[/magenta]"
-                       .format(total,hid), style="info")
+        with CONSOLE.capture() as capture:
+            if print_dict.get(CURR_VIEW_CNT):
+                CONSOLE.print(("Displayed Tasks: [magenta]{}[/magenta]"
+                            .format(print_dict.get(CURR_VIEW_CNT))),
+                            style="info")
+            if print_dict.get(WS_AREA_COMPLETED) == "yes":
+                CONSOLE.print("Total Completed tasks: "
+                            "[magenta]{}[/magenta]"
+                            .format(compl), style="info")
+            if print_dict.get(WS_AREA_BIN) == "yes":
+                CONSOLE.print("Total tasks in Bin: [magenta]{}[/magenta]"
+                            .format(binn),style="info")
+            if print_dict.get(WS_AREA_PENDING) == "yes":
+                CONSOLE.print("Total Pending Tasks: "
+                            "[magenta]{}[/magenta], "
+                            "of which Hidden: "
+                            "[magenta]{}[/magenta]"
+                        .format(total,hid), style="info")
+        click.echo(capture.get(),nl=False)
     return ([total,hid,])
 
 def derive_task_id():
@@ -1301,14 +1306,14 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
     """
     LOGGER.debug("Incoming Filters: ")
     LOGGER.debug(potential_filters)
-    subquery_list = []
-    subqr = None
+    innrqr_list = []
     all_tasks = potential_filters.get(TASK_ALL)
     overdue_task = potential_filters.get(TASK_OVERDUE)
     today_task = potential_filters.get(TASK_TODAY)
     hidden_task = potential_filters.get(TASK_HIDDEN)
     done_task = potential_filters.get(TASK_DONE)
     bin_task = potential_filters.get(TASK_BIN)
+    started_task = potential_filters.get(TASK_STARTED)
     idn = potential_filters.get("id")
     uuidn = potential_filters.get("uuid")
     group = potential_filters.get("group")
@@ -1382,7 +1387,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
             uuid_list = uuidn.split(",")
             LOGGER.debug("Inside UUID filter with below params")
             LOGGER.debug(uuid_list)
-            subqr_uuid = (SESSION.query(Workspace.uuid, Workspace.version)
+            innrqr_uuid = (SESSION.query(Workspace.uuid, Workspace.version)
                             .join(max_ver_xpr, and_(Workspace.version == 
                                                     max_ver_xpr.c.maxver,
                                                   Workspace.uuid == 
@@ -1391,7 +1396,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                                                             WS_AREA_BIN]), 
                                          Workspace.uuid.
                                                 in_(uuid_list))))
-            subquery_list.append(subqr_uuid)
+            innrqr_list.append(innrqr_uuid)
         else:
             if group is not None:
                 """
@@ -1400,7 +1405,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                 """
                 LOGGER.debug("Inside group filter with below params")
                 LOGGER.debug(group+"%")
-                subqr_groups = (SESSION.query(Workspace.uuid, 
+                innrqr_groups = (SESSION.query(Workspace.uuid, 
                                               Workspace.version)
                                        .join(max_ver_xpr, 
                                              and_(Workspace.version == 
@@ -1408,7 +1413,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                                                   Workspace.uuid == 
                                                     max_ver_xpr.c.uuid))
                                     .filter(Workspace.groups.like(group+"%")))
-                subquery_list.append(subqr_groups)
+                innrqr_list.append(innrqr_groups)
             if tag is not None:
                 """
                 Query to get a list of uuid and version for matchiing tags
@@ -1418,7 +1423,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                 tag_list = tag.split(",")
                 LOGGER.debug("Inside tag filter with below params")
                 LOGGER.debug(tag_list)
-                subqr_tags = (SESSION.query(WorkspaceTags.uuid, 
+                innrqr_tags = (SESSION.query(WorkspaceTags.uuid, 
                                            WorkspaceTags.version)
                                     .join(max_ver_xpr, 
                                           and_(WorkspaceTags.version == 
@@ -1427,17 +1432,18 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                                                     max_ver_xpr.c.uuid))
                                     .filter(WorkspaceTags.tags.
                                                     in_(tag_list)))
-                subquery_list.append(subqr_tags)
+                innrqr_list.append(innrqr_tags)
         """
         Look for modifiers that work in the pending area
         """
-        LOGGER.debug("Status for OVERDUE {}, TODAY {}, HIDDEN {}"
-                     .format(overdue_task, today_task, hidden_task))
+        LOGGER.debug("Status for OVERDUE {}, TODAY {}, HIDDEN {}, STARTED{}"
+                     .format(overdue_task, today_task, hidden_task, 
+                             started_task))
         if (overdue_task is not None or today_task is not None or
-                hidden_task is not None):
+                hidden_task is not None or started_task is not None):
             if overdue_task is not None:
                 LOGGER.debug("Inside overdue filter")
-                subqr_overdue = (SESSION.query(Workspace.uuid, 
+                innrqr_overdue = (SESSION.query(Workspace.uuid, 
                                                 Workspace.version)
                                         .join(max_ver_xpr, 
                                               and_(Workspace.version == 
@@ -1451,10 +1457,10 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                                                             curr_date,
                                                          Workspace.hide == 
                                                             None))))
-                subquery_list.append(subqr_overdue)
+                innrqr_list.append(innrqr_overdue)
             if today_task is not None:
                 LOGGER.debug("Inside today filter")
-                subqr_today = (SESSION.query(Workspace.uuid, 
+                innrqr_today = (SESSION.query(Workspace.uuid, 
                                                 Workspace.version)
                                       .join(max_ver_xpr, 
                                             and_(Workspace.version == 
@@ -1468,10 +1474,10 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                                                             curr_date,
                                                         Workspace.hide == 
                                                             None))))
-                subquery_list.append(subqr_today)
+                innrqr_list.append(innrqr_today)
             if hidden_task is not None:
                 LOGGER.debug("Inside hidden filter")
-                subqr_hidden = (SESSION.query(Workspace.uuid, 
+                innrqr_hidden = (SESSION.query(Workspace.uuid, 
                                                 Workspace.version)
                                         .join(max_ver_xpr, 
                                               and_(Workspace.version == 
@@ -1480,13 +1486,26 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                                                     max_ver_xpr.c.uuid))
                                         .filter(and_(Workspace.area == 
                                                         WS_AREA_PENDING, 
-                                                     Workspace.due == 
-                                                        curr_date, 
                                                      and_(Workspace.hide > 
                                                             curr_date,
                                                          Workspace.hide != 
                                                             None))))
-                subquery_list.append(subqr_hidden)
+                innrqr_list.append(innrqr_hidden)
+            if started_task is not None:
+                LOGGER.debug("Inside started filter")
+                innrqr_started = (SESSION.query(Workspace.uuid, 
+                                                Workspace.version)
+                                        .join(max_ver_xpr, 
+                                              and_(Workspace.version == 
+                                                    max_ver_xpr.c.maxver,
+                                                   Workspace.uuid == 
+                                                    max_ver_xpr.c.uuid))
+                                        .filter(and_(Workspace.area == 
+                                                        WS_AREA_PENDING,
+                                                     Workspace.status ==
+                                                        TASK_STATUS_STARTED
+                                                     )))
+                innrqr_list.append(innrqr_started)
         elif done_task is not None:
             """
             If none of the pending area modifiers are given look for other 
@@ -1501,7 +1520,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                                     .filter(Workspace.area != 
                                                 WS_AREA_COMPLETED)
                                     .group_by(Workspace.uuid).subquery())
-            subqr_done = (SESSION.query(Workspace.uuid, Workspace.version)
+            innrqr_done = (SESSION.query(Workspace.uuid, Workspace.version)
                                     .join(max_ver_xpr2, 
                                           and_(Workspace.uuid == 
                                                     max_ver_xpr2.c.uuid,
@@ -1509,7 +1528,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                                                     max_ver_xpr2.c.maxver))
                                     .filter(Workspace.area == 
                                                 WS_AREA_COMPLETED))
-            subquery_list.append(subqr_done)
+            innrqr_list.append(innrqr_done)
         elif bin_task is not None:
             # Get all tasks in the bin
             LOGGER.debug("Inside bin filter")
@@ -1518,7 +1537,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                                             .label("maxver"))
                                     .filter(Workspace.area != WS_AREA_BIN)
                                     .group_by(Workspace.uuid).subquery())
-            subqr_bin = (SESSION.query(Workspace.uuid, Workspace.version)
+            innrqr_bin = (SESSION.query(Workspace.uuid, Workspace.version)
                                     .join(max_ver_xpr3, 
                                           and_(Workspace.uuid == 
                                                     max_ver_xpr3.c.uuid,
@@ -1526,7 +1545,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                                                     max_ver_xpr3.c.maxver))
                                 .filter(Workspace.area == 
                                                 WS_AREA_BIN))
-            subquery_list.append(subqr_bin)
+            innrqr_list.append(innrqr_bin)
         # If no modifiers provided then default to tasks in pending area
         else:
             LOGGER.debug("Inside default filter")
@@ -1537,7 +1556,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                                                  Workspace.area == 
                                                     WS_AREA_PENDING))
                                     .group_by(Workspace.uuid).subquery())
-            subqr_all = (SESSION.query(Workspace.uuid, Workspace.version)
+            innrqr_all = (SESSION.query(Workspace.uuid, Workspace.version)
                                 .join(max_ver_xpr4, 
                                       and_(Workspace.version == 
                                                 max_ver_xpr4.c.maxver,
@@ -1546,12 +1565,12 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                                 .filter(and_(Workspace.area == 
                                                 WS_AREA_PENDING,
                                              Workspace.id != '-')))
-            subquery_list.append(subqr_all)
-        if subquery_list is None:
+            innrqr_list.append(innrqr_all)
+        if innrqr_list is None:
             return None
     try:
         #Tuple of rows, UUID,Version 
-        results = subquery_list[0].intersect(*subquery_list).all()
+        results = innrqr_list[0].intersect(*innrqr_list).all()
     except (SQLAlchemyError) as e:
         LOGGER.error(str(e))
         return None
@@ -1693,33 +1712,29 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None):
         return FAILURE, None, None
 
     SESSION.commit()
-    if ws_task.id == '-':
-        """
-        Using a context manager to capture output from print and pass
-        it onto click's echo for the pytests to receive the input.
-        This is done only where the output is required for pytest.
-        CONSOLE.print gives a simpler management of coloured printing
-        compared to click's echo.
-        Suppress the newline for echo to ensure double line breaks
-        are not printed, 1 from print and another from echo.
-        """         
-        with CONSOLE.capture() as capture:
-            CONSOLE.print("Updated Task UUID: [magenta]{}[/magenta]"
-                            .format(ws_task.uuid),
-                            style="info")
-        click.echo(capture.get(), nl=False)
-    else:
-        with CONSOLE.capture() as capture:
-            CONSOLE.print("Added/Updated Task ID: [magenta]{}[/magenta]"
-                            .format(ws_task.id),
-                            style="info")
-        click.echo(capture.get(), nl=False)
-    if not tags_str:
-        tags_str = "-None"
-    reflect_object_n_print(ws_task, to_print=True)
     with CONSOLE.capture() as capture:
+        if ws_task.id == '-':
+            """
+            Using a context manager to capture output from print and pass
+            it onto click's echo for the pytests to receive the input.
+            This is done only where the output is required for pytest.
+            CONSOLE.print gives a simpler management of coloured printing
+            compared to click's echo.
+            Suppress the newline for echo to ensure double line breaks
+            are not printed, 1 from print and another from echo.
+            """         
+            CONSOLE.print("Updated Task UUID: [magenta]{}[/magenta]"
+                                .format(ws_task.uuid),
+                                style="info")
+        else:
+            CONSOLE.print("Added/Updated Task ID: [magenta]{}[/magenta]"
+                                .format(ws_task.id),
+                                style="info")
+        if not tags_str:
+            tags_str = "-None"
+        reflect_object_n_print(ws_task, to_print=True)
         CONSOLE.print("tags : [magenta]{}[/magenta]"
-                       .format(tags_str[1:]),style="info")
+                        .format(tags_str[1:]),style="info")
     click.echo(capture.get(), nl=False)
     LOGGER.debug("Added/Updated Task UUID: {} and Area: {}"
                  .format(ws_task.uuid,ws_task.area))
