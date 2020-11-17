@@ -7,6 +7,11 @@ from urllib.request import pathname2url
 from pathlib import Path
 import logging
 
+try:
+    from importlib import metadata
+except ImportError:
+    # Running on pre-3.8 Python; use importlib-metadata package
+    import importlib_metadata as metadata
 import click
 from datetime import date
 from datetime import datetime
@@ -154,6 +159,15 @@ def myt():
     simple options.
     """
     pass
+
+#Version
+@myt.command()
+def version():
+    """
+    Prints the application version number
+    """
+    CONSOLE.print(metadata.version('myt-cli'))
+    exit_app(SUCCESS)
 
 #Add
 @myt.command()
