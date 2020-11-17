@@ -16,10 +16,10 @@ from rich.console import Console
 from rich.table import Column, Table as RichTable, box
 from rich.style import Style
 from rich.theme import Theme
-from rich.progress import Progress
+from rich.prompt import Prompt
 from sqlalchemy import create_engine, Column, Integer, String, Table, Index
 from sqlalchemy import ForeignKeyConstraint, tuple_, and_, case, func
-from sqlalchemy import distinct, cast, Date, inspect
+from sqlalchemy import distinct, cast, Date, inspect, or_
 from sqlalchemy.orm import relationship, sessionmaker, make_transient
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.exc import SQLAlchemyError
@@ -29,9 +29,9 @@ from sqlalchemy.ext.hybrid import hybrid_property
 #SQL Connection Related
 DEFAULT_FOLDER = os.path.join(str(Path.home()), "myt-cli")
 DEFAULT_DB_NAME = "tasksdb.sqlite3"
-CONN = None  # Legacy
 ENGINE = None
 SESSION = None
+Session = None
 #Return Statuses
 SUCCESS = 0
 FAILURE = 1
@@ -79,7 +79,6 @@ myt_theme = Theme({
     "done" : "grey46",
     "binn" : "grey46",
     "info" : "yellow",
-    "summary_info" : "bold yellow",
     "repr.none" : "italic magenta"
 }, inherit=False)
 CONSOLE = Console(theme=myt_theme)
@@ -286,10 +285,9 @@ def modify(filters, desc, priority, due, hide, group, tag, verbose):
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
     if potential_filters.get(TASK_ALL) == "yes":
-        prompt = ("No filters given for modifying tasks,"
-                  " are you sure? (yes/no)")
-        if not yes_no(prompt):
-            exit_app(0)
+        if not confirm_prompt("No filters given for modifying tasks,"
+                              " are you sure?"):
+            exit_app(SUCCESS)
     ws_task = Workspace(description=desc, priority=priority, 
                         due=due, hide=hide, groups=group)
     ret = modify_task(potential_filters, ws_task, tag)
@@ -315,10 +313,9 @@ def start(filters, verbose):
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
     if potential_filters.get(TASK_ALL) == "yes":
-        prompt = ("No filters given for starting tasks,"
-                  " are you sure? (yes/no)")
-        if not yes_no(prompt):
-            exit_app(0)
+        if not confirm_prompt("No filters given for starting tasks,"
+                              " are you sure?"):
+            exit_app(SUCCESS)
     ret = start_task(potential_filters)
     get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
     exit_app(ret)
@@ -342,10 +339,9 @@ def done(filters, verbose):
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
     if potential_filters.get(TASK_ALL) == "yes":
-        prompt = ("No filters given for marking tasks as done,"
-                  " are you sure? (yes/no)")
-        if not yes_no(prompt):
-            exit_app(0)
+        if not confirm_prompt("No filters given for marking tasks as done,"
+                              " are you sure?"):
+            exit_app(SUCCESS)
     ret = complete_task(potential_filters)
     get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
     exit_app(ret)
@@ -365,16 +361,10 @@ def revert(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if potential_filters.get(TASK_ALL) == "yes":
-        prompt = ("No filters given for reverting tasks,"
-                  " are you sure? (yes/no)")
-        if not yes_no(prompt):
-            exit_app(0)
     if potential_filters.get(HL_FILTERS_ONLY) == "yes":
-        prompt = ("No detailed filters given for deleting tasks,"
-                " are you sure? (yes/no)")
-        if not yes_no(prompt):
-            exit_app(0)
+        if not confirm_prompt("No detailed filters given for reverting tasks "
+                              "to TO_DO status, are you sure?"):
+            exit_app(SUCCESS)
     ret = revert_task(potential_filters)
     get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
     exit_app(ret)
@@ -398,10 +388,9 @@ def stop(filters, verbose):
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
     if potential_filters.get(TASK_ALL) == "yes":
-        prompt = ("No filters given for stopping tasks,"
-                  " are you sure? (yes/no)")
-        if not yes_no(prompt):
-            exit_app(0)
+        if not confirm_prompt("No filters given for stopping tasks, "
+                              "are you sure?"):
+            exit_app(SUCCESS)
     ret = stop_task(potential_filters)
     get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
     exit_app(ret)
@@ -453,10 +442,9 @@ def delete(filters, verbose):
         set_versbose_logging()
     potential_filters = parse_filters(filters)
     if potential_filters.get(HL_FILTERS_ONLY) == "yes":
-        prompt = ("No detailed filters given for deleting tasks,"
-                   " are you sure? (yes/no)")
-        if not yes_no(prompt):
-            exit_app(0)    
+        if not confirm_prompt("No detailed filters given for deleting tasks, "
+                              "are you sure?"):
+            exit_app(SUCCESS)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
     ret = delete_tasks(potential_filters)
@@ -464,33 +452,71 @@ def delete(filters, verbose):
     exit_app(ret)
 
 @myt.command()
+@click.option("--empty",
+              is_flag=True,
+              help="Empty the bin area.",
+              )
+@click.option("--vaccum",
+              is_flag=True,
+              help="Apply vaccum operation on database.",
+              )
+@click.option("--reinit",
+              is_flag=True,
+              help="Reinitialize the database.",
+              )
 @click.option("--verbose",
               "-v",
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def empty(verbose):
-    """
-    Empty the bin area. All tasks are deleted permanently.
-    Undo operation does not work here. No filters are accepted
-    by this operation.
-    """
+def admin(verbose, empty, vaccum, reinit):
     if verbose:
-        set_versbose_logging()        
+        set_versbose_logging()
+    if reinit:
+        if not confirm_prompt("This will delete the database including all "
+                              "tasks and create an empty database. "
+                              "Are you sure?"):
+            exit_app(SUCCESS)
+        ret = reinitialize_db(verbose)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    ret = empty_bin()
+    if empty:
+        ret = empty_bin()
+    if vaccum:
+        ret = vaccum_db()
     exit_app(ret)
 
-def connect_to_tasksdb(verbose=False):
-    global SESSION, ENGINE
+def confirm_prompt(prompt_msg):
+    res = Prompt.ask(prompt_msg, choices=["yes","no"], default="no")
+    if res == "no":
+        return False
+    else:
+        return True
+
+def reinitialize_db(verbose):
+    full_db_path = os.path.join(DEFAULT_FOLDER,DEFAULT_DB_NAME)
+    try:
+        if os.path.exists(full_db_path):
+            discard_db_resources()
+            os.remove(full_db_path)
+    except OSError as e:
+        LOGGER.error("Unable to remove database.")
+        LOGGER.error(str(e))
+        return FAILURE
+    with CONSOLE.capture() as capture:
+        CONSOLE.print("Database removed...", style="info")
+    click.echo(capture.get(), nl=False)
+    ret = connect_to_tasksdb(verbose=verbose, legacy=False)
+    return ret
+
+def connect_to_tasksdb(verbose=False, legacy=True):
+    global Session, SESSION, ENGINE
     full_db_path = os.path.join(DEFAULT_FOLDER,DEFAULT_DB_NAME)
     ENGINE = create_engine("sqlite:///"+full_db_path, echo=verbose)
-    LOGGER.debug("Trying to use tasks database at {}".format(full_db_path))
     
     if not os.path.exists(full_db_path):
         CONSOLE.print("No tasks database exists, intializing at {}"
-                    .format(full_db_path), style="default")
+                    .format(full_db_path), style="info")
         try:
             Path(DEFAULT_FOLDER).mkdir(parents=True, exist_ok=True)
         except OSError as e:
@@ -503,7 +529,10 @@ def connect_to_tasksdb(verbose=False):
             LOGGER.error("Error in creating tables")
             LOGGER.error(str(e))
             return FAILURE
-        CONSOLE.print("Tasks database initialized...", style="default")
+        with CONSOLE.capture() as capture:
+            CONSOLE.print("Tasks database initialized...", style="info")
+        click.echo(capture.get(), nl=False)
+    LOGGER.debug("Now using tasks database at {}".format(full_db_path))
     
     LOGGER.debug("Creating session...")
     try:
@@ -513,15 +542,6 @@ def connect_to_tasksdb(verbose=False):
         LOGGER.error("Error in creating session")
         LOGGER.error(str(e))
         return FAILURE
-    global CONN
-    try:
-        LOGGER.debug("Using database at {}".format(full_db_path))
-        dburi = "file:{}?mode=rw".format(pathname2url(full_db_path))
-        CONN = sqlite3.connect(dburi, uri=True)
-    except sqlite3.OperationalError:
-        CONSOLE.print("No database exists, intializing...", style="default")
-        CONN = initialize_tasksdb(full_db_path)
-    #CONN.set_trace_callback(print)
     return SUCCESS
 
 def set_versbose_logging():
@@ -627,24 +647,20 @@ def convert_hide(value, due):
     else:
         return None
 
-def yes_no(prompt):
-    yes = set(["yes","y", "ye"])  
-    choice = input(prompt).lower()
-    if choice in yes:
-        return True
-    else:
-        return False
-
 def empty_bin():
+    """
+    Empty the bin area. All tasks are deleted permanently.
+    Undo operation does not work here. No filters are accepted
+    by this operation.
+    """
     uuid_version_results = get_task_uuid_n_ver({TASK_BIN:"yes"},
                                                      WS_AREA_BIN)
     LOGGER.debug("Got list of UUID and Version for emptying:")
     LOGGER.debug(uuid_version_results)
     if uuid_version_results:
-        prompt = ("Deleting all versions of {} task(s),"
-                  " are your sure (yes/no)"
-                  .format(str(len(uuid_version_results))))
-        if not yes_no(prompt):
+        if not confirm_prompt("Deleting all versions of {} task(s),"
+                              " are your sure?"
+                              .format(str(len(uuid_version_results)))):
             return SUCCESS
         uuid_list = []
         for uuid in uuid_version_results:
@@ -1112,7 +1128,7 @@ def display_tasks(potential_filters, pager=False, top=None):
     if potential_filters.get(TASK_DONE) == "yes":
         print_dict[WS_AREA_COMPLETED] = "yes"
     elif potential_filters.get(TASK_BIN) == "yes":
-        print_dict[WS_AREA_COMPLETED] = "yes"
+        print_dict[WS_AREA_BIN] = "yes"
     get_and_print_task_count(print_dict, to_print=True)
     return SUCCESS
 
@@ -1133,11 +1149,13 @@ def get_and_print_task_count(print_dict, to_print=True):
         results_pend = (SESSION.query(visib_xpr,
                                       func.count(distinct(Workspace.uuid))
                                           .label("CNT"))
-                     .join(max_ver_xpr, Workspace.uuid == max_ver_xpr.c.uuid)
-                     .filter(and_(Workspace.area == WS_AREA_PENDING,
-                             Workspace.version == max_ver_xpr.c.maxver))
-                     .group_by(visib_xpr)
-                     .all())
+                                .join(max_ver_xpr, Workspace.uuid == 
+                                                    max_ver_xpr.c.uuid)
+                                .filter(and_(Workspace.area == WS_AREA_PENDING,
+                                             Workspace.version == 
+                                                max_ver_xpr.c.maxver))
+                                .group_by(visib_xpr)
+                                .all())
 
         #Get count of completed tasks
         #Inner query to match max version for a UUID
@@ -1149,11 +1167,13 @@ def get_and_print_task_count(print_dict, to_print=True):
         #Final Query
         results_compl = (SESSION.query(func.count(distinct(Workspace.uuid))
                                            .label("CNT"))
-                     .join(max_ver2_xpr, 
-                           Workspace.uuid == max_ver2_xpr.c.uuid)
-                     .filter(and_(Workspace.area == WS_AREA_COMPLETED,
-                             Workspace.version > max_ver2_xpr.c.maxver))
-                     .all())
+                                .join(max_ver2_xpr, Workspace.uuid == 
+                                                    max_ver2_xpr.c.uuid)
+                                .filter(and_(Workspace.area == 
+                                                WS_AREA_COMPLETED,
+                                             Workspace.version > 
+                                                max_ver2_xpr.c.maxver))
+                                .all())
  
         #Get count of tasks in bin
         #Inner query to match max version for a UUID
@@ -1165,8 +1185,8 @@ def get_and_print_task_count(print_dict, to_print=True):
         #Final Query
         results_bin = (SESSION.query(func.count(distinct(Workspace.uuid))
                                          .label("CNT"))
-                     .join(max_ver3_xpr, 
-                           Workspace.uuid == max_ver3_xpr.c.uuid)
+                     .join(max_ver3_xpr, Workspace.uuid == 
+                                                    max_ver3_xpr.c.uuid)
                      .filter(and_(Workspace.area == WS_AREA_BIN,
                              Workspace.version > max_ver3_xpr.c.maxver))
                      .all())
@@ -1201,20 +1221,20 @@ def get_and_print_task_count(print_dict, to_print=True):
         if print_dict.get(CURR_VIEW_CNT):
             CONSOLE.print(("Displayed Tasks: [magenta]{}[/magenta]"
                            .format(print_dict.get(CURR_VIEW_CNT))),
-                           style="summary_info")
+                           style="info")
         if print_dict.get(WS_AREA_COMPLETED) == "yes":
             CONSOLE.print("Total Completed tasks: "
                           "[magenta]{}[/magenta]"
-                           .format(compl), style="summary_info")
+                           .format(compl), style="info")
         if print_dict.get(WS_AREA_BIN) == "yes":
             CONSOLE.print("Total tasks in Bin: [magenta]{}[/magenta]"
-                           .format(binn),style="summary_info")
+                           .format(binn),style="info")
         if print_dict.get(WS_AREA_PENDING) == "yes":
            CONSOLE.print("Total Pending Tasks: "
                          "[magenta]{}[/magenta], "
                          "of which Hidden: "
                          "[magenta]{}[/magenta]"
-                       .format(total,hid), style="summary_info")
+                       .format(total,hid), style="info")
     return ([total,hid,])
 
 def derive_task_id():
@@ -1237,7 +1257,6 @@ def derive_task_id():
     if not available_list:  #If no tasks exist/no available intermediate seq
         return id_list[-1] + 1
     return available_list[0]
-
 
 def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
     """
@@ -1282,9 +1301,8 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
     """
     LOGGER.debug("Incoming Filters: ")
     LOGGER.debug(potential_filters)
-    cur = CONN.cursor()
-    params = ()
-    sql_list = []
+    subquery_list = []
+    subqr = None
     all_tasks = potential_filters.get(TASK_ALL)
     overdue_task = potential_filters.get(TASK_OVERDUE)
     today_task = potential_filters.get(TASK_TODAY)
@@ -1295,32 +1313,60 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
     uuidn = potential_filters.get("uuid")
     group = potential_filters.get("group")
     tag = potential_filters.get("tag")
+    curr_date = datetime.now().date()
+    #Inner query to match max version for a UUID
+    max_ver_xpr = (SESSION.query(Workspace.uuid,
+                                    func.max(Workspace.version)
+                                        .label("maxver"))
+                          .group_by(Workspace.uuid).subquery())
     if all_tasks:
         """
         When no filter is provided retrieve all tasks from pending area
         """
-        sql = "select uuid,version from workspace ws where ws.area=?\
-               and (ws.hide <= date('now') or ws.hide is null) and \
-               ws.version = (select max(innrws.version) from workspace\
-               innrws where ws.uuid=innrws.uuid)"
-        params = (area,)
-        LOGGER.debug("Inside all_tasks filter with below params and SQL")
-        LOGGER.debug(params)
-        LOGGER.debug("SQL: \n{}".format(sql))
+        LOGGER.debug("Inside all_tasks filter with below params")
+        LOGGER.debug(area)
+        try:
+            results  = (SESSION.query(Workspace.uuid, Workspace.version)
+                               .join(max_ver_xpr, and_(Workspace.version == 
+                                                    max_ver_xpr.c.maxver,
+                                                  Workspace.uuid == 
+                                                    max_ver_xpr.c.uuid))
+                               .filter(and_(Workspace.area == area, 
+                                            or_(Workspace.hide <= curr_date, 
+                                                Workspace.hide == None)))
+                               .all())
+        except (SQLAlchemyError) as e:
+            LOGGER.error(str(e))
+            return None
+        else:
+            LOGGER.debug("List of resulting Task UUIDs and Versions:")
+            LOGGER.debug("------------- {}".format(results))
+            return results
     elif idn is not None:
         """
         If id(s) is provided extract tasks only based on ID as it is most 
         specific. Works only in pending area
         """
         id_list = idn.split(",")
-        sql = "select uuid,version from workspace ws where ws.area='pending'\
-               and ws.version = (select max(innrws.version) from\
-               workspace innrws where ws.uuid=innrws.uuid)\
-               and ws.id in (%s)" % ",".join("?"*len(id_list))
-        params = tuple(id_list)
-        LOGGER.debug("Inside id filter with below params and SQL")
-        LOGGER.debug(params)
-        LOGGER.debug("SQL: \n{}".format(sql))
+        LOGGER.debug("Inside id filter with below params")
+        LOGGER.debug(id_list)        
+        try:
+            results  = (SESSION.query(Workspace.uuid, Workspace.version)
+                                .join(max_ver_xpr, and_(Workspace.version == 
+                                                    max_ver_xpr.c.maxver,
+                                                  Workspace.uuid == 
+                                                    max_ver_xpr.c.uuid))
+                                .filter(and_(Workspace.area == WS_AREA_PENDING, 
+                                             Workspace.id.in_(id_list)))
+                                .all())
+        except (SQLAlchemyError) as e:
+            LOGGER.error(str(e))
+            return None
+        else:
+            LOGGER.debug("List of resulting Task UUIDs and Versions:")
+            LOGGER.debug("------------- {}".format(results))
+            return results
+        
     else:
         """
         Filter provided is not a ID, so try to get task list from 
@@ -1334,31 +1380,35 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
             it is most specific. Works only in completed or bin area
             """        
             uuid_list = uuidn.split(",")
-            sql_uuid = "select uuid,version from workspace ws where \
-                        ws.version = (select max(innrws.version) from \
-                        workspace innrws where ws.uuid=innrws.uuid)\
-                        and ws.uuid in (%s)" % ",".join("?"*len(uuid_list))
-            params = tuple(uuid_list)
-            sql_list.append(sql_uuid)
-            LOGGER.debug("Inside UUID filter with below params and SQL")
-            LOGGER.debug(params)
-            LOGGER.debug("SQL: \n{}".format(sql_uuid))
+            LOGGER.debug("Inside UUID filter with below params")
+            LOGGER.debug(uuid_list)
+            subqr_uuid = (SESSION.query(Workspace.uuid, Workspace.version)
+                            .join(max_ver_xpr, and_(Workspace.version == 
+                                                    max_ver_xpr.c.maxver,
+                                                  Workspace.uuid == 
+                                                    max_ver_xpr.c.uuid))
+                            .filter(and_(Workspace.area.in_([WS_AREA_COMPLETED, 
+                                                            WS_AREA_BIN]), 
+                                         Workspace.uuid.
+                                                in_(uuid_list))))
+            subquery_list.append(subqr_uuid)
         else:
             if group is not None:
                 """
                 Query to get a list of uuid and version for matchiing groups
                 from all 3 areas
                 """
-                #print("for group")
-                sql_grp = "select uuid,version from workspace ws\
-                        where ws.groups like ? and ws.version=\
-                        (select max(innrws.version) from workspace innrws\
-                        where innrws.uuid=ws.uuid)"
-                params = params + (group+"%",)
-                sql_list.append(sql_grp)
-                LOGGER.debug("Inside group filter with below params and SQL")
-                LOGGER.debug(params)
-                LOGGER.debug("SQL: \n{}".format(sql_grp))
+                LOGGER.debug("Inside group filter with below params")
+                LOGGER.debug(group+"%")
+                subqr_groups = (SESSION.query(Workspace.uuid, 
+                                              Workspace.version)
+                                       .join(max_ver_xpr, 
+                                             and_(Workspace.version == 
+                                                    max_ver_xpr.c.maxver,
+                                                  Workspace.uuid == 
+                                                    max_ver_xpr.c.uuid))
+                                    .filter(Workspace.groups.like(group+"%")))
+                subquery_list.append(subqr_groups)
             if tag is not None:
                 """
                 Query to get a list of uuid and version for matchiing tags
@@ -1366,20 +1416,18 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                 """            
                 #print("for tag")
                 tag_list = tag.split(",")
-                sql_tag = "select distinct uuid,version from workspace_tags tg\
-                        where tg.tags \
-                        in (%s) and tg.version =\
-                        (select max(innrws.version) from workspace\
-                        innrws where innrws.uuid=tg.uuid)"\
-                    % ",".join("?"*len(tag_list))
-                params = params + tuple(tag_list)
-                sql_list.append(sql_tag)
-                LOGGER.debug("Inside tag filter with below params and SQL")
-                LOGGER.debug(params)
-                LOGGER.debug("SQL: \n{}".format(sql_tag))
-            LOGGER.debug("sql_list after group, tag:")
-            LOGGER.debug(sql_list)
-
+                LOGGER.debug("Inside tag filter with below params")
+                LOGGER.debug(tag_list)
+                subqr_tags = (SESSION.query(WorkspaceTags.uuid, 
+                                           WorkspaceTags.version)
+                                    .join(max_ver_xpr, 
+                                          and_(WorkspaceTags.version == 
+                                                    max_ver_xpr.c.maxver,
+                                               WorkspaceTags.uuid == 
+                                                    max_ver_xpr.c.uuid))
+                                    .filter(WorkspaceTags.tags.
+                                                    in_(tag_list)))
+                subquery_list.append(subqr_tags)
         """
         Look for modifiers that work in the pending area
         """
@@ -1388,39 +1436,57 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
         if (overdue_task is not None or today_task is not None or
                 hidden_task is not None):
             if overdue_task is not None:
-                #print("for overdue")
-                sql_overdue = "select uuid,version from workspace ws where\
-                               ws.due<date('now') and area='pending'\
-                               and (ws.hide <= date('now') or\
-                               ws.hide is null) and ws.version=\
-                               (select max(innrws.version) from\
-                               workspace innrws where innrws.uuid=ws.uuid)"
-                sql_list.append(sql_overdue)
-                LOGGER.debug("Inside overdue filter with below SQL")
-                LOGGER.debug("SQL: \n{}".format(sql_overdue))
+                LOGGER.debug("Inside overdue filter")
+                subqr_overdue = (SESSION.query(Workspace.uuid, 
+                                                Workspace.version)
+                                        .join(max_ver_xpr, 
+                                              and_(Workspace.version == 
+                                                    max_ver_xpr.c.maxver,
+                                                   Workspace.uuid == 
+                                                    max_ver_xpr.c.uuid))
+                                        .filter(and_(Workspace.area == 
+                                                            WS_AREA_PENDING, 
+                                                     Workspace.due < curr_date, 
+                                                     or_(Workspace.hide <= 
+                                                            curr_date,
+                                                         Workspace.hide == 
+                                                            None))))
+                subquery_list.append(subqr_overdue)
             if today_task is not None:
-                #print("for today")
-                sql_today = "select uuid,version from workspace ws where \
-                            ws.due=date('now') and area='pending'\
-                            and (ws.hide <= date('now') or ws.hide is null)\
-                            and ws.version=(select max(innrws.version) from\
-                            workspace innrws where innrws.uuid=ws.uuid)"                                
-                sql_list.append(sql_today)
-                LOGGER.debug("Inside today filter with below SQL")
-                LOGGER.debug("SQL: \n{}".format(sql_today))
+                LOGGER.debug("Inside today filter")
+                subqr_today = (SESSION.query(Workspace.uuid, 
+                                                Workspace.version)
+                                      .join(max_ver_xpr, 
+                                            and_(Workspace.version == 
+                                                    max_ver_xpr.c.maxver,
+                                                 Workspace.uuid == 
+                                                    max_ver_xpr.c.uuid))
+                                      .filter(and_(Workspace.area == 
+                                                            WS_AREA_PENDING, 
+                                                    Workspace.due == curr_date, 
+                                                    or_(Workspace.hide <= 
+                                                            curr_date,
+                                                        Workspace.hide == 
+                                                            None))))
+                subquery_list.append(subqr_today)
             if hidden_task is not None:
-                #print("for hidden")
-                sql_hidden = "select uuid,version from workspace ws where \
-                              ws.area='pending' and\
-                              (ws.hide>date('now') and  ws.hide is not null)\
-                              and ws.version=(select max(innrws.version)\
-                              from workspace innrws\
-                              where innrws.uuid=ws.uuid)"                                
-                sql_list.append(sql_hidden)
-                LOGGER.debug("Inside hidden filter with below SQL")
-                LOGGER.debug("SQL: \n{}".format(sql_hidden))
-            LOGGER.debug("sql_list after overdue, today, hidden:")
-            LOGGER.debug(sql_list)
+                LOGGER.debug("Inside hidden filter")
+                subqr_hidden = (SESSION.query(Workspace.uuid, 
+                                                Workspace.version)
+                                        .join(max_ver_xpr, 
+                                              and_(Workspace.version == 
+                                                    max_ver_xpr.c.maxver,
+                                                   Workspace.uuid == 
+                                                    max_ver_xpr.c.uuid))
+                                        .filter(and_(Workspace.area == 
+                                                        WS_AREA_PENDING, 
+                                                     Workspace.due == 
+                                                        curr_date, 
+                                                     and_(Workspace.hide > 
+                                                            curr_date,
+                                                         Workspace.hide != 
+                                                            None))))
+                subquery_list.append(subqr_hidden)
         elif done_task is not None:
             """
             If none of the pending area modifiers are given look for other 
@@ -1428,58 +1494,70 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
             mutually exclusive
             """
             # Get all completed tasks
-            #print("for done")
-            sql_done = "select distinct uuid,version from workspace ws where\
-                        ws.area='completed' and ws.version >\
-                       (select max(innrws.version) from workspace\
-                       innrws where innrws.area <>'completed' and\
-                       innrws.uuid=ws.uuid)"
-            sql_list.append(sql_done)
-            LOGGER.debug("Inside done filter with below SQL")
-            LOGGER.debug("SQL: \n{}".format(sql_done))
+            LOGGER.debug("Inside done filter")
+            max_ver_xpr2 = (SESSION.query(Workspace.uuid,
+                                            func.max(Workspace.version)
+                                            .label("maxver"))
+                                    .filter(Workspace.area != 
+                                                WS_AREA_COMPLETED)
+                                    .group_by(Workspace.uuid).subquery())
+            subqr_done = (SESSION.query(Workspace.uuid, Workspace.version)
+                                    .join(max_ver_xpr2, 
+                                          and_(Workspace.uuid == 
+                                                    max_ver_xpr2.c.uuid,
+                                               Workspace.version >
+                                                    max_ver_xpr2.c.maxver))
+                                    .filter(Workspace.area == 
+                                                WS_AREA_COMPLETED))
+            subquery_list.append(subqr_done)
         elif bin_task is not None:
             # Get all tasks in the bin
-            #print("for bin")
-            sql_bin = "select distinct uuid,version from workspace ws\
-                        where ws.area='bin' and ws.version >\
-                        (select max(innrws.version) from workspace\
-                        innrws where innrws.area <>'bin' and\
-                        innrws.uuid=ws.uuid)"
-            sql_list.append(sql_bin)
-            LOGGER.debug("Inside bin filter with below SQL")
-            LOGGER.debug("SQL: \n{}".format(sql_bin))
+            LOGGER.debug("Inside bin filter")
+            max_ver_xpr3 = (SESSION.query(Workspace.uuid,
+                                            func.max(Workspace.version)
+                                            .label("maxver"))
+                                    .filter(Workspace.area != WS_AREA_BIN)
+                                    .group_by(Workspace.uuid).subquery())
+            subqr_bin = (SESSION.query(Workspace.uuid, Workspace.version)
+                                    .join(max_ver_xpr3, 
+                                          and_(Workspace.uuid == 
+                                                    max_ver_xpr3.c.uuid,
+                                               Workspace.version >
+                                                    max_ver_xpr3.c.maxver))
+                                .filter(Workspace.area == 
+                                                WS_AREA_BIN))
+            subquery_list.append(subqr_bin)
         # If no modifiers provided then default to tasks in pending area
         else:
-            sql_all = "select distinct uuid,version from workspace ws\
-                        where ws.area='pending' and ws.id<>'-'\
-                        and ws.version =\
-                        (select max(innrws.version) from workspace\
-                        innrws where innrws.area =ws.area and\
-                        innrws.uuid=ws.uuid and ws.id<>'-')"
-            sql_list.append(sql_all)
-            LOGGER.debug("Inside default filter with below SQL")
-            LOGGER.debug("SQL: \n{}".format(sql_all))
-        LOGGER.debug("final sql_list:")
-        LOGGER.debug(sql_list)
-        if sql_list is None:
+            LOGGER.debug("Inside default filter")
+            max_ver_xpr4 = (SESSION.query(Workspace.uuid,
+                                            func.max(Workspace.version)
+                                            .label("maxver"),Workspace.area)
+                                    .filter(and_(Workspace.id != '-',
+                                                 Workspace.area == 
+                                                    WS_AREA_PENDING))
+                                    .group_by(Workspace.uuid).subquery())
+            subqr_all = (SESSION.query(Workspace.uuid, Workspace.version)
+                                .join(max_ver_xpr4, 
+                                      and_(Workspace.version == 
+                                                max_ver_xpr4.c.maxver,
+                                           Workspace.uuid == 
+                                                max_ver_xpr4.c.uuid))
+                                .filter(and_(Workspace.area == 
+                                                WS_AREA_PENDING,
+                                             Workspace.id != '-')))
+            subquery_list.append(subqr_all)
+        if subquery_list is None:
             return None
-        sql = " intersect ".join(sql_list)
-        sql = ("select uuid, version "
-               "from (%s) unionws where unionws.version = "
-               "(select max(verws.version) from workspace verws where "
-               "unionws.uuid=verws.uuid)") % sql
-    LOGGER.debug("Final SQL for getting task UUID/Version:\n{}"
-                     .format(sql))
     try:
         #Tuple of rows, UUID,Version 
-        results = cur.execute(sql, params).fetchall()       
-    except sqlite3.ProgrammingError as e:
+        results = subquery_list[0].intersect(*subquery_list).all()
+    except (SQLAlchemyError) as e:
         LOGGER.error(str(e))
         return None
     else:
-        CONN.commit()
         LOGGER.debug("List of resulting Task UUIDs and Versions:")
-        LOGGER.debug(results)
+        LOGGER.debug("------------- {}".format(results))
         return results
 
 def get_task_new_version(task_uuid):
@@ -1504,10 +1582,10 @@ def translate_priority(priority):
     the right domain value as below. If the priority is not a valid priority
     it defaults to Nomral priority.
 
-        High - H, h
-        Medium - M, m
-        Low - L, l
-        Normal - N, n (This is the default)
+        High - High, H, h
+        Medium - Medium, M, m
+        Low - Low, L, l
+        Normal - Normal, N, n (This is the default)
 
     Parameters:
         priority(str): Priority to translate
@@ -1648,65 +1726,26 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None):
     return SUCCESS, ws_task.uuid, ws_task.version
 
 def exit_app(stat=0):
-    global CONN, SESSION, ENGINE
-    try:
-        CONN.close()
-        SESSION.remove()
-        ENGINE.dispose()
-    except:
-        sys.exit(stat)
+    LOGGER.debug("Preparing to exit app...")
+    ret = discard_db_resources()
+    if ret != 0 or stat != 0: 
+        LOGGER.error("Errors encountered either in executing commands"
+                     " or while exiting apps")
+        sys.exit(1)
     else:
-        sys.exit(stat)
+        LOGGER.debug("Exiting app.")
+        sys.exit(0)
 
-def initialize_tasksdb(dbpath):
-    global CONN
+def discard_db_resources():
+    global ENGINE
+    LOGGER.debug("Atempting to remove sessions and db engines...")
     try:
-        LOGGER.debug("Attempting to intialize db")
-        dburi = "file:{}?mode=rwc".format(pathname2url(dbpath))
-        CONN = sqlite3.connect(dburi, uri=True)
-        sql_list = retrieve_sql()
-        LOGGER.debug("Executing following SQLs:\n" + sql_list)
-        cur = CONN.cursor()
-        for sql in sql_list:
-            cur.execute(sql)
-        cur.close()
-    except sqlite3.OperationalError as e:
-        LOGGER.error("Error! Database creation could be partial.")
+        if ENGINE is not None:
+            ENGINE.dispose()
+    except Exception as e:
+        LOGGER.error("Error encountered in removing sessions and db engines")
         LOGGER.error(str(e))
-        exit_app(1)
-    CONSOLE.print("Database initialized...", style="default")
-    return CONN
-
-def retrieve_sql():
-    workspace_sql = """
-                    create table workspace (
-                        uuid text ,
-                        id integer,
-                        description text,
-                        status text,
-                        due text,
-                        hide text,
-                        area text,
-                        groups text,
-                        version integer,
-                        event_id text,
-                        primary key(uuid, version)
-                    )"""
-    workspace_tags_sql = """
-                         create table workspace_tags ( 
-                             uuid text,
-                             tags text,
-                             version integer,
-                             primary key(uuid, tags, version)
-                         )
-                         """
-    ws_uuid_ver__area_idx_sql = """
-                                CREATE UNIQUE INDEX "ws_uuid_ver__area_idx" 
-                                ON "workspace" (
-                                "uuid"	ASC,
-                                "version"	DESC,
-                                "area"	DESC
-                                )
-                                """
-    return [workspace_sql, workspace_tags_sql, ws_uuid_ver__area_idx_sql,
-            temp_uuid_table]
+        return FAILURE
+    else:
+        LOGGER.debug("Successfully removed sessions and db engines")
+        return SUCCESS

@@ -12,7 +12,7 @@ from myt import start
 from myt import stop
 from myt import revert
 from myt import done
-from myt import empty
+from myt import admin
 
 runner = CliRunner()
 def test_add_1():
@@ -311,7 +311,13 @@ def test_delete_2(create_task2):
     assert result.exit_code == 0
     assert "Updated Task UUID:" in result.output
 
-def test_empty_1():
+def test_admin_empty_1():
     with mock.patch('builtins.input', return_value="yes"):
-        result = runner.invoke(empty)
+        result = runner.invoke(admin, ['--empty'])
         assert "Bin emptied!" in result.output
+
+def test_admin_reinit_1():
+    with mock.patch('builtins.input', return_value="yes"):
+        result = runner.invoke(admin, ['--reinit'])
+        assert "Database removed..." in result.output
+        assert "Tasks database initialized..." in result.output
