@@ -1,3 +1,8 @@
+try:
+    from importlib import metadata
+except ImportError:
+    # Running on pre-3.8 Python; use importlib-metadata package
+    import importlib_metadata as metadata
 import re
 import os
 import sqlite3
@@ -7,11 +12,6 @@ from urllib.request import pathname2url
 from pathlib import Path
 import logging
 
-try:
-    from importlib import metadata
-except ImportError:
-    # Running on pre-3.8 Python; use importlib-metadata package
-    import importlib_metadata as metadata
 import click
 from datetime import date
 from datetime import datetime
@@ -23,7 +23,7 @@ from rich.style import Style
 from rich.theme import Theme
 from rich.prompt import Prompt
 from sqlalchemy import create_engine, Column, Integer, String, Table, Index
-from sqlalchemy import ForeignKeyConstraint, tuple_, and_, case, func
+from sqlalchemy import ForeignKeyConstraint, tuple_, and_, case, func, BOOLEAN
 from sqlalchemy import distinct, cast, Date, inspect, or_
 from sqlalchemy.orm import relationship, sessionmaker, make_transient
 from sqlalchemy.ext.declarative import declarative_base
@@ -47,6 +47,7 @@ TASK_HIDDEN = "HIDDEN"
 TASK_BIN = "BIN"
 TASK_DONE = "DONE"
 TASK_STARTED = "STARTED"
+TASK_NOW = "NOW"
 #For Search, when no filters are provided or only area filters provided
 TASK_ALL = "ALL"
 #For Search, when no task property filters are provided
@@ -65,10 +66,10 @@ WS_AREA_PENDING = "pending"
 WS_AREA_COMPLETED = "completed"
 WS_AREA_BIN = "bin"
 #Task Priority Domain
-PRIORITY_HIGH = ["High", "H", "h"]
-PRIORITY_MEDIUM = ["Medium", "M", "m"]
-PRIORITY_LOW = ["Low", "L", "l"]
-PRIORITY_NORMAL = ["Normal", "N", "n"]
+PRIORITY_HIGH = ["H", "High", "h"]
+PRIORITY_MEDIUM = ["M", "Medium", "m"]
+PRIORITY_LOW = ["L", "Low", "l"]
+PRIORITY_NORMAL = ["N", "Normal", "n"]
 #Logger Config
 lFormat = ("**-**|%(levelname)s|%(filename)s|%(lineno)d|%(funcName)s "
            "- %(message)s")
@@ -83,12 +84,14 @@ myt_theme = Theme({
     "started" : "green",
     "done" : "grey46",
     "binn" : "grey46",
+    "now" : "magenta",
     "info" : "yellow",
     "repr.none" : "italic magenta"
 }, inherit=False)
 CONSOLE = Console(theme=myt_theme)
 #Printable attributes
-PRINT_ATTR = ["description","priority","due","hide","groups","tags","status"]
+PRINT_ATTR = ["description","priority","due","hide","groups","tags","status",
+               "now_flag"]
 
 Base = declarative_base()
 class Workspace(Base):
@@ -111,6 +114,7 @@ class Workspace(Base):
     created = Column(String)
     groups = Column(String)
     event_id = Column(String)
+    now_flag = Column(BOOLEAN)
     #To get due date difference to today
     @hybrid_property
     def due_diff_today(self):
@@ -225,7 +229,7 @@ def add(filters, desc, priority, due, hide, group, tag, verbose):
         return SUCCESS
     else:
         ws_task = Workspace(description=desc, priority=priority, 
-                            due=due, hide=hide, groups=group)
+                            due=due, hide=hide, groups=group, now_flag=False)
         ws_tags_list = generate_tags(tag)
         ret, uuid, version = add_task_and_tags(ws_task, ws_tags_list)
         get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
@@ -287,15 +291,18 @@ def modify(filters, desc, priority, due, hide, group, tag, verbose):
         set_versbose_logging()        
     potential_filters = parse_filters(filters)
     LOGGER.debug("Values for update: desc - {} due - {} hide - {} group - {}"
-                 " tag - {}".format(desc, due, hide, group, tag))
+                 " tag - {} now - {}"
+                 .format(desc, due, hide, group, tag, toggle_now))
+    #Perform validations
     if (desc is None and priority is None and due is None and hide is None 
-            and group is None and tag is None):
+            and group is None and tag is None and toggle_now is False):
         CONSOLE.print("No modification values provided. Nothing to do...",
                       style="default")
-        return
-    if potential_filters.get("uuid"):
+        exit_app(SUCCESS)
+    if potential_filters.get("uuid") == "yes":
         CONSOLE.print("Cannot perform this operation using uuid filters",
-                    style="default")
+                      style="default")
+        exit_app(SUCCESS)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
     if potential_filters.get(TASK_ALL) == "yes":
@@ -306,6 +313,32 @@ def modify(filters, desc, priority, due, hide, group, tag, verbose):
                         due=due, hide=hide, groups=group)
     ret = modify_task(potential_filters, ws_task, tag)
     get_and_print_task_count({WS_AREA_PENDING:"yes"},to_print=True)
+    exit_app(ret)
+
+@myt.command()
+@click.argument("filters",
+                nargs=-1,
+                )
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable verbose Logging.",
+              )     
+def now(filters, verbose):
+    if verbose:
+        set_versbose_logging()        
+    potential_filters = parse_filters(filters)
+    if potential_filters.get("id") is None:
+        CONSOLE.print("NOW flag can be modified only with a task ID filter",
+                      style="default")
+        exit_app(SUCCESS)
+    if len(potential_filters.get("id").split(",")) > 1:
+        CONSOLE.print("NOW flag can be modified for only 1 task at a time",
+                      style="default")
+        exit_app(SUCCESS)
+    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        exit_app(FAILURE)
+    ret = toggle_now(potential_filters)
     exit_app(ret)
 
 @myt.command()
@@ -718,6 +751,7 @@ def delete_tasks(potential_filters):
         ws_task.id = "-"
         ws_task.area = WS_AREA_BIN
         ws_task.event_id = None
+        ws_task.now_flag = False
         LOGGER.debug("Deleting Task UUID {} and Task ID {}"
                       .format(ws_task.uuid,ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
@@ -826,7 +860,36 @@ def complete_task(potential_filters):
         ws_task.area = WS_AREA_COMPLETED
         ws_task.status = TASK_STATUS_DONE
         ws_task.event_id = None
+        ws_task.now_flag = False
         LOGGER.debug("Completing Task UUID {} and Task ID {}"\
+                      .format(ws_task.uuid,ws_task.id))
+        ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
+        ret, uuid, version = add_task_and_tags(ws_task, ws_tags_list)
+        if ret == FAILURE:
+            LOGGER.error("Error encountered in adding task version, stopping")
+            return ret
+        task = None
+    return SUCCESS
+
+def toggle_now(potential_filters):
+    uuid_version_results = get_task_uuid_n_ver(potential_filters,
+                                               WS_AREA_PENDING)    
+    if not uuid_version_results:
+        CONSOLE.print("No applicable task to set as NOW", style="default")
+        return SUCCESS
+    task_list = get_tasks(uuid_version_results)
+    for task in task_list:
+        LOGGER.debug("Working on Task UUID {} and Task ID {}"
+                      .format(task.uuid, task.id))
+        make_transient(task)
+        ws_task = Workspace()
+        ws_task = task
+        if ws_task.now_flag == True:
+            ws_task.now_flag = False
+        else:
+            ws_task.now_flag = True
+        ws_task.event_id = None
+        LOGGER.debug("Setting Task UUID {} and Task ID {} as NOW"\
                       .format(ws_task.uuid,ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
         ret, uuid, version = add_task_and_tags(ws_task, ws_tags_list)
@@ -851,24 +914,32 @@ def parse_filters(filters):
             if str(fl).upper() == TASK_BIN:
                 potential_filters[TASK_BIN] = "yes"
             if str(fl).upper() == TASK_STARTED:
-                potential_filters[TASK_STARTED] = "yes"            
+                potential_filters[TASK_STARTED] = "yes"
+            if str(fl).upper() == TASK_NOW:
+                potential_filters[TASK_NOW] = "yes"       
             if str(fl).startswith("id:"):
-                potential_filters["id"] = (str(fl).split(":"))[1]
+                potential_filters["id"] = (((str(fl).split(":"))[1])
+                                            .rstrip(","))
             if str(fl).startswith("pr:") or str(fl).startswith("priority:"):
-                potential_filters["priority"] = (str(fl).split(":"))[1]                
+                potential_filters["priority"] = (((str(fl).split(":"))[1])
+                                                    .rstrip(","))                
             if str(fl).startswith("gr:") or str(fl).startswith("group:"):
-                potential_filters["group"] = (str(fl).split(":"))[1]
+                potential_filters["group"] = (((str(fl).split(":"))[1])
+                                                .rstrip(","))
             if str(fl).startswith("tg:") or str(fl).startswith("tag:"):
-                potential_filters["tag"] = (str(fl).split(":"))[1]
+                potential_filters["tag"] = (((str(fl).split(":"))[1])
+                                                .rstrip(","))
             if str(fl).startswith("uuid:"):
-                potential_filters["uuid"] = (str(fl).split(":"))[1]
+                potential_filters["uuid"] = (((str(fl).split(":"))[1])
+                                                .rstrip(","))
     if not potential_filters:
         potential_filters = {TASK_ALL:"yes"}
     #If only High Level Filters provided then set a key to use to warn users
     if ("id" not in potential_filters and "priority" not in potential_filters 
             and "group" not in potential_filters
             and "tag" not in potential_filters
-            and "uuid" not in potential_filters):
+            and "uuid" not in potential_filters 
+            and TASK_NOW not in potential_filters):
         potential_filters[HL_FILTERS_ONLY] = "yes"
     return potential_filters
 
@@ -912,8 +983,8 @@ def modify_task(potential_filters, ws_task_src, tag):
     uuid_version_results = get_task_uuid_n_ver(potential_filters,
                                                WS_AREA_PENDING)    
     if not uuid_version_results:
-        CONSOLE.print("No applicable tasks to modify", style=-"default")
-        return
+        CONSOLE.print("No applicable tasks to modify", style="default")
+        return SUCCESS
     event_id = datetime.now().strftime("%Y%m-%d%H-%M%S-") +\
                 str(uuid.uuid4())
     task_list = get_tasks(uuid_version_results)
@@ -925,7 +996,6 @@ def modify_task(potential_filters, ws_task_src, tag):
         If user requested update or clearing then overwrite
         If user has not requested update for field then retain original value
         """ 
-        SESSION.expunge
         make_transient(task)
         ws_task = Workspace()
         ws_task = task        
@@ -1009,10 +1079,12 @@ def display_tasks(potential_filters, pager=False, top=None):
         id_xpr = (case([(Workspace.area == WS_AREA_PENDING,Workspace.id),
                         (Workspace.area.in_([WS_AREA_COMPLETED,WS_AREA_BIN]),
                             Workspace.uuid),]))             
-        due_xpr = (case([(Workspace.due == None,"-"),],else_ = Workspace.due))
-        hide_xpr = (case([(Workspace.hide == None,"-")],else_ =Workspace.hide))
-        groups_xpr = (case([(Workspace.groups == None,"-")],
+        due_xpr = (case([(Workspace.due == None,""),],else_ = Workspace.due))
+        hide_xpr = (case([(Workspace.hide == None,"")],else_ =Workspace.hide))
+        groups_xpr = (case([(Workspace.groups == None,"")],
                                 else_ = Workspace.groups))
+        now_flag_xpr = (case([(Workspace.now_flag == True,"*"),],
+                                else_ = ""))
         #Sub Query for Tags - START
         tags_subqr = (SESSION.query(WorkspaceTags.uuid,WorkspaceTags.version,
                                 func.group_concat(WorkspaceTags.tags)
@@ -1021,13 +1093,13 @@ def display_tasks(potential_filters, pager=False, top=None):
                             .subquery())
         #Sub Query for Tags - END
         #Additional information
-        addl_info_xpr = (case([(Workspace.area == WS_AREA_COMPLETED,'-'),
-                               (Workspace.area == WS_AREA_BIN, '-'),
+        addl_info_xpr = (case([(Workspace.area == WS_AREA_COMPLETED,'NA-IS DONE'),
+                               (Workspace.area == WS_AREA_BIN, 'NA-IS DELETED'),
                                (Workspace.due < curr_day.date(), TASK_OVERDUE),
                                (Workspace.due == curr_day.date(),TASK_TODAY),
                                (Workspace.due != None, 
                                     Workspace.due_diff_today + " DAY(S)"),],
-                               else_ = "-"))
+                               else_ = ""))
         #Main query
         task_list = (SESSION.query(id_xpr.label("id_or_uuid"), 
                                 Workspace.version.label("version"),
@@ -1037,11 +1109,12 @@ def display_tasks(potential_filters, pager=False, top=None):
                                 due_xpr.label("due"),
                                 hide_xpr.label("hide"),
                                 groups_xpr.label("groups"),
-                                case([(tags_subqr.c.tags == None, "-"),],
+                                case([(tags_subqr.c.tags == None, ""),],
                                     else_ = tags_subqr.c.tags).label("tags"),
                                 addl_info_xpr.label("due_in"),
                                 Workspace.area.label("area"),
-                                Workspace.created.label("created"))
+                                Workspace.created.label("created"),
+                                now_flag_xpr.label("now"))
                             .outerjoin(tags_subqr, 
                                         and_(Workspace.uuid == 
                                                 tags_subqr.c.uuid,
@@ -1060,24 +1133,25 @@ def display_tasks(potential_filters, pager=False, top=None):
                       header_style="bold")
     #Column and Header Names
     if (task_list[0]).area == WS_AREA_PENDING:
-        table.add_column("id",justify="center")
+        table.add_column("id",justify="left")
     else:
-        table.add_column("uuid",justify="center")
+        table.add_column("uuid",justify="left")
     table.add_column("description",justify="left")
-    table.add_column("priority",justify="center")
-    table.add_column("due in",justify="center")
-    table.add_column("due on",justify="center")
-    table.add_column("groups",justify="center")
-    table.add_column("tags",justify="center")
-    table.add_column("status",justify="center")
-    table.add_column("hide until",justify="center")
-    table.add_column("version"  ,justify="center")
+    table.add_column("due in",justify="left")
+    table.add_column("due date",justify="left")
+    table.add_column("groups",justify="left")
+    table.add_column("tags",justify="left")
+    table.add_column("status",justify="left")
+    table.add_column("priority",justify="left")
+    table.add_column("now",justify="left")
+    table.add_column("hide until",justify="left")
+    table.add_column("version"  ,justify="left")
     if(task_list[0].area == WS_AREA_COMPLETED):
-        table.add_column("done_date",justify="center")
+        table.add_column("done_date",justify="left")
     elif(task_list[0].area == WS_AREA_BIN):
-        table.add_column("deleted_date",justify="center")
+        table.add_column("deleted_date",justify="left")
     else:
-        table.add_column("modifed_date",justify="center")
+        table.add_column("modifed_date",justify="left")
     if top is None:
         top = len(task_list)
     else:
@@ -1088,49 +1162,57 @@ def display_tasks(potential_filters, pager=False, top=None):
         if task.status == TASK_STATUS_DONE:
             table.add_row(
                         str(task.id_or_uuid),
-                        str(task.description),str(task.priority),
-                        str(task.due_in),str(task.due),str(task.groups),
-                        str(task.tags),str(task.status),
+                        str(task.description),str(task.due_in),
+                        str(task.due),str(task.groups),str(task.tags),
+                        str(task.status),str(task.priority),str(task.now),
                         str(task.hide),str(task.version),str(task.created),
                         style="done")
         elif task.area == WS_AREA_BIN:
             table.add_row(
                         str(task.id_or_uuid),
-                        str(task.description),str(task.priority),
-                        str(task.due_in),str(task.due),str(task.groups),
-                        str(task.tags),str(task.status),
+                        str(task.description),str(task.due_in),
+                        str(task.due),str(task.groups),str(task.tags),
+                        str(task.status),str(task.priority),str(task.now),
                         str(task.hide),str(task.version),str(task.created),
                         style="binn")           
         elif task.due_in == TASK_OVERDUE:
             table.add_row(
                         str(task.id_or_uuid),
-                        str(task.description),str(task.priority),
-                        str(task.due_in),str(task.due),str(task.groups),
-                        str(task.tags),str(task.status),
+                        str(task.description),str(task.due_in),
+                        str(task.due),str(task.groups),str(task.tags),
+                        str(task.status),str(task.priority),str(task.now),
                         str(task.hide),str(task.version),str(task.created),
                         style="overdue")
         elif task.due_in == TASK_TODAY:
             table.add_row(
                         str(task.id_or_uuid),
-                        str(task.description),str(task.priority),
-                        str(task.due_in),str(task.due),str(task.groups),
-                        str(task.tags),str(task.status),
+                        str(task.description),str(task.due_in),
+                        str(task.due),str(task.groups),str(task.tags),
+                        str(task.status),str(task.priority),str(task.now),
                         str(task.hide),str(task.version),str(task.created),
                         style="today")
         elif task.status == TASK_STATUS_STARTED:
             table.add_row(
                         str(task.id_or_uuid),
-                        str(task.description),str(task.priority),
-                        str(task.due_in),str(task.due),str(task.groups),
-                        str(task.tags),str(task.status),
+                        str(task.description),str(task.due_in),
+                        str(task.due),str(task.groups),str(task.tags),
+                        str(task.status),str(task.priority),str(task.now),
                         str(task.hide),str(task.version),str(task.created),
-                        style="started")                     
+                        style="started")
+        elif task.now == "*":
+            table.add_row(
+                        str(task.id_or_uuid),
+                        str(task.description),str(task.due_in),
+                        str(task.due),str(task.groups),str(task.tags),
+                        str(task.status),str(task.priority),str(task.now),
+                        str(task.hide),str(task.version),str(task.created),
+                        style="now")             
         else:
             table.add_row(
                         str(task.id_or_uuid),
-                        str(task.description),str(task.priority),
-                        str(task.due_in),str(task.due),str(task.groups),
-                        str(task.tags),str(task.status),
+                        str(task.description),str(task.due_in),
+                        str(task.due),str(task.groups),str(task.tags),
+                        str(task.status),str(task.priority),str(task.now),
                         str(task.hide),str(task.version),str(task.created),
                         style="default")
     if pager:
@@ -1328,6 +1410,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
     done_task = potential_filters.get(TASK_DONE)
     bin_task = potential_filters.get(TASK_BIN)
     started_task = potential_filters.get(TASK_STARTED)
+    now_task = potential_filters.get(TASK_NOW)
     idn = potential_filters.get("id")
     uuidn = potential_filters.get("uuid")
     group = potential_filters.get("group")
@@ -1350,7 +1433,7 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
                                                     max_ver_xpr.c.maxver,
                                                   Workspace.uuid == 
                                                     max_ver_xpr.c.uuid))
-                               .filter(and_(Workspace.area == area, 
+                               .filter(and_(Workspace.area == WS_AREA_PENDING, 
                                             or_(Workspace.hide <= curr_date, 
                                                 Workspace.hide == None)))
                                .all())
@@ -1385,7 +1468,25 @@ def get_task_uuid_n_ver(potential_filters, area=WS_AREA_PENDING):
             LOGGER.debug("List of resulting Task UUIDs and Versions:")
             LOGGER.debug("------------- {}".format(results))
             return results
-        
+    elif now_task is not None:
+        """
+        If now task filter then return the task marked as now_flag = True from 
+        pending area
+        """
+        LOGGER.debug("Inside now filter")
+        try:
+            results  = (SESSION.query(Workspace.uuid, Workspace.version)
+                                .filter(and_(Workspace.area == WS_AREA_PENDING, 
+                                             Workspace.now_flag == True,
+                                             Workspace.id != '-'))
+                                .all())
+        except (SQLAlchemyError) as e:
+            LOGGER.error(str(e))
+            return None
+        else:
+            LOGGER.debug("List of resulting Task UUIDs and Versions:")
+            LOGGER.debug("------------- {}".format(results))
+            return results
     else:
         """
         Filter provided is not a ID, so try to get task list from 
@@ -1686,11 +1787,12 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None):
     else:
         ws_task.event_id = ws_task_src.event_id
     ws_task.priority = translate_priority(ws_task_src.priority)
-    now = datetime.now().strftime("%Y-%m-%d")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
     ws_task.created = now
     ws_task.version = get_task_new_version(str(ws_task.uuid))
     ws_task.description = ws_task_src.description
     ws_task.groups = ws_task_src.groups
+    ws_task.now_flag = ws_task_src.now_flag
     if not ws_task_src.area:
         ws_task.area = WS_AREA_PENDING
     else:
@@ -1718,10 +1820,53 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None):
                 tags_str =tags_str + "," +t.tags
         # For all older entries remove the task_id
         (SESSION.query(Workspace).filter(Workspace.uuid == ws_task.uuid, 
-                                         Workspace.version < ws_task.version).
-                                         update({Workspace.id:"-"},
-                                         synchronize_session = False))
+                                            Workspace.version < 
+                                            ws_task.version)
+                                    .update({Workspace.id:"-"},
+                                synchronize_session = False))
+        """
+        If the task being added has NOW set as true then any other task 
+        having its NOW as True should be set to False.
+        For this we will first identify the task UUID and version and then
+        create a new version. New version will have same 'event_id' and 
+        'created' as the task being added and with NOW set to false
+        """
+        if ws_task.now_flag:
+            uuid_ver  = (SESSION.query(Workspace.uuid, 
+                                       Workspace.version)
+                                .filter(and_(Workspace.area == WS_AREA_PENDING, 
+                                             Workspace.now_flag == True,
+                                             Workspace.id != '-',
+                                             Workspace.uuid != ws_task.uuid))
+                                .all())
+            if uuid_ver:
+                task_list = get_tasks(uuid_ver)
+                LOGGER.debug("Previous task which is set as NOW: {}"
+                                .format(task_list[0]))
+                for task in task_list:
+                    LOGGER.debug("To reset NOW:Working on Task UUID {} and "
+                                    "Task ID {}"
+                                .format(task.uuid, task.id))        
+                    make_transient(task)
+                    ws_task_innr = Workspace()
+                    ws_task_innr = task
+                    ws_task_innr.event_id = ws_task.event_id
+                    ws_task_innr.created = now
+                    ws_task_innr.now_flag = False
+                    LOGGER.debug("Resetting NOW: Task UUID {} and Task ID {}"\
+                                .format(ws_task_innr.uuid,ws_task_innr.id))
+                    ws_tags_innr_list = get_tags(ws_task_innr.uuid, 
+                                                    ws_task_innr.version)
+                    ret, uuid_ad, version_ad = add_task_and_tags(
+                                                    ws_task_innr, 
+                                                    ws_tags_innr_list)
+                    if ret == FAILURE:
+                        #Rollback already performed from nested
+                        LOGGER.error("Error encountered in reset of NOW")
+                        return ret, None, None
+                    task = None
     except SQLAlchemyError as e:
+        SESSION.rollback()
         print(str(e))
         return FAILURE, None, None
 
@@ -1753,6 +1898,16 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None):
     LOGGER.debug("Added/Updated Task UUID: {} and Area: {}"
                  .format(ws_task.uuid,ws_task.area))
     return SUCCESS, ws_task.uuid, ws_task.version
+def reset_now_flag():
+    LOGGER.debug("Attempting to reset now flag if any...")
+    try:
+        (SESSION.query(Workspace).filter(Workspace.now_flag == True)
+                                 .update({Workspace.now_flag:False},
+                                    synchronize_session = False))
+    except SQLAlchemyError as e:
+        LOGGER.error(str(e))
+        return FAILURE
+    return SUCCESS
 
 def exit_app(stat=0):
     LOGGER.debug("Preparing to exit app...")
