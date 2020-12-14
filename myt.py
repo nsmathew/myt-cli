@@ -25,7 +25,7 @@ from rich.columns import Columns
 from sqlalchemy import (create_engine, Column, Integer, String, Table, Index,
                         ForeignKeyConstraint, tuple_, and_, case, func, 
                         BOOLEAN, distinct, cast, Date, inspect, or_)
-from sqlalchemy.orm import relationship, sessionmaker, make_transient
+from sqlalchemy.orm import relationship, sessionmaker, make_transient, aliased
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -85,7 +85,6 @@ TASK_TYPE_NRML = "NORMAL"
 MODE_DAILY = "D"
 MODE_WEEKLY = "W"
 MODE_WKDAY = "WD"
-MODE_FRTNGHT = "F"
 MODE_MONTHLY = "M"
 MODE_MTHDYS = "MD"
 MODE_MONTHS = "MO"
@@ -124,14 +123,13 @@ PRINT_ATTR = ["description", "priority", "due", "hide", "groups", "tags",
               "status", "now_flag", "recur_mode", "recur_when", "uuid", 
               "task_type", "area"]
 # Modes
-VALID_MODES = [MODE_DAILY, MODE_WEEKLY, MODE_WKDAY, MODE_FRTNGHT, MODE_MONTHLY,
+VALID_MODES = [MODE_DAILY, MODE_WEEKLY, MODE_WKDAY, MODE_MONTHLY,
                MODE_MTHDYS, MODE_MONTHS, MODE_QRTR, MODE_SEMIANL, MODE_ANNUAL]
 
 # Until When config - Aligned to Recurring Task Mode Domains
 UNTIL_WHEN = {MODE_DAILY: 2, MODE_WEEKLY: 8, MODE_MONTHLY: 32, 
-              MODE_FRTNGHT: 16, MODE_SEMIANL: 184, MODE_QRTR: 93, 
-              MODE_ANNUAL: 367, MODE_WKDAY: 2, MODE_MTHDYS: 5, 
-              MODE_MONTHS: 90}
+              MODE_SEMIANL: 184, MODE_QRTR: 93, MODE_ANNUAL: 367, 
+              MODE_WKDAY: 2, MODE_MTHDYS: 5, MODE_MONTHS: 90}
 # Future date for date and None comparisons
 FUTDT = datetime.strptime("2300-01-01", "%Y-%m-%d").date()
 # Indictor Symbols
@@ -654,7 +652,11 @@ def done(filters, verbose):
         if not confirm_prompt("No filters given for marking tasks as done,"
                               " are you sure?"):
             exit_app(SUCCESS)
-    ret = complete_task(potential_filters)
+    ret, task_tags_print = complete_task(potential_filters)
+    if ret == SUCCESS:
+        SESSION.commit()
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                 PRNT_TASK_DTLS: task_tags_print})
     exit_app(ret)
 
 
@@ -958,8 +960,10 @@ def create_recur_inst():
         LOGGER.debug("Trying to add recurring tasks as part of startup for "
                      " UUID {} and version {}".format(task.uuid, task.version))
         ws_tags_list = get_tags(task.uuid, task.version)
-        ret, tasks_tags_print = prep_recurring_tasks(
-            task, ws_tags_list, True, None)
+        ret, return_list = prep_recurring_tasks(task, 
+                                                ws_tags_list, 
+                                                True, 
+                                                None)
         if ret == FAILURE:
             return ret
     return SUCCESS
@@ -1288,16 +1292,19 @@ def stop_task(potential_filters, event_id=None):
 
 def complete_task(potential_filters, event_id=None):
     task_tags_print = []
+    base_uuids = set()
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable tasks to complete", style="default")
-        return
+        return SUCCESS, None
     task_list = get_tasks(uuid_version_results)
     for task in task_list:
         LOGGER.debug("Working on Task UUID {} and Task ID {}"
                      .format(task.uuid, task.id))
+        uuidn = task.uuid
         make_transient(task)
         ws_task = task
+        ws_task.uuid = uuidn
         ws_task.id = "-"
         ws_task.area = WS_AREA_COMPLETED
         ws_task.status = TASK_STATUS_DONE
@@ -1312,13 +1319,136 @@ def complete_task(potential_filters, event_id=None):
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
         ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
         task_tags_print.append((ws_task, tags_str))
+        if ws_task.task_type == TASK_TYPE_DRVD:
+            base_uuids.add(ws_task.base_uuid)
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
-            return ret
-    SESSION.commit()
-    get_and_print_task_count({WS_AREA_PENDING: "yes",
-                              PRNT_TASK_DTLS: task_tags_print})
-    return SUCCESS
+            return ret, None
+    
+    if base_uuids:
+        """
+        First if for any of teh crecurring tasks all tasks in the pending 
+        area are completed and the recur end date has not reached then we
+        create atleast 1 instance of the next derived task. This will then
+        give a task entry for the user to use to modify any properties. Else
+        they do not have any way to access this recurring task.
+        If the task is well into the future they can apply a hide date to 
+        prevent it from coming up in the default vuew command.
+        This task creation output is silent and not printed.
+        """
+        for base_uuid in base_uuids:
+            LOGGER.debug("Now trying to create derived tasks "
+                         "for to UUID {}".format(base_uuid))
+            potential_filters = {}
+            potential_filters["baseuuidonly"] = base_uuid
+            uuid_version_results = get_task_uuid_n_ver(potential_filters)
+            tasks_list = get_tasks(uuid_version_results)
+            for task in tasks_list:
+                LOGGER.debug("Trying to add recurring tasks as a post process "
+                             "after applying the 'done' operations. Working on"
+                             " UUID {} and version {}"
+                             .format(task.uuid, task.version))
+                ws_tags_list = get_tags(task.uuid, task.version)
+                ret, return_list = prep_recurring_tasks(task, 
+                                                        ws_tags_list, 
+                                                        True, 
+                                                        event_id)
+                if ret == FAILURE:
+                    LOGGER.error("Error encountered in adding task version, "
+                             "stopping")
+                    return ret, None
+        """
+        If any of the tasks are derived then we need to check if the base
+        task should also be moved to 'completed' area. For this we check as 
+        below:
+        1. Base task has a recur_end date
+        2. recur_end date = max of the due date in workspace_recur_dates 
+            table. That is all derived tasks have been created for this base
+            task.
+        3. No derived task exists in the 'pending' area for this base task.
+            That is all derived tasks have either been completed or have ben
+            deleted.
+        Task creation output is not printed and is silent.
+        """
+        max_ver_sqr = (SESSION.query(Workspace.uuid,
+                                    func.max(Workspace.version)
+                                        .label("maxver"))
+                              .filter(Workspace.task_type == TASK_TYPE_BASE)
+                              .group_by(Workspace.uuid)
+                              .subquery())
+        
+        max_due_sqr = (SESSION.query(WorkspaceRecurDates.uuid, 
+                                     func.max(WorkspaceRecurDates.version)  
+                                        .label("maxver"),
+                                     func.max(WorkspaceRecurDates.due)
+                                        .label("maxdue"))
+                              .group_by(WorkspaceRecurDates.uuid)
+                              .subquery())
+        #To check if there are any tasks still in pending area
+        #First subquery to get max versions
+        max_ver_d_sqr = (SESSION.query(Workspace.uuid,
+                                     func.max(Workspace.version)
+                                        .label("maxver"))
+                              .filter(Workspace.task_type == TASK_TYPE_DRVD)
+                              .group_by(Workspace.uuid)
+                              .subquery())
+        ws_exists = aliased(Workspace)
+        task_exists_sqr = (~SESSION.query(ws_exists.uuid)
+                                  .join(max_ver_d_sqr, 
+                                        and_(ws_exists.uuid == max_ver_d_sqr
+                                                                .c.uuid,
+                                             ws_exists.version == max_ver_d_sqr
+                                                                .c.maxver))
+                                  .filter(and_(ws_exists.task_type 
+                                                == TASK_TYPE_DRVD,
+                                               ws_exists.area 
+                                                == WS_AREA_PENDING,
+                                               ws_exists.base_uuid 
+                                                == Workspace.uuid))
+                                  .exists())
+        #Main Query
+        results = (SESSION.query(Workspace.uuid, Workspace.version)
+                          .join(max_ver_sqr,
+                                and_(Workspace.uuid == max_ver_sqr.c.uuid,
+                                     Workspace.version == max_ver_sqr.c.maxver)
+                                    )
+                          .join(max_due_sqr,
+                                and_(Workspace.uuid == max_due_sqr.c.uuid,
+                                     Workspace.version == max_due_sqr.c.maxver)
+                                    )
+                          .filter(and_(Workspace.recur_end 
+                                        == max_due_sqr.c.maxdue,
+                                      Workspace.recur_end != None,
+                                      Workspace.task_type == TASK_TYPE_BASE,
+                                      Workspace.area == WS_AREA_PENDING,
+                                      task_exists_sqr))
+                          .all())
+        #Now get the actual base tasks for these UUIDs which need to be
+        #completed.
+        task_list = get_tasks(results)
+        for task in task_list:
+            uuidn = task.uuid
+            make_transient(task)
+            ws_task = task
+            ws_task.uuid = uuidn
+            ws_task.id = "-"
+            ws_task.area = WS_AREA_COMPLETED
+            ws_task.status = TASK_STATUS_DONE
+            if event_id is None:
+                ws_task.event_id = None
+            else:
+                # Use an inherited event_id if available
+                ws_task.event_id = event_id
+            ws_task.now_flag = False
+            LOGGER.debug("Completing Base Task UUID {} and Task ID {}"
+                         .format(ws_task.uuid, ws_task.id))
+            ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
+            ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
+            if ret == FAILURE:
+                LOGGER.error("Error encountered in adding task version, "
+                             "stopping")
+                return ret, None    
+    return SUCCESS, task_tags_print
 
 
 def toggle_now(potential_filters, event_id=None):
@@ -2036,6 +2166,7 @@ def display_dates(potential_filters, pager=False, top=None):
         CONSOLE.print(table, soft_wrap=True)
     return SUCCESS
 
+
 def display_by_tags(potential_filters, pager=False, top=None):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
@@ -2072,7 +2203,7 @@ def display_by_tags(potential_filters, pager=False, top=None):
     table.add_column("tag", justify="left")
     table.add_column("area", justify="left")
     table.add_column("status", justify="left")
-    table.add_column("no. of tasks", justify="left")
+    table.add_column("no. of tasks", justify="right")
     prev_tag = None
     if top is None:
         top = len(tags_list)
@@ -2363,7 +2494,6 @@ def calc_task_scores(task_list):
         if tags:
             score = score + (sc_tags.get("yes")) * weights.get("tags")
         #Inception
-        print(task.incep_diff_today)
         score = (score + (sc_due.get("today") * int(task.incep_diff_today)
                             /incep_sum)
                          * weights.get("inception"))
@@ -2736,8 +2866,7 @@ def get_task_uuid_n_ver(potential_filters):
             max_ver_xpr1 = (SESSION.query(Workspace.uuid,
                                           func.max(Workspace.version)
                                           .label("maxver"))
-                            .filter(and_(Workspace.task_type == TASK_TYPE_BASE,
-                                         Workspace.area == WS_AREA_PENDING))
+                            .filter(Workspace.task_type == TASK_TYPE_BASE)
                             .group_by(Workspace.uuid).subquery())
             results = (SESSION.query(Workspace.uuid, Workspace.version)
                        .join(max_ver_xpr1,
@@ -3344,6 +3473,7 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst, event_id):
     uuid_version_list = []
     del_uuid_ver_list = []
     ulnk_uuid_ver_list = []
+    create_one = False
     tags_str = ""
     del_tags_str = ""
     ulnk_tags_str = ""
@@ -3362,8 +3492,7 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst, event_id):
         max_ver_xpr = (SESSION.query(Workspace.uuid,
                                      func.max(Workspace.version)
                                      .label("maxver"))
-                       .filter(and_(Workspace.task_type == TASK_TYPE_BASE,
-                                    Workspace.area.in_([WS_AREA_PENDING])))
+                       .filter(Workspace.task_type == TASK_TYPE_BASE)
                        .group_by(Workspace.uuid).subquery())
         results = (SESSION.query(func.max(WorkspaceRecurDates.due))
                    .join(max_ver_xpr, and_(WorkspaceRecurDates.version ==
@@ -3373,6 +3502,31 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst, event_id):
                    .filter(WorkspaceRecurDates.uuid ==
                            ws_task_base.uuid)
                    .all())
+        
+        max_ver_d_sqr = (SESSION.query(Workspace.uuid,
+                                     func.max(Workspace.version)
+                                        .label("maxver"))
+                              .filter(Workspace.task_type == TASK_TYPE_DRVD)
+                              .group_by(Workspace.uuid)
+                              .subquery())
+        #Check if there are any derived tasks in 'pending' area
+        #If none then create atleast one.
+        task_exists = (SESSION.query(Workspace.uuid)
+                                  .join(max_ver_d_sqr, 
+                                        and_(Workspace.uuid == max_ver_d_sqr
+                                                                .c.uuid,
+                                             Workspace.version == max_ver_d_sqr
+                                                                .c.maxver))
+                                  .filter(and_(Workspace.task_type 
+                                                == TASK_TYPE_DRVD,
+                                               Workspace.area 
+                                                == WS_AREA_PENDING,
+                                               Workspace.base_uuid 
+                                                == ws_task_base.uuid))
+                                  .all())
+        if not task_exists:
+            print("tanuchi is konkeychiiiiiiiiiiiiiiiiiiiiiiii")
+            create_one = True
     else:
         # Create a new base task - from add or
         # version for the base task - from modify
@@ -3423,7 +3577,6 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst, event_id):
                                                     end_dt))[1]
         except (IndexError) as e:
             return SUCCESS, None
-        create_first = False
     else:
         """
         No tasks exist for this recurring set, so due date should be base
@@ -3439,9 +3592,9 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst, event_id):
                                        datetime.strptime(ws_task_base.due,
                                                          FMT_DATEONLY)
                                         .date(), end_dt))[0]
-        create_first = True
-    LOGGER.debug("Next due is {} and create_first is {}"
-                 .format(next_due, create_first))
+        create_one = True
+    LOGGER.debug("Next due is {} and create_one is {}"
+                 .format(next_due, create_one))
     """
     For derived tasks idea is to create tasks into the future until the 
     difference of the task's due date to today reaches a pre-defined 
@@ -3452,7 +3605,8 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst, event_id):
     15-Dec. It will create 2 tasks, one with due=15-Dec and another with
     due=16-Dec. Since the app is not a live system the task creation 
     beyond due=16-Dec will be tied into any command which will access the 
-    database . So on 16-Dec if any such command is run it will create the task 
+    database for the first run during a new day. 
+    So on 16-Dec if any such command is run it will create the task 
     with due=17-Dec. 
     The logic also works for back-dated due and end dates. 
     If the due date is in the future then the first task will be created 
@@ -3487,7 +3641,7 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst, event_id):
     """
     LOGGER.debug("UNTIL_WHEN is {} and end is {}".format(until_when,
                                                             end_dt))
-    while ((create_first or (next_due - curr_date).days < until_when)
+    while ((create_one or (next_due - curr_date).days < until_when)
                                 and next_due <= end_dt):
         ws_task_drvd.due = next_due.strftime(FMT_DATEONLY)
         if ws_task_drvd.hide is not None:
@@ -3517,7 +3671,7 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst, event_id):
             LOGGER.error("Error will adding recurring tasks")
             return FAILURE, None, None
         uuid_version_list.append((ws_task_drvd.uuid, ws_task_drvd.version))
-        create_first = False
+        create_one = False
         SESSION.expunge(ws_task_drvd)
         make_transient(ws_task_drvd)
         SESSION.expunge(ws_rec_dt)
@@ -3558,9 +3712,9 @@ def calc_next_inst_date(recur_mode, recur_when, start_dt, end_dt, cnt=2):
     elif recur_mode == MODE_WEEKLY:
         next_due = (list(rrule(WEEKLY, count=cnt, dtstart=start_dt,
                                until=end_dt)))
-    elif recur_mode == MODE_FRTNGHT:
-        next_due = (list(rrule(WEEKLY, interval=2, count=cnt,
-                               dtstart=start_dt, until=end_dt)))
+    #elif recur_mode == MODE_FRTNGHT:
+    #    next_due = (list(rrule(WEEKLY, interval=2, count=cnt,
+    #                           dtstart=start_dt, until=end_dt)))
     elif recur_mode == MODE_MONTHLY:
         next_due = (list(rrule(MONTHLY, count=cnt, dtstart=start_dt,
                                until=end_dt)))
