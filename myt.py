@@ -68,6 +68,7 @@ Domain Values for the application
 TASK_STATUS_TODO = "TO_DO"
 TASK_STATUS_STARTED = "STARTED"
 TASK_STATUS_DONE = "DONE"
+TASK_STATUS_DELETED = "DELETED"
 # Task Area Domain
 WS_AREA_PENDING = "pending"
 WS_AREA_COMPLETED = "completed"
@@ -84,13 +85,11 @@ TASK_TYPE_NRML = "NORMAL"
 # Recurring Task's Domain for MODE
 MODE_DAILY = "D"
 MODE_WEEKLY = "W"
-MODE_WKDAY = "WD"
+MODE_YEARLY = "Y"
 MODE_MONTHLY = "M"
+MODE_WKDAY = "WD"
 MODE_MTHDYS = "MD"
 MODE_MONTHS = "MO"
-MODE_QRTR = "Q"
-MODE_SEMIANL = "S"
-MODE_ANNUAL = "A"
 # Recurring Task' domain for WHEN(range function's stop param is exclusive)
 WHEN_WEEKDAYS = list(range(1, 8))
 WHEN_MONTHDAYS = list(range(1, 32))
@@ -124,12 +123,11 @@ PRINT_ATTR = ["description", "priority", "due", "hide", "groups", "tags",
               "task_type", "area"]
 # Modes
 VALID_MODES = [MODE_DAILY, MODE_WEEKLY, MODE_WKDAY, MODE_MONTHLY,
-               MODE_MTHDYS, MODE_MONTHS, MODE_QRTR, MODE_SEMIANL, MODE_ANNUAL]
+               MODE_MTHDYS, MODE_MONTHS, MODE_YEARLY]
 
 # Until When config - Aligned to Recurring Task Mode Domains
 UNTIL_WHEN = {MODE_DAILY: 2, MODE_WEEKLY: 8, MODE_MONTHLY: 32, 
-              MODE_SEMIANL: 184, MODE_QRTR: 93, MODE_ANNUAL: 367, 
-              MODE_WKDAY: 2, MODE_MTHDYS: 5, MODE_MONTHS: 90}
+              MODE_YEARLY: 367, MODE_WKDAY: 2, MODE_MTHDYS: 5, MODE_MONTHS: 90}
 # Future date for date and None comparisons
 FUTDT = datetime.strptime("2300-01-01", "%Y-%m-%d").date()
 # Indictor Symbols
@@ -381,8 +379,7 @@ def add(desc, priority, due, hide, group, tag, recur, end, verbose):
     '-re' option along with an optional 'end' date using '-en'
     
     BASIC Mode:
-    DAILY - D, MONTHLY - M, WEEKLY - W, FORNIGHTLY - F,
-    MONTHLY - M, QUARTERLY - Q, SEMI_ANUALLY - A and YEARLY - Y
+    DAILY - D, WEEKLY - W, MONTHLY - M and YEARLY - Y
     
     Ex: myt add -de "Pay the rent" -du 2020-11-01 -re M
     
@@ -390,6 +387,8 @@ def add(desc, priority, due, hide, group, tag, recur, end, verbose):
     1st Nov 2020.
     
     EXTENDED Mode:
+    Every x DAYS - DEx, Every x WEEKS - WEx, Every x MONTHS - MEx, 
+    Every x YEARS - YEx 
     WEEKDAYS - WD[1-7], MONTHDAYS - MD[1-31], MONTHS - MO[1-12]
     
     Ex: myt add -de 'Buy groceries online' -du 2020-12-03 -re MD3,13,24,30
@@ -423,7 +422,8 @@ def add(desc, priority, due, hide, group, tag, recur, end, verbose):
             ws_tags_list = None
         due = convert_date(due)
         end = convert_date(end)
-        hide = convert_date_rel(hide, parse(due))
+        if due is not None:
+            hide = convert_date_rel(hide, parse(due))
         if recur is not None:
             LOGGER.debug("Recur: {}".format(recur))
             if due is None or due == CLR_STR:
@@ -532,16 +532,108 @@ def add(desc, priority, due, hide, group, tag, recur, end, verbose):
 def modify(filters, desc, priority, due, hide, group, tag, recur, end,
            verbose):
     """
-    Modify task details. Specify 1 or more filters and provide the details to
-    be modified using the options. FILTERS can take various forms, some 
-    examples are given below. Format is 'field:value'.
+    Modify task details. Specify 1 or more filters and provide the new values 
+    for attributes which need modification using the options available.
+    
+    --- FILTERS- -- 
+    
+    Filters can take various forms, refer below. Format is 'field:value'.
 
-    id:2 - Filter task id =1 and apply modification
+    id - Filter on tasks by id. This filters works by itself and cannot be
+    combined as this is most specific. Works on tasks which are in status 
+    'TO_DO', 'STARTED'. Ex - id:4,10
 
-    tg:bills,finance - Filter on tasks tagged as bills or finance and modify
+    uuid - Filter on tasks by uuid. This works by itself and cannot be 
+    combined with other filters. Works on tasks with status 'DONE' or 
+    'DELETED'. Ex - uuid:31726cd2-2db3-4ae4-97ae-b2b7b29a7307
+    
+    desc - Filter on tasks by description. The filter searches within task
+    descriptions. Can be combined with other filters. Ex - de:fitness or
+    desc:fitness
+    
+    groups - Filter on tasks by the group name. Can be combined with other
+    filters. Ex - gr:HOME.BILLS or group:HOME.BILLS
+    
+    tags - Filter tasks on tags, can be provided as comman separated. Can be
+    combined with other filters. Ex - tg:bills,finance or tag:bills,finance
+    
+    priority - Filter tasks on the priority. Can be combined with other 
+    filters. Ex - pr:M or priority:Medium
 
-    id and tags can take comma separated values
-    group takes only a single value
+    due, hide, end - Filter tasks on dates. It is possible to filter based on
+    various conditions as explained below with examples using due/du
+    
+        Equal To - du:eq:+1 Tasks due tomorrow\n
+        Less Than - du:lt:+0 Tasks with due dates earlier than today\n
+        Less Than or Equal To - due:le:+0 Tasks due today or earlier\n
+        Greater Than - du:gt:2020-12-10 Tasks with due date after 10th Dec '20
+        \n
+        Greater Than or Equal To - du:ge:+7 Tasks due in 7 days or beyond\n
+        Between - du:bt:2020-12-01:2020-12-07 Tasks due in the first 7 days of
+        Dec '20. Both dates are inclusive\n
+        The same works for hide/hi and end/en as well. For hide when using the 
+        short form of the date as '-X' this is relative to today and noty due 
+        date. When providing an input value for hide with this format '-X' is
+        relative to the due date.\n
+    
+    'started' - Filter all tasks that are in 'STARTED' status. Can be combined 
+    with other filters.
+    
+    'now' - Filter on the task marked as 'NOW'.
+    
+    The next section documents High Level Filters and should be used with 
+    caution as they could modify large number of tasks.
+    
+    'done' - Filters all tasks that are in 'DONE' status. Mandatory filter when 
+    operating on tasks in the 'completed' are or tasks which are 'DONE'.
+    
+    'bin' - Filters all tasks that are in the DELETED status or in the bin and 
+    mandatory when operating on such tasks.
+    
+    'hidden' - Filters all tasks that are currently hidden from the normal
+    view command but are still pending, 'TO_DO' or 'STARTED'. Mandatory filter
+    when operating on tasks that are currently hidden.
+    
+    'today' - Filters all tasks that are due today. Works on pending tasks only
+    
+    'overdue' - Filters all tasks that are overdue. Works on pending tasks only
+    
+    --- CLEARING PROPERTIES ---
+    
+    The property values can be cleared or set to empty using the keyword 'clr'.
+    This works on due, hide, priority, groups, tags, end. For the respective 
+    option you can provide 'clr' as the value. Ex: -pr clr or -gr clr
+    
+    --- RECURRENCE ---
+    
+    If based on the filters any of the tasks are of recurring nature then a 
+    prompt will be displayed asking if the change needs to be applied to just
+    this instance of the task or all recurring instances.
+    
+    Changes on individual instances are allowed only for description, groups, 
+    tags, priority, due and hide date. Changes on recurrence, that is the type 
+    of recurrence or the end date, are applicable only to all instances of the 
+    task.
+    
+    If the recurrence changes then a new tasks are created as per the new 
+    recurrence properties. Any pending instances of the old recurring task are
+    deleted. Any 'DONE' instance are unlinked and will behance as normal tasks
+    if reverted.
+    
+    --- EXAMPLES ---
+    
+    myt modify id:7,8 -de "Go to the gym" - Change the description for 2 tasks
+    with ID as 7 and 8
+    
+    myt modify today -tg -relaxed,urgent - For all tasks that are due today,
+    add a tag 'urgent' and remove a tag 'relaxed'
+    
+    myt modify overdue du:eq:-1 -pr HIGH - For all tasks that are overdue and 
+    were due as of yesterday set their priority to High
+    
+    myt modify hidden gr:HOME -hi clr - For all hidden tasks which have group
+    as 'HOME' clear the hide date.
+    
     """
     if verbose:
         set_versbose_logging()
@@ -744,10 +836,10 @@ def stop(filters, verbose):
               help="Viewmode - Display tags and the number of tasks against "
                    "each of them",
               )
-@click.option("--projects",
+@click.option("--groups",
               "viewmode",
-              flag_value="projects",
-              help="Viewmode - Display projects and the number of tasks "
+              flag_value="groups",
+              help="Viewmode - Display groups and the number of tasks "
                    "against each of them",
               )
 @click.option("--dates",
@@ -784,8 +876,8 @@ def view(filters, verbose, pager, top, viewmode):
         ret = SUCCESS
     elif viewmode == "tags":
         ret = display_by_tags(potential_filters, pager, top)
-    elif viewmode == "projects":
-        ret = SUCCESS
+    elif viewmode == "groups":
+        ret = display_by_groups(potential_filters, pager, top)
     elif viewmode == "dates":
         ret = display_dates(potential_filters, pager, top)
     exit_app(ret)
@@ -1140,6 +1232,7 @@ def delete_tasks(potential_filters, event_id=None):
         make_transient(task)
         ws_task = task
         ws_task.id = "-"
+        ws_task.status = TASK_STATUS_DELETED
         ws_task.area = WS_AREA_BIN
         if event_id is None:
             ws_task.event_id = None
@@ -1327,7 +1420,7 @@ def complete_task(potential_filters, event_id=None):
     
     if base_uuids:
         """
-        First if for any of teh crecurring tasks all tasks in the pending 
+        First, if for any of the recurring tasks all tasks in the pending 
         area are completed and the recur end date has not reached then we
         create atleast 1 instance of the next derived task. This will then
         give a task entry for the user to use to modify any properties. Else
@@ -1740,7 +1833,7 @@ def prep_modify(potential_filters, ws_task_src, tag):
                     """
                     LOGGER.debug("Change requested in due:{} or hide:{} or "
                                  "recur:{}".format(due_chg, hide_chg,
-                                                   recur_chg))
+                                                   rec_chg))
                     potential_filters = {}
                     potential_filters["baseuuidonly"] = base_uuid
                     uuid_ver_res_innr = get_task_uuid_n_ver(potential_filters)
@@ -1971,7 +2064,9 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
     elif ws_task_src.groups is not None:
         ws_task.groups = ws_task_src.groups
 
-    if ws_task_src.recur_end is not None:
+    if ws_task_src.recur_end == CLR_STR:
+        ws_task.recur_end = None
+    elif ws_task_src.recur_end is not None:
         ws_task.recur_end = ws_task_src.recur_end
     if ws_task_src.recur_mode is not None:
         ws_task.recur_mode = ws_task_src.recur_mode
@@ -2223,7 +2318,7 @@ def display_by_tags(potential_filters, pager=False, top=None):
         trow.append(tag.area)
         trow.append(tag.status)
         trow.append(str(tag.count))
-        if tag.status == TASK_STATUS_DONE:
+        if tag.area == WS_AREA_COMPLETED:
             table.add_row(*trow, style="done")
         elif tag.area == WS_AREA_BIN:
             table.add_row(*trow, style="binn")
@@ -2237,6 +2332,69 @@ def display_by_tags(potential_filters, pager=False, top=None):
     return SUCCESS
 
 
+def display_by_groups(potential_filters, pager=False, top=None):
+    uuid_version_results = get_task_uuid_n_ver(potential_filters)
+    if not uuid_version_results:
+        CONSOLE.print("No tasks to display...", style="default")
+        get_and_print_task_count({WS_AREA_PENDING: "yes"}) 
+        return SUCCESS
+    CONSOLE.print("Preparing view...", style="default")
+    task_list = get_tasks(uuid_version_results)
+    area = task_list[0].area
+    task_cnt = {}
+    for task in task_list:
+        if task.groups is not None:
+            grp_list = task.groups.split(".")
+            grp = ""
+            for item in grp_list:
+                grp = grp + "." + item
+                status_cnt = task_cnt.get(grp.lstrip("."))
+                if status_cnt is None:
+                    status_cnt = {}
+                status_cnt[task.status]  = (status_cnt.get(task.status) or 0) + 1
+                task_cnt[grp.lstrip(".")] = status_cnt
+    LOGGER.debug("Total grps to print {}".format(len(task_cnt)))
+    table = RichTable(box=box.HORIZONTALS, show_header=True,
+                      header_style="header", expand=False)
+    table.add_column("group", justify="left")
+    table.add_column("area", justify="left")
+    table.add_column("status", justify="left")
+    table.add_column("no. of tasks", justify="right") 
+    if top is None:
+        top = len(task_cnt)
+    else:
+        top = int(top)
+    prev_grp = None
+    for cnt, grp in enumerate(sorted(task_cnt), start=1):
+        if cnt > top:
+            break
+        if cnt > 1:
+            table.add_row(None, None, None, None)
+        status_cnt = task_cnt.get(grp)
+        for status in sorted(status_cnt):
+            trow = []
+            if grp == prev_grp:
+                trow.append(None)
+            else:
+                trow.append(grp)
+                prev_grp = grp
+            trow.append(area)
+            trow.append(status)
+            trow.append(str(status_cnt.get(status)))
+            if area == WS_AREA_COMPLETED:
+                table.add_row(*trow, style="done")
+            elif area == WS_AREA_BIN:
+                table.add_row(*trow, style="binn")
+            else:
+                table.add_row(*trow, style="default")
+    if pager:
+        with CONSOLE.pager(styles=True):
+            CONSOLE.print(table, soft_wrap=True)
+    else:
+        CONSOLE.print(table, soft_wrap=True)        
+    return SUCCESS       
+        
+        
 def display_default(potential_filters, pager=False, top=None):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
@@ -2952,7 +3110,7 @@ def get_task_uuid_n_ver(potential_filters):
                 from all 3 areas. Will be case insensitive
                 """
                 LOGGER.debug("Inside group filter with below params")
-                LOGGER.debug(group + "%")
+                LOGGER.debug("%" + group + "%")
                 innrqr_groups = (SESSION.query(Workspace.uuid,
                                                Workspace.version)
                                  .join(max_ver_xpr,
@@ -2960,7 +3118,7 @@ def get_task_uuid_n_ver(potential_filters):
                                             max_ver_xpr.c.maxver,
                                             Workspace.uuid ==
                                             max_ver_xpr.c.uuid))
-                                 .filter(Workspace.groups.like(group+"%")))
+                                 .filter(Workspace.groups.like("%"+group+"%")))
                 innrqr_list.append(innrqr_groups)
             if tag is not None:
                 """
@@ -3707,26 +3865,37 @@ def calc_next_inst_date(recur_mode, recur_when, start_dt, end_dt, cnt=2):
     """
     #Start with the BASIC modes (which do not need a 'when')
     if recur_mode == MODE_DAILY:
-        next_due = (list(rrule(DAILY, count=cnt, dtstart=start_dt,
-                               until=end_dt)))
+        if recur_when is None:
+            next_due = (list(rrule(DAILY, count=cnt, dtstart=start_dt,
+                                   until=end_dt)))
+        else:
+            rec_intvl = int(recur_when[1:])
+            next_due = (list(rrule(DAILY, interval=rec_intvl, count=cnt,
+                                   dtstart=start_dt, until=end_dt)))
     elif recur_mode == MODE_WEEKLY:
-        next_due = (list(rrule(WEEKLY, count=cnt, dtstart=start_dt,
-                               until=end_dt)))
-    #elif recur_mode == MODE_FRTNGHT:
-    #    next_due = (list(rrule(WEEKLY, interval=2, count=cnt,
-    #                           dtstart=start_dt, until=end_dt)))
+        if recur_when is None:
+            next_due = (list(rrule(WEEKLY, count=cnt, dtstart=start_dt,
+                                   until=end_dt)))
+        else:
+            rec_intvl = int(recur_when[1:])
+            next_due = (list(rrule(WEEKLY, interval=rec_intvl, count=cnt,
+                                   dtstart=start_dt, until=end_dt)))
     elif recur_mode == MODE_MONTHLY:
-        next_due = (list(rrule(MONTHLY, count=cnt, dtstart=start_dt,
-                               until=end_dt)))
-    elif recur_mode == MODE_QRTR:
-        next_due = (list(rrule(MONTHLY, interval=3, count=cnt,
-                               dtstart=start_dt, until=end_dt)))
-    elif recur_mode == MODE_SEMIANL:
-        next_due = (list(rrule(MONTHLY, interval=6, count=cnt,
-                               dtstart=start_dt, until=end_dt)))
-    elif recur_mode == MODE_ANNUAL:
-        next_due = (list(rrule(YEARLY, count=cnt, dtstart=start_dt,
-                               until=end_dt)))
+        if recur_when is None:
+            next_due = (list(rrule(MONTHLY, count=cnt, dtstart=start_dt,
+                                   until=end_dt)))
+        else:
+            rec_intvl = int(recur_when[1:])
+            next_due = (list(rrule(MONTHLY, interval=rec_intvl, count=cnt,
+                                   dtstart=start_dt, until=end_dt)))
+    elif recur_mode == MODE_YEARLY:
+        if recur_when is None:
+            next_due = (list(rrule(YEARLY, count=cnt, dtstart=start_dt,
+                                   until=end_dt)))
+        else:
+            rec_intvl = int(recur_when[1:])
+            next_due = (list(rrule(YEARLY, interval=rec_intvl, count=cnt,
+                                   dtstart=start_dt, until=end_dt)))
     else:
         #EXTENDED Modes
         #Parse the when list and check for modes which require a when
@@ -3748,42 +3917,71 @@ def calc_next_inst_date(recur_mode, recur_when, start_dt, end_dt, cnt=2):
 
 
 def parse_n_validate_recur(recur):
+    errmsg = ("Insufficient input for recurrence. Check 'myt add --help' for "
+             "more info and examples.")
     when = []
-    # Check if the 'mode' is something that requires 'when' - EXTENDED MODE
-    # 2 charcater modes require 'when'
     if (recur[0:2]).ljust(2, " ") in VALID_MODES:
+        """
+        Do the first 2 characters make up a valid mode. If they do then
+        attempt to validate the string for EXTENDED mode - where the repeat
+        information needs to be provided
+        EXTENDED Mode
+        """
         mode = recur[0:2]
         when = (recur[2:]).rstrip(",").lstrip(",")
         if not when:
-            CONSOLE.print("Insufficient input for recurrence. Check 'myt add "
-                          "--help' for more info and examples.")
+            CONSOLE.print(errmsg)
             return FAILURE, None, None
         # Convert to a list to validate
         when_list = when.split(",")
         if when_list:
-            when_list = [int(i) for i in when_list]
+            #Cheack if each item in the repeat string is an integer
+            try:
+                when_list = [int(i) for i in when_list]
+            except ValueError as e:
+                CONSOLE.print(errmsg)
+                return FAILURE, None, None       
+        #Validate if the repeat items are valid for the respective mode
         if mode == MODE_WKDAY:
             if not set(when_list).issubset(WHEN_WEEKDAYS):
-                CONSOLE.print("Incorrect repeat information provided. Check "
-                              "'myt add --help' for more info and examples.")
+                CONSOLE.print(errmsg)
                 return FAILURE, None, None
         elif mode == MODE_MTHDYS:
             if not set(when_list).issubset(WHEN_MONTHDAYS):
-                CONSOLE.print("Incorrect repeat information provided. Check "
-                              "'myt add --help' for more info and examples.")
+                CONSOLE.print(errmsg)
                 return FAILURE, None, None
         elif mode == MODE_MONTHS:
             if not set(when_list).issubset(WHEN_MONTHS):
-                CONSOLE.print("Incorrect repeat information provided. Check "
-                              "'myt add --help' for more info and examples.")
+                CONSOLE.print(errmsg)
                 return FAILURE, None, None
     elif recur[0:1] in VALID_MODES:
-        #BASIC Mode
+        """
+        If the first 2 characters do not make up a valid mode check if the 
+        first character by itself is a valid  mode. 
+        """
         mode = recur[0:1]
-        when = None
+        if len(recur) == 1:
+            #If only this 1 character provided then it is BASIC mode
+            when = None
+        elif recur[1:2] == "E":
+            """
+            If E is the second character then user is asking for 'every' 
+            X days or every X months etc. This is also an EXTENDED Mode
+            """
+            try:
+                when = int(recur[2:])
+                when = "E" + str(when)
+            except ValueError as e:
+                CONSOLE.print(errmsg)
+                return FAILURE, None, None
+        else:
+            #Not Basic mode nor a valid extended mode
+            CONSOLE.print(errmsg)
+            return FAILURE, None, None
+
     else:
-        CONSOLE.print("Error in parsing recur option value. Check 'myt add "
-                      "--help' for more info and examples.")
+        #Not a valid mode
+        CONSOLE.print(errmsg)
         return FAILURE, None, None
     return SUCCESS, mode, when
 
