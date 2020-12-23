@@ -139,7 +139,7 @@ INDC_NOW = "[++]"
 # Date formats
 FMT_DATEONLY = "%Y-%m-%d"
 FMT_DATETIME = "%Y-%m-%d %H:%M"
-FMT_EVENTID = "%Y%m-%d%H-%M%S-"
+FMT_EVENTID = "%Y%m%d%H%M%S%f"
 FMT_DAY_DATEW = "%a %d%b%y"
 FMT_DATEW_TIME = "%d%b%y %H%M"
 # ORM Definition
@@ -159,20 +159,20 @@ class Workspace(Base):
     id = Column(Integer)
     description = Column(String)
     priority = Column(String)
-    status = Column(String)
+    status = Column(String, nullable=False)
     due = Column(String)
     hide = Column(String)
-    area = Column(String)
-    created = Column(String)
+    area = Column(String, nullable=False)
+    created = Column(String, nullable=False)
     groups = Column(String)
-    event_id = Column(String)
+    event_id = Column(String, nullable=False)
     now_flag = Column(BOOLEAN)
-    task_type = Column(String)
+    task_type = Column(String, nullable=False)
     base_uuid = Column(String)
     recur_mode = Column(String)
     recur_when = Column(String)
     recur_end = Column(String)
-    inception = Column(String)
+    inception = Column(String, nullable=False)
     score = Column(Integer)
 
     # To get due date difference to today
@@ -232,7 +232,25 @@ class WorkspaceTags(Base):
 
 Index("idx_ws_tg_uuid_ver", WorkspaceTags.uuid, WorkspaceTags.version)
 
-
+"""
+Additional note on WorkspaceRecurDates. The rows for this table are created in
+two scenarios:
+1. At a derived task level - For each derived task a record is created in the 
+table using the base uuid and version with due = derived task's due.
+This is what happens when 
+    - a new recurring task is added or 
+    - an indivdual recurring task instance is added or
+    - when the entire recurring task gets modified due to changes in recurrence
+      properties
+2. When a new version of base task is created with no changes in due dates - In
+this case the due dates of the base task from previous version are just copied
+over as new records but with the new base taks version.
+This is used when
+    - the recurring task and its instances are modified with no changes in 
+      recurrence properties
+    - when a base task is reverted from completed to pending area as part of 
+      the revert task option
+"""
 class WorkspaceRecurDates(Base):
     """
     ORM for the table 'workspace_recur_dates' which holds all due dates for 
@@ -444,10 +462,12 @@ def add(desc, priority, due, hide, group, tag, recur, end, verbose):
             ws_task.recur_mode = mode
             ws_task.recur_when = when
             ws_task.recur_end = end
+            ws_task.event_id = event_id
             ret, return_list = prep_recurring_tasks(ws_task, ws_tags_list,
-                                                    False, event_id)
+                                                    False)
             print(ret)
             if ret == SUCCESS:
+                SESSION.commit()
                 """
                 Compared to other operations, adding recurring tasks requires  
                 adding multiple tasks by copying the 'same' base tasks. In  
@@ -467,11 +487,10 @@ def add(desc, priority, due, hide, group, tag, recur, end, verbose):
                 task_tags_print = zip(*[task_list, [tags_str]*len(task_list)])
                 get_and_print_task_count({WS_AREA_PENDING: "yes",
                                           PRNT_TASK_DTLS: task_tags_print})
-                SESSION.commit()
         else:
             ws_task.task_type = TASK_TYPE_NRML
-            ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list,
-                                                       event_id)
+            ws_task.event_id = event_id
+            ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
             if ret == SUCCESS:
                 SESSION.commit()
                 get_and_print_task_count({WS_AREA_PENDING: "yes",
@@ -639,11 +658,11 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end,
         set_versbose_logging()
     potential_filters = parse_filters(filters)
     LOGGER.debug("Values for update: desc - {} due - {} hide - {} group - {}"
-                 " tag - {} now - {}"
-                 .format(desc, due, hide, group, tag, toggle_now))
+                 " tag - {}"
+                 .format(desc, due, hide, group, tag))
     # Perform validations
     if (desc is None and priority is None and due is None and hide is None
-            and group is None and tag is None and toggle_now is False):
+            and group is None and tag is None and recur is None):
         CONSOLE.print("No modification values provided. Nothing to do...",
                       style="default")
         exit_app(SUCCESS)
@@ -664,10 +683,13 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end,
         tag = (tag.lstrip(",")).rstrip(",")
     else:
         tag = None
+    event_id = get_event_id()
     ws_task = Workspace(description=desc, priority=priority,
                         due=due, hide=hide, groups=group, recur_end=end,
-                        recur_when=when, recur_mode=mode)
-    ret, task_tags_print = prep_modify(potential_filters, ws_task, tag)
+                        recur_when=when, recur_mode=mode, event_id=event_id)
+    ret, task_tags_print = prep_modify(potential_filters, 
+                                       ws_task, 
+                                       tag)
     if ret == SUCCESS:
         SESSION.commit()
         get_and_print_task_count({WS_AREA_PENDING: "yes",
@@ -698,7 +720,15 @@ def now(filters, verbose):
         exit_app(SUCCESS)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    ret = toggle_now(potential_filters)
+    if potential_filters.get(TASK_BIN) == "yes":
+        CONSOLE.print("Cannot apply operation to deleted tasks")
+        exit_app(SUCCESS)
+    event_id = get_event_id()
+    ret, task_tags_print = toggle_now(potential_filters, event_id)
+    if ret == SUCCESS:
+        SESSION.commit()
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                 PRNT_TASK_DTLS: task_tags_print})
     exit_app(ret)
 
 
@@ -717,11 +747,19 @@ def start(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
+    if potential_filters.get(TASK_BIN) == "yes":
+        CONSOLE.print("Cannot apply operation to deleted tasks")
+        exit_app(SUCCESS)
     if potential_filters.get(TASK_ALL) == "yes":
         if not confirm_prompt("No filters given for starting tasks,"
                               " are you sure?"):
             exit_app(SUCCESS)
-    ret = start_task(potential_filters)
+    event_id = get_event_id()
+    ret, task_tags_print = start_task(potential_filters, event_id)
+    if ret == SUCCESS:
+        SESSION.commit()
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                 PRNT_TASK_DTLS: task_tags_print})
     exit_app(ret)
 
 
@@ -740,11 +778,15 @@ def done(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
+    if potential_filters.get(TASK_BIN) == "yes":
+        CONSOLE.print("Cannot apply operation to deleted tasks")
+        exit_app(SUCCESS)
     if potential_filters.get(TASK_ALL) == "yes":
         if not confirm_prompt("No filters given for marking tasks as done,"
                               " are you sure?"):
             exit_app(SUCCESS)
-    ret, task_tags_print = complete_task(potential_filters)
+    event_id = get_event_id()
+    ret, task_tags_print = complete_task(potential_filters, event_id)
     if ret == SUCCESS:
         SESSION.commit()
         get_and_print_task_count({WS_AREA_PENDING: "yes",
@@ -767,11 +809,19 @@ def revert(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
+    if potential_filters.get(TASK_BIN) == "yes":
+        CONSOLE.print("Cannot apply operation to deleted tasks")
+        exit_app(SUCCESS)
     if potential_filters.get(HL_FILTERS_ONLY) == "yes":
         if not confirm_prompt("No detailed filters given for reverting tasks "
                               "to TO_DO status, are you sure?"):
             exit_app(SUCCESS)
-    ret = revert_task(potential_filters)
+    event_id = get_event_id()
+    ret, task_tags_print = revert_task(potential_filters, event_id)
+    if ret == SUCCESS:
+        SESSION.commit()
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                  PRNT_TASK_DTLS: task_tags_print})
     exit_app(ret)
 
 
@@ -790,11 +840,19 @@ def stop(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
+    if potential_filters.get(TASK_BIN) == "yes":
+        CONSOLE.print("Cannot apply operation to deleted tasks")
+        exit_app(SUCCESS)
     if potential_filters.get(TASK_ALL) == "yes":
         if not confirm_prompt("No filters given for stopping tasks, "
                               "are you sure?"):
             exit_app(SUCCESS)
-    ret = stop_task(potential_filters)
+    event_id = get_event_id()
+    ret, task_tags_print = stop_task(potential_filters, event_id)
+    if ret == SUCCESS:
+        SESSION.commit()
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                    PRNT_TASK_DTLS: task_tags_print})
     exit_app(ret)
 
 
@@ -856,6 +914,7 @@ def view(filters, verbose, pager, top, viewmode):
     """
     Display tasks using various views and filters
     """
+    ret = SUCCESS
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
@@ -902,13 +961,12 @@ def delete(filters, verbose):
             exit_app(SUCCESS)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    ret, task_tags_print = delete_tasks(potential_filters)
+    event_id = get_event_id()
+    ret, task_tags_print = prep_delete(potential_filters, event_id, False)
     if ret == SUCCESS:
         SESSION.commit()
         get_and_print_task_count({WS_AREA_PENDING: "yes",
                                   PRNT_TASK_DTLS: task_tags_print})
-        CONSOLE.print("{} task(s) deleted".format(str(len(task_tags_print))),
-                      style="info")
     exit_app(ret)
 
 
@@ -916,10 +974,6 @@ def delete(filters, verbose):
 @click.option("--empty",
               is_flag=True,
               help="Empty the bin area.",
-              )
-@click.option("--vaccum",
-              is_flag=True,
-              help="Apply vaccum operation on database.",
               )
 @click.option("--reinit",
               is_flag=True,
@@ -930,7 +984,8 @@ def delete(filters, verbose):
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def admin(verbose, empty, vaccum, reinit):
+def admin(verbose, empty, reinit):
+    ret = SUCCESS
     if verbose:
         set_versbose_logging()
     if reinit:
@@ -943,9 +998,99 @@ def admin(verbose, empty, vaccum, reinit):
         exit_app(FAILURE)
     if empty:
         ret = empty_bin()
-    if vaccum:
-        ret = vaccum_db()
     exit_app(ret)
+
+@myt.command()
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable verbose Logging.",
+              )
+def undo(verbose):
+    """
+    Performs an undo operation.
+    The last operation requested by the user and any associated internal 
+    events are removed. The state of the tasks are restored to what the state
+    was prior to the last operation.
+    A point to note, the task IDs could be different from what was assigned
+    to a task prior to running of the undo.
+    """
+    if verbose:
+        set_versbose_logging()
+    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        exit_app(FAILURE)
+    ret = perform_undo()
+    if ret == FAILURE:
+        CONSOLE.print("Error while performing undo operation")
+    else:
+        SESSION.commit()
+    exit_app(ret)
+
+
+def perform_undo():
+    """
+    Deletes all task data that have been created as part of the latest event.
+    Using the latest event ID the corresponding task UUID and Version are
+    identified. Then these are deleted from Workspace, WorkspaceTags and
+    WorkspaceRecurDates. 
+    Post deletion the latest versions of tasks in the pending area are assigned
+    appropriate IDs.
+
+    Parameters:
+        None
+
+    Returns:
+        int: 0 if successful else 1
+    """
+    #Get latest event ID
+    res = SESSION.query(func.max(Workspace.event_id)).all()
+    if res is not None:
+        max_evt_id = (res[0])[0]
+    else:
+        return SUCCESS
+    potential_filters = {}
+    potential_filters["eventid"] = max_evt_id
+    uuid_version_results = get_task_uuid_n_ver(potential_filters)
+    if uuid_version_results is None:
+        CONSOLE.print("No more undo actions available")
+        return SUCCESS
+    #Attempt to delete the tasks using the UUID and version
+    try:
+        (SESSION.query(WorkspaceRecurDates)
+            .filter(tuple_(WorkspaceRecurDates.uuid, 
+                           WorkspaceRecurDates.version)
+                            .in_(uuid_version_results))
+            .delete(synchronize_session=False))
+
+        (SESSION.query(WorkspaceTags)
+            .filter(tuple_(WorkspaceTags.uuid, WorkspaceTags.version)
+                            .in_(uuid_version_results))
+            .delete(synchronize_session=False))
+        (SESSION.query(Workspace)
+            .filter(tuple_(Workspace.uuid, Workspace.version)
+                            .in_(uuid_version_results))
+            .delete(synchronize_session=False))
+    except SQLAlchemyError as e:
+        LOGGER.error(str(e))
+        LOGGER.error("Error while performing delete as part of undo")
+        return FAILURE
+    #Next for the max versions of task in pending area assign a task ID. 
+    potential_filters = {}
+    potential_filters["missingid"] = "yes"
+    uuid_version_results = get_task_uuid_n_ver(potential_filters)
+    if uuid_version_results is None:
+        #Nothing to do
+        return SUCCESS
+    task_list = get_tasks(uuid_version_results)
+    for task in task_list:
+        if task.task_type in [TASK_TYPE_DRVD, TASK_TYPE_NRML]:
+            task.id = derive_task_id()
+        else:
+            #If Base  task then use '*' instead
+            task.id = "*"
+        SESSION.add(task)
+    CONSOLE.print("NOTE: Tasks IDs might differ from the pre-undo state...")
+    return SUCCESS
 
 
 def confirm_prompt(prompt_msg):
@@ -1054,8 +1199,7 @@ def create_recur_inst():
         ws_tags_list = get_tags(task.uuid, task.version)
         ret, return_list = prep_recurring_tasks(task, 
                                                 ws_tags_list, 
-                                                True, 
-                                                None)
+                                                True)
         if ret == FAILURE:
             return ret
     return SUCCESS
@@ -1198,6 +1342,9 @@ def empty_bin():
         LOGGER.debug("List of UUIDs in bin:")
         LOGGER.debug(uuid_list)
         try:
+            (SESSION.query(WorkspaceRecurDates)
+             .filter(WorkspaceRecurDates.uuid.in_(uuid_list))
+             .delete(synchronize_session=False))
             (SESSION.query(WorkspaceTags)
              .filter(WorkspaceTags.uuid.in_(uuid_list))
              .delete(synchronize_session=False))
@@ -1217,41 +1364,279 @@ def empty_bin():
         return SUCCESS
 
 
-def delete_tasks(potential_filters, event_id=None):
+def delete_tasks(ws_task):
+    """
+    Delete the task by creating a new version for the task with status as 
+    'DELETED', area as 'bin' and task ID as '-'.
+
+    Parameters:
+        ws_task(Workspace): The task which needs deletion
+        event_id(text, default=None): The event ID which needs to be used for
+        this deletion
+
+    Returns:
+        integer: 0 for successful execution, else 1 for any failures
+        list: List of tuples of (Workspace - Deleted Tasks, String - Comma
+        separated string of tasg for the task)
+    """
+    task_tags_print = []
+    LOGGER.debug("Working on Task UUID {} and Task ID {}"
+                     .format(ws_task.uuid, ws_task.id))
+    ws_task.id = "-"
+    ws_task.status = TASK_STATUS_DELETED
+    ws_task.area = WS_AREA_BIN
+    ws_task.now_flag = False
+    LOGGER.debug("Deleting Task UUID {} and Task ID {}"
+                    .format(ws_task.uuid, ws_task.id))
+    ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
+    ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
+    task_tags_print.append((ws_task, tags_str))  
+    if ret == FAILURE:
+        LOGGER.error("Error encountered in adding task version, stopping")
+        return ret, None, None
+    return ret, task_tags_print
+
+
+def prep_delete(potential_filters, event_id, delete_all=False):
+    """
+    Assess the tasks requested for deletion and makes appropriate decisions
+    on how to deal with deletion of recurring tasks and normal tasks. If a
+    task is a recurring instance then the user is asked if just that one
+    instance needs to be deleted or all pending instances of the recurring 
+    task. 
+    
+    If just one instance of task is to be deleted then move it to the 
+    bin. If this was the last pending instance in the recurrence then the base
+    task is also move to the bin. If all tasks in the recurrence need to be
+    moved to bin then the base task is also moved to the bin. In the above 
+    scenarios when the base task is moved to the bin any done tasks are 
+    unlinked, ie their linkage to thsi base task is removed and they are 
+    turned into normal tasks. This allows them to be reverted and operated on
+    at a lter point.
+
+    For normal tasks the task just gets moved to the bin.
+
+    Parameters:
+        potential_filters(dict): Filters which determine the tasks which 
+        require deletion
+        event_id(text, default=None): An event id if it needs to be used for 
+        this operation
+        delete_all(boolean, default=False): Used to force a deletion of all
+        tasks requested as part of the filter rather than asking user input.
+        Not invoked directly on user operation, instead used by other 
+        operations.
+
+    Returns:
+        integer: 0 for successful execution, else 1 for any failures
+        list: List of tuples of (Workspace - Deleted Tasks, String - Comma
+        separated string of tasg for the task)
+    """
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
+    modified_base_uuids = set()
     task_tags_print = []
     if not uuid_version_results:
         with CONSOLE.capture() as capture:
             CONSOLE.print("No applicable tasks to delete", style="default")
         click.echo(capture.get(), nl=False)
-        return SUCCESS
+        return SUCCESS, None
     task_list = get_tasks(uuid_version_results)
     for task in task_list:
         LOGGER.debug("Working on Task UUID {} and Task ID {}"
                      .format(task.uuid, task.id))
+        if task.base_uuid in modified_base_uuids:
+            LOGGER.debug("Already modifed base task, ignoring")
+            ret = SUCCESS
+            continue
+        uuidn = task.uuid
         make_transient(task)
         ws_task = task
-        ws_task.id = "-"
-        ws_task.status = TASK_STATUS_DELETED
-        ws_task.area = WS_AREA_BIN
-        if event_id is None:
-            ws_task.event_id = None
+        ws_task.uuid = uuidn
+        """
+        Set the new event ID which will be used for deletions of derived and 
+        normal tasks. Also this is used in unlinking of done derived tasks 
+        as well as deletion of base tasks.
+        For creating new recurring instances the event ID of the exitsing
+        base task is used.
+        """
+        ws_task.event_id = event_id
+        if (ws_task.task_type == TASK_TYPE_DRVD 
+                and ws_task.area == WS_AREA_PENDING):
+            """
+            if the task is not in pending area then treat them as normal
+            tasks, hence the check for area
+            """
+            LOGGER.debug("Is a derived task")
+            if not delete_all:
+                res = Prompt.ask("{}, {} - This is a recurring task, do you "
+                                "want to modify 'all' pending instances or "
+                                "just 'this' instance"
+                                    .format(ws_task.description, ws_task.due),
+                                choices=["all", "this", "none"], 
+                                default="none")
+            else:
+                LOGGER.debug("Forced delete all")
+                res = "all"
+            if res == "none":
+                ret = SUCCESS
+                continue
+            elif res == "all":
+                """
+                Delete all instances of the task in pending area and the base 
+                task. Unlink any done tasks
+                """
+                base_uuid = ws_task.base_uuid
+                if ws_task.task_type == TASK_TYPE_DRVD:
+                    modified_base_uuids.add(base_uuid)
+                potential_filters = {}
+                potential_filters["bybaseuuid"] = base_uuid
+                uuid_version_results = get_task_uuid_n_ver(potential_filters)
+                task_list = get_tasks(uuid_version_results)
+                potential_filters = {}
+                potential_filters["baseuuidonly"] = base_uuid
+                uuid_version_results = get_task_uuid_n_ver(potential_filters)
+                task_list2 = get_tasks(uuid_version_results)
+                task_list.append(task_list2[0])
+                #Delete all tasks now
+                for innrtask in task_list:
+                    uuidn = innrtask.uuid
+                    make_transient(innrtask)
+                    innrtask.uuid = uuidn
+                    innrtask.event_id = event_id
+                    ret, ret_task_tags_print = delete_tasks(innrtask)
+                    if ret == FAILURE:
+                        LOGGER.error("Error encountered while deleting tasks")
+                        return ret, None
+                    task_tags_print = (task_tags_print + (ret_task_tags_print
+                                                            or []))
+                #Next unlink all done tasks
+                potential_filters = {}
+                potential_filters["bybaseuuid"] = base_uuid
+                potential_filters[TASK_DONE] = "yes"
+                ret, ret_task_tags_print = unlink_tasks(potential_filters,
+                                                        event_id)
+                task_tags_print = (task_tags_print + (ret_task_tags_print
+                                                            or []))
+                if ret == FAILURE:
+                    LOGGER.error("Error while trying to unlink completed "
+                                 "instances for this recurring task")
+                    return ret, None                                 
+            elif res == "this":
+                """
+                Delete the requested instanc of task. After that is there are 
+                no more instances of this task in pending area then delete
+                the base task as well and unlink all done tasks
+                """ 
+                #First delete this task
+                LOGGER.debug("This task deletion selected. Attempting to "
+                             "delete UUID {}".format(ws_task.uuid))
+                base_uuid = ws_task.base_uuid
+                ret, ret_task_tags_print = delete_tasks(ws_task)
+                if ret == FAILURE:
+                    LOGGER.error("Error encountered while deleting tasks")
+                    return ret, None
+                task_tags_print = (task_tags_print + (ret_task_tags_print
+                                                       or []))
+                """
+                Next try to create another instance of the task. This is to
+                ensure there is atleast 1 instance in the default view command
+                to allow users to modify task if required.
+                """
+                LOGGER.debug("Attempting to add a recurring instance if "
+                             "required")
+                potential_filters = {}
+                potential_filters["baseuuidonly"] = base_uuid
+                uuid_version_results = get_task_uuid_n_ver(potential_filters)
+                task_list = get_tasks(uuid_version_results)
+                base_task = task_list[0]
+                ws_tags_list = get_tags(base_task.uuid, base_task.version)
+                make_transient(base_task)
+                base_task.uuid = base_uuid
+                #Creation of a new recurring instance should use the same
+                #Event ID as the existing version of base task. So deletion's 
+                # event ID is not used to overwrite here
+                ret, return_list = prep_recurring_tasks(base_task, 
+                                                        ws_tags_list, 
+                                                        True)
+                if ret == FAILURE:
+                    LOGGER.error("Error encountered in adding task version, "
+                             "stopping")
+                    return ret, None
+                """
+                Check if there are any more instances of the task left
+                If there are then do nothing more
+                If none then the base task should be mvoed to the bin
+                And the all done instances need to be unlinked.
+                """
+                #Main Query
+                LOGGER.debug("Checking if there are no more instances in "
+                             "pending area.")
+                max_ver_sqr = (SESSION.query(Workspace.uuid,
+                                            func.max(Workspace.version)
+                                                .label("maxver"))
+                                    .filter(Workspace.task_type 
+                                                == TASK_TYPE_DRVD)
+                                    .group_by(Workspace.uuid)
+                                    .subquery())
+                results = (SESSION.query(Workspace.uuid, Workspace.version)
+                                .join(max_ver_sqr,
+                                        and_(Workspace.uuid 
+                                                == max_ver_sqr.c.uuid,
+                                            Workspace.version 
+                                                == max_ver_sqr.c.maxver))
+                                .filter(and_(Workspace.task_type 
+                                                == TASK_TYPE_DRVD,
+                                            Workspace.area == WS_AREA_PENDING,
+                                            Workspace.base_uuid == base_uuid))
+                                .all())
+                if not results:
+                    """
+                    No tasks in pending area, proceed to delete base and
+                    unlink done tasks
+                    """
+                    LOGGER.debug("No more instances in pending, proceeding "
+                                 "to delete base task and unlink base tasks")
+                    potential_filters = {}
+                    potential_filters["baseuuidonly"] = base_uuid
+                    uuid_version_results = get_task_uuid_n_ver(
+                                                            potential_filters)
+                    task_list = get_tasks(uuid_version_results)
+                    base_task = task_list[0]
+                    uuidn = base_task.uuid
+                    make_transient(base_task)
+                    base_task.uuid = uuidn
+                    #USe the new event ID for the deletion and unlink
+                    base_task.event_id = event_id
+                    ret, ret_task_tags_print = delete_tasks(base_task)
+                    if ret == FAILURE:
+                        LOGGER.error("Error encountered while deleting tasks")
+                        return ret, None
+                    task_tags_print = (task_tags_print + (ret_task_tags_print
+                                                        or []))
+                    #Base task is deleted, next unlink the done instances
+                    LOGGER.debug("Base task deleted {}, proceeding to unlink "
+                                 "done tasks.")
+                    potential_filters = {}
+                    potential_filters["bybaseuuid"] = base_uuid
+                    potential_filters[TASK_DONE] = "yes"
+                    ret, ret_task_tags_print = unlink_tasks(potential_filters,
+                                                            event_id)
+                    task_tags_print = (task_tags_print + (ret_task_tags_print
+                                                                or []))
+                    if ret == FAILURE:
+                        LOGGER.error("Error while trying to unlink completed "
+                                    "instances for this recurring task")
+                        return ret, None
         else:
-            # Use an inherited event_id if available
-            ws_task.event_id = event_id
-        ws_task.now_flag = False
-        LOGGER.debug("Deleting Task UUID {} and Task ID {}"
-                     .format(ws_task.uuid, ws_task.id))
-        ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
-        task_tags_print.append((ws_task, tags_str))
-        if ret == FAILURE:
-            LOGGER.error("Error encountered in adding task version, stopping")
-            return ret, None, None
-    return ret, task_tags_print
+            ret, ret_task_tags_print = delete_tasks(ws_task)
+            if ret == FAILURE:
+                LOGGER.error("Error encountered while deleting tasks")
+                return ret, None
+            task_tags_print = (task_tags_print + (ret_task_tags_print
+                                                    or []))     
+    return SUCCESS, task_tags_print
 
 
-def unlink_tasks(potential_filters, event_id=None):
+def unlink_tasks(potential_filters, event_id):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     task_tags_print = []
     if not uuid_version_results:
@@ -1266,11 +1651,9 @@ def unlink_tasks(potential_filters, event_id=None):
         ws_task.recur_end = None
         ws_task.recur_mode = None
         ws_task.recur_when = None
-        if event_id is None:
-            ws_task.event_id = None
-        else:
-            # Use an inherited event_id if available
-            ws_task.event_id = event_id
+        #Overwrite with new event ID for the deletion or modification action
+        ws_task.event_id = event_id
+        ws_task.task_type = TASK_TYPE_NRML
         LOGGER.debug("Unlinking Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
@@ -1279,11 +1662,12 @@ def unlink_tasks(potential_filters, event_id=None):
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
             return ret, None
-    return ret, task_tags_print
+    return SUCCESS, task_tags_print
 
 
-def revert_task(potential_filters, event_id=None):
+def revert_task(potential_filters, event_id):
     task_tags_print = []
+    curr_pending = False
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable tasks to revert", style="default")
@@ -1292,32 +1676,97 @@ def revert_task(potential_filters, event_id=None):
     for task in task_list:
         LOGGER.debug("Working on Task UUID {} and Task ID {}"
                      .format(task.uuid, task.id))
+        uuidn = task.uuid
         make_transient(task)
         ws_task = task
+        ws_task.uuid = uuidn
         if ws_task.id == '-':
             ws_task.id = None
+        if ws_task.area == WS_AREA_PENDING:
+            #To use later on to determine if additional checks need to be
+            #done related to base tasks
+            curr_pending = True
+        base_uuid = ws_task.base_uuid
         ws_task.area = WS_AREA_PENDING
         ws_task.status = TASK_STATUS_TODO
-        if event_id is None:
-            ws_task.event_id = None
-        else:
-            # Use an inherited event_id if available
+        if ws_task.event_id is None:
             ws_task.event_id = event_id
         LOGGER.debug("Reverting Task UUID {} and Task ID {}"
-                     .format(ws_task.uuid, ws_task.id))
+                     .format(ws_task.uuid, ws_task.id))        
+        if ws_task.task_type == TASK_TYPE_DRVD and not curr_pending:
+            """
+            Need additional check on if base task should also be moved back
+            to pending area. This is required when all tasks for the recurring
+            task are in done state and we are reverting one or more of the 
+            done instances. In this case the base task which at this point is
+            in the done status(completed area) should also be reverted back
+            to a TO_DO status and pending area.
+            """
+            LOGGER.debug("This is a derived task that is not in pending area")
+            LOGGER.debug("Checking if base task {} is done".format(base_uuid))
+            potential_filters = {}
+            potential_filters["baseuuidonly"] = base_uuid
+            potential_filters[TASK_DONE] = "yes"
+            uuid_version_results = get_task_uuid_n_ver(potential_filters)
+            print(uuid_version_results)
+            if uuid_version_results:
+                task_list = get_tasks(uuid_version_results)
+                base_task = task_list[0]
+                if base_task.area == WS_AREA_COMPLETED:
+                    LOGGER.debug("Base task {} is also done. So reverting base"
+                                 " task first.".format(base_uuid))
+                    make_transient(base_task)
+                    base_task.uuid = base_uuid
+                    base_task.id = '*'
+                    base_task.area = WS_AREA_PENDING
+                    base_task.status = TASK_STATUS_TODO
+                    if base_task.event_id is None:
+                        base_task.event_id = event_id
+                    ws_tags_list = get_tags(base_task.uuid, base_task.version)
+                    ret, base_task, tags_str = add_task_and_tags(base_task, 
+                                                                ws_tags_list)
+                    if ret == FAILURE:
+                        LOGGER.error("Error encountered while deleting tasks")
+                        return ret, None
+                    ret = carryover_recur_dates(base_task)
+                    if ret == FAILURE:
+                        LOGGER.error("Error encountered while deleting tasks")
+                        return ret, None
+                    task_tags_print.append((base_task, tags_str))
+        """
+        Next apply the revert action for the task
+        """
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
         ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
+        
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
             return ret
-    SESSION.commit()
-    get_and_print_task_count({WS_AREA_PENDING: "yes",
-                              PRNT_TASK_DTLS: task_tags_print})
+    return SUCCESS, task_tags_print
+
+def carryover_recur_dates(base_task):
+    base_uuid = base_task.uuid
+    base_version = base_task.version
+    try:
+        res = (SESSION.query(WorkspaceRecurDates)
+                    .filter(and_(WorkspaceRecurDates.uuid == base_uuid,
+                                WorkspaceRecurDates.version 
+                                    == base_version - 1))
+                    .all())
+        for rec_dt in res:
+            SESSION.expunge(rec_dt)
+            make_transient(rec_dt)
+            rec_dt.uuid = base_uuid
+            rec_dt.version = base_version
+            SESSION.add(rec_dt)
+    except SQLAlchemyError as e:
+        LOGGER.error(str(e))
+        CONSOLE.print("Error in adding recurring dates")
+        return FAILURE
     return SUCCESS
 
-
-def start_task(potential_filters, event_id=None):
+def start_task(potential_filters, event_id):
     task_tags_print = []
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
@@ -1331,10 +1780,7 @@ def start_task(potential_filters, event_id=None):
         make_transient(task)
         ws_task = task
         ws_task.status = TASK_STATUS_STARTED
-        if event_id is None:
-            ws_task.event_id = None
-        else:
-            # Use an inherited event_id if available
+        if ws_task.event_id is None:
             ws_task.event_id = event_id
         LOGGER.debug("Starting Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
@@ -1344,13 +1790,10 @@ def start_task(potential_filters, event_id=None):
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
             return ret
-    SESSION.commit()
-    get_and_print_task_count({WS_AREA_PENDING: "yes",
-                              PRNT_TASK_DTLS: task_tags_print})
-    return SUCCESS
+    return SUCCESS, task_tags_print
 
 
-def stop_task(potential_filters, event_id=None):
+def stop_task(potential_filters, event_id):
     task_tags_print = []
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
@@ -1364,10 +1807,7 @@ def stop_task(potential_filters, event_id=None):
         make_transient(task)
         ws_task = task
         ws_task.status = TASK_STATUS_TODO
-        if event_id is None:
-            ws_task.event_id = None
-        else:
-            # Use an inherited event_id if available
+        if ws_task.event_id is None:
             ws_task.event_id = event_id
         LOGGER.debug("Stopping Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
@@ -1377,13 +1817,10 @@ def stop_task(potential_filters, event_id=None):
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
             return ret
-    SESSION.commit()
-    get_and_print_task_count({WS_AREA_PENDING: "yes",
-                              PRNT_TASK_DTLS: task_tags_print})
-    return SUCCESS
+    return SUCCESS, task_tags_print
 
 
-def complete_task(potential_filters, event_id=None):
+def complete_task(potential_filters, event_id):
     task_tags_print = []
     base_uuids = set()
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
@@ -1401,12 +1838,9 @@ def complete_task(potential_filters, event_id=None):
         ws_task.id = "-"
         ws_task.area = WS_AREA_COMPLETED
         ws_task.status = TASK_STATUS_DONE
-        if event_id is None:
-            ws_task.event_id = None
-        else:
-            # Use an inherited event_id if available
-            ws_task.event_id = event_id
-        ws_task.now_flag = False
+        #Set the new event ID for the task completion
+        ws_task.event_id = event_id
+        ws_task.now_flag = None
         LOGGER.debug("Completing Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
@@ -1442,109 +1876,86 @@ def complete_task(potential_filters, event_id=None):
                              " UUID {} and version {}"
                              .format(task.uuid, task.version))
                 ws_tags_list = get_tags(task.uuid, task.version)
+                uuidn = task.uuid
+                make_transient(task)
+                task.uuid = uuidn
+                #Recurring instance to be added with original event ID
+                #So do not overwrite with new event ID
                 ret, return_list = prep_recurring_tasks(task, 
                                                         ws_tags_list, 
-                                                        True, 
-                                                        event_id)
+                                                        True)
                 if ret == FAILURE:
                     LOGGER.error("Error encountered in adding task version, "
                              "stopping")
                     return ret, None
-        """
-        If any of the tasks are derived then we need to check if the base
-        task should also be moved to 'completed' area. For this we check as 
-        below:
-        1. Base task has a recur_end date
-        2. recur_end date = max of the due date in workspace_recur_dates 
-            table. That is all derived tasks have been created for this base
-            task.
-        3. No derived task exists in the 'pending' area for this base task.
-            That is all derived tasks have either been completed or have ben
-            deleted.
-        Task creation output is not printed and is silent.
-        """
-        max_ver_sqr = (SESSION.query(Workspace.uuid,
-                                    func.max(Workspace.version)
-                                        .label("maxver"))
-                              .filter(Workspace.task_type == TASK_TYPE_BASE)
-                              .group_by(Workspace.uuid)
-                              .subquery())
-        
-        max_due_sqr = (SESSION.query(WorkspaceRecurDates.uuid, 
-                                     func.max(WorkspaceRecurDates.version)  
-                                        .label("maxver"),
-                                     func.max(WorkspaceRecurDates.due)
-                                        .label("maxdue"))
-                              .group_by(WorkspaceRecurDates.uuid)
-                              .subquery())
-        #To check if there are any tasks still in pending area
-        #First subquery to get max versions
-        max_ver_d_sqr = (SESSION.query(Workspace.uuid,
-                                     func.max(Workspace.version)
-                                        .label("maxver"))
-                              .filter(Workspace.task_type == TASK_TYPE_DRVD)
-                              .group_by(Workspace.uuid)
-                              .subquery())
-        ws_exists = aliased(Workspace)
-        task_exists_sqr = (~SESSION.query(ws_exists.uuid)
-                                  .join(max_ver_d_sqr, 
-                                        and_(ws_exists.uuid == max_ver_d_sqr
-                                                                .c.uuid,
-                                             ws_exists.version == max_ver_d_sqr
-                                                                .c.maxver))
-                                  .filter(and_(ws_exists.task_type 
-                                                == TASK_TYPE_DRVD,
-                                               ws_exists.area 
-                                                == WS_AREA_PENDING,
-                                               ws_exists.base_uuid 
-                                                == Workspace.uuid))
-                                  .exists())
-        #Main Query
-        results = (SESSION.query(Workspace.uuid, Workspace.version)
-                          .join(max_ver_sqr,
-                                and_(Workspace.uuid == max_ver_sqr.c.uuid,
-                                     Workspace.version == max_ver_sqr.c.maxver)
-                                    )
-                          .join(max_due_sqr,
-                                and_(Workspace.uuid == max_due_sqr.c.uuid,
-                                     Workspace.version == max_due_sqr.c.maxver)
-                                    )
-                          .filter(and_(Workspace.recur_end 
-                                        == max_due_sqr.c.maxdue,
-                                      Workspace.recur_end != None,
-                                      Workspace.task_type == TASK_TYPE_BASE,
-                                      Workspace.area == WS_AREA_PENDING,
-                                      task_exists_sqr))
-                          .all())
-        #Now get the actual base tasks for these UUIDs which need to be
-        #completed.
-        task_list = get_tasks(results)
-        for task in task_list:
-            uuidn = task.uuid
-            make_transient(task)
-            ws_task = task
-            ws_task.uuid = uuidn
-            ws_task.id = "-"
-            ws_task.area = WS_AREA_COMPLETED
-            ws_task.status = TASK_STATUS_DONE
-            if event_id is None:
-                ws_task.event_id = None
-            else:
-                # Use an inherited event_id if available
-                ws_task.event_id = event_id
-            ws_task.now_flag = False
-            LOGGER.debug("Completing Base Task UUID {} and Task ID {}"
-                         .format(ws_task.uuid, ws_task.id))
-            ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-            ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
-            if ret == FAILURE:
-                LOGGER.error("Error encountered in adding task version, "
-                             "stopping")
-                return ret, None    
+            """
+            If any of the tasks are derived then we need to check if the base
+            task should also be moved to 'completed' area. For this we check as 
+            below:
+            1. Base task has a recur_end date
+            2. recur_end date = max of the due date in workspace_recur_dates 
+                table. That is all derived tasks have been created for this base
+                task.
+            3. No derived task exists in the 'pending' area for this base task.
+                That is all derived tasks have either been completed or have ben
+                deleted.
+            Task creation output is not printed and is silent.
+            """
+            LOGGER.debug("Checking if there are no more instances in "
+                            "pending area.")
+            max_ver_sqr = (SESSION.query(Workspace.uuid,
+                                        func.max(Workspace.version)
+                                            .label("maxver"))
+                                .filter(Workspace.task_type == TASK_TYPE_DRVD)
+                                .group_by(Workspace.uuid)
+                                .subquery())
+            results = (SESSION.query(Workspace.uuid, Workspace.version)
+                            .join(max_ver_sqr,
+                                    and_(Workspace.uuid == max_ver_sqr.c.uuid,
+                                        Workspace.version == max_ver_sqr.c.maxver)
+                                        )
+                            .filter(and_(Workspace.task_type == TASK_TYPE_DRVD,
+                                        Workspace.area == WS_AREA_PENDING,
+                                        Workspace.base_uuid == base_uuid))
+                            .all())
+            print(results)
+            if not results:
+                #Now get the actual base tasks for these UUIDs which need to be
+                #completed.
+                LOGGER.debug("No more instances in pending, proceeding "
+                                 "to mark base task as done")
+                potential_filters = {}
+                potential_filters["baseuuidonly"] = base_uuid
+                uuid_version_results = get_task_uuid_n_ver(potential_filters)
+                task_list = get_tasks(uuid_version_results)
+                base_task = task_list[0]
+                ws_tags_list = get_tags(base_task.uuid, base_task.version)
+                uuidn = base_task.uuid
+                make_transient(base_task)
+                base_task.uuid = uuidn
+                base_task.id = "-"
+                base_task.area = WS_AREA_COMPLETED
+                base_task.status = TASK_STATUS_DONE
+                #Since we are completing this base task, use the new event ID
+                #used for completing the derived task
+                base_task.event_id = event_id
+                base_task.now_flag = None
+                LOGGER.debug("Completing Base Task UUID {} and Task ID {}"
+                                .format(base_task.uuid, base_task.id))
+                ret, base_task, tags_str = add_task_and_tags(base_task, ws_tags_list)
+                if ret == FAILURE:
+                    LOGGER.error("Error encountered in adding task version, "
+                                    "stopping")
+                    return ret, None
+                ret = carryover_recur_dates(base_task)
+                if ret == FAILURE:
+                    LOGGER.error("Error encountered while deleting tasks")
+                    return ret, None
+                task_tags_print.append((base_task, tags_str))  
     return SUCCESS, task_tags_print
 
 
-def toggle_now(potential_filters, event_id=None):
+def toggle_now(potential_filters, event_id):
     task_tags_print = []
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
@@ -1560,10 +1971,7 @@ def toggle_now(potential_filters, event_id=None):
             ws_task.now_flag = False
         else:
             ws_task.now_flag = True
-        if event_id is None:
-            ws_task.event_id = None
-        else:
-            # Use an inherited event_id if available
+        if ws_task.event_id is None:
             ws_task.event_id = event_id
         LOGGER.debug("Setting Task UUID {} and Task ID {} as NOW"
                      .format(ws_task.uuid, ws_task.id))
@@ -1613,10 +2021,7 @@ def toggle_now(potential_filters, event_id=None):
                     # Rollback already performed from nested
                     LOGGER.error("Error encountered in reset of NOW")
                     return FAILURE
-    SESSION.commit()
-    get_and_print_task_count({WS_AREA_PENDING: "yes",
-                              PRNT_TASK_DTLS: task_tags_print})
-    return SUCCESS
+    return SUCCESS, task_tags_print
 
 
 def parse_filters(filters):
@@ -1698,6 +2103,8 @@ def parse_filters(filters):
             and "hide"  not in potential_filters
             and "end"  not in potential_filters):
         potential_filters[HL_FILTERS_ONLY] = "yes"
+    LOGGER.debug("Parsed Filters as below:")
+    LOGGER.debug(potential_filters)
     return potential_filters
 
 
@@ -1769,6 +2176,7 @@ def get_tags(task_uuid, task_version, expunge=True):
 
 
 def prep_modify(potential_filters, ws_task_src, tag):
+    ret = SUCCESS
     multi_change = False
     rec_chg = False
     hide_chg = False
@@ -1782,8 +2190,6 @@ def prep_modify(potential_filters, ws_task_src, tag):
     if not uuid_version_results:
         CONSOLE.print("No applicable tasks to modify", style="default")
         return SUCCESS, None
-    event_id = get_event_id()
-    ws_task_src.event_id = event_id
     task_list = get_tasks(uuid_version_results)
     for ws_task in task_list:
         r_tsk_tg_prnt = []
@@ -1794,10 +2200,12 @@ def prep_modify(potential_filters, ws_task_src, tag):
         make_transient(ws_task)
         ws_task.uuid = uuidn
         if ws_task.task_type == TASK_TYPE_DRVD:
-            res = Prompt.ask("This is a recurring task, do you want "
-                             "to modify 'all' pending instances or "
-                             "just 'this' instance",
-                             choices=["all", "this", "none"], default="none")
+            res = Prompt.ask("{}, {} - This is a recurring task, do you want"
+                                " to modify 'all' pending instances or "
+                                "just 'this' instance"
+                                    .format(ws_task.description, ws_task.due),
+                                choices=["all", "this", "none"], 
+                                default="none")
             if (ws_task_src.recur_end is not None
                     or ws_task_src.recur_mode is not None
                     or ws_task_src.recur_when is not None):
@@ -1815,7 +2223,6 @@ def prep_modify(potential_filters, ws_task_src, tag):
                 multi_change = True
                 modifed_recur_list.append(base_uuid)
                 r_tsk_tg_prnt1 = []
-                r_tsk_tg_prnt2 = []
                 r_tsk_tg_prnt3 = []
                 r_tsk_tg_prnt4 = []
                 r_tsk_tg_prnt5 = []
@@ -1835,46 +2242,29 @@ def prep_modify(potential_filters, ws_task_src, tag):
                                  "recur:{}".format(due_chg, hide_chg,
                                                    rec_chg))
                     potential_filters = {}
-                    potential_filters["baseuuidonly"] = base_uuid
-                    uuid_ver_res_innr = get_task_uuid_n_ver(potential_filters)
-                    tasks_innr = get_tasks(uuid_ver_res_innr)
-                    ws_task_innr = tasks_innr[0]
-                    make_transient(ws_task_innr)
-                    # Preserve a version of the base task before deleting
-                    ws_task_innr.uuid = base_uuid
-                    ws_task_innr.event_id = event_id
-                    potential_filters["bybaseuuid"] = base_uuid
-                    # Delete base and derived tasks
-                    ret, r_tsk_tg_prnt1 = delete_tasks(potential_filters,
-                                                       event_id)
+                    potential_filters["id"] = str(ws_task.id)
+                    # Delete base and derived tasks and unlink done tasks
+                    ret, r_tsk_tg_prnt1 = prep_delete(potential_filters,
+                                                      ws_task_src.event_id, 
+                                                      True)
                     if ret == FAILURE:
                         LOGGER.error("Failure recived while trying to delete "
                                      "old pending occurences of this task. "
                                      "Stopping adding of base and derived "
                                      "tasks.")
                         return FAILURE, None
-                    # Unlink done tasks
-                    potential_filters[TASK_DONE] = "yes"
-                    ret, r_tsk_tg_prnt2 = unlink_tasks(potential_filters,
-                                                       event_id)
-                    if ret == FAILURE:
-                        LOGGER.error("Failure recived while trying to unlink "
-                                     "done occurences of this task. Stopping "
-                                     "adding of base and derived tasks.")
-                        return FAILURE, None
                     # Next call modify to merge user changes and
                     # recreate the recurring task
                     LOGGER.debug("Sending this task for RECREATION to "
                                  "modify_task - UUID: {}"
-                                 .format(ws_task_innr.uuid))
+                                 .format(ws_task.uuid))
                     ret, r_tsk_tg_prnt3 = modify_task(ws_task_src,
-                                                      ws_task_innr,
+                                                      ws_task,
                                                       tag,
                                                       multi_change,
                                                       rec_chg,
                                                       due_chg,
-                                                      hide_chg,
-                                                      None)
+                                                      hide_chg)
                 else:
                     """
                     We need to modify the base task and any pending instances
@@ -1895,7 +2285,6 @@ def prep_modify(potential_filters, ws_task_src, tag):
                     ws_task_innr = tasks_innr[0]
                     make_transient(ws_task_innr)
                     ws_task_innr.uuid = base_uuid
-                    ws_task_innr.event_id = event_id
                     LOGGER.debug("Sending this BASE task for modification to "
                                  "modify_task - UUID: {}"
                                  .format(ws_task_innr.uuid))
@@ -1905,24 +2294,30 @@ def prep_modify(potential_filters, ws_task_src, tag):
                                                       multi_change,
                                                       rec_chg,
                                                       due_chg,
-                                                      hide_chg,
-                                                      None)
+                                                      hide_chg)
                     if ret == FAILURE:
                         LOGGER.error("Failure recived while trying to modify "
                                      "base task. Stopping adding of derived "
                                      "tasks.")
                         return FAILURE, None
                     """
-                    Now that base task's new version is added, use that ver. 
-                    num for the WorkspaceRecurDates object for each derived 
-                    task being added next
+                    Now that base task's new version is added, carry over the 
+                    WorkspaceRecurDates from previous version as no change is 
+                    requested on the due dates.
                     """
-                    base_ver = (r_tsk_tg_prnt4[0])[0].version
-                    LOGGER.debug("After BASE task modification version of "
-                                 "BASE task is no {}".format(base_ver))
-
-                    # Add a new version for each derived task that exists
-                    # and is pending
+                    base_task = (r_tsk_tg_prnt4[0])[0]
+                    LOGGER.debug("Creating Recur Dates now for this base task"
+                                 " by carrying over the dates from previous "
+                                 "version")
+                    ret = carryover_recur_dates(base_task)
+                    if ret == FAILURE:
+                        LOGGER.error("Failure returned while trying to modify "
+                                     "task.")
+                        return ret, None
+                    """
+                    Next step is to modify each pending instance of this 
+                    recurring task
+                    """
                     potential_filters = {}
                     potential_filters["bybaseuuid"] = base_uuid
                     uuid_ver_res_innr = get_task_uuid_n_ver(potential_filters)
@@ -1934,19 +2329,8 @@ def prep_modify(potential_filters, ws_task_src, tag):
                         uuidn = ws_task_innr.uuid
                         make_transient(ws_task_innr)
                         ws_task_innr.uuid = uuidn
-                        ws_task_innr.event_id = event_id
                         LOGGER.debug("Working on DERIVED task {}"
                                      .format(uuidn))
-                        ws_rec_dt = WorkspaceRecurDates(
-                            uuid=ws_task_innr.base_uuid,
-                            version=base_ver,
-                            due=ws_task_innr.due)
-                        LOGGER.debug("Created a WorkspaceRecurDates object "
-                                     "for this task:")
-                        LOGGER.debug("\n" + 
-                                      reflect_object_n_print(ws_rec_dt,
-                                                             to_print=False,
-                                                             print_all=True))
                         LOGGER.debug("Sending the DERIVED task for "
                                      "modification to modify_task - UUID: {}"
                                      .format(ws_task_innr.uuid))
@@ -1956,13 +2340,14 @@ def prep_modify(potential_filters, ws_task_src, tag):
                                                             multi_change,
                                                             rec_chg,
                                                             due_chg,
-                                                            hide_chg,
-                                                            ws_rec_dt)
+                                                            hide_chg)
+                        if ret == FAILURE:
+                            LOGGER.error("Failure returned while trying to modify task.")
+                            return ret, None
                         r_tsk_tg_prnt5 = (r_tsk_tg_prnt5
                                           + (r_tsk_tg_prnt5_1 or []))
                 # Collect all task's for printing
                 r_tsk_tg_prnt = ((r_tsk_tg_prnt1 or [])
-                                 + (r_tsk_tg_prnt2 or [])
                                  + (r_tsk_tg_prnt3 or [])
                                  + (r_tsk_tg_prnt4 or [])
                                  + (r_tsk_tg_prnt5 or []))
@@ -1978,7 +2363,6 @@ def prep_modify(potential_filters, ws_task_src, tag):
                                   "task only")
                     return SUCCESS, None
                 multi_change = False
-                ws_task.event_id = event_id
                 LOGGER.debug("Sending 'this' DERIVED task for "
                              "modification to modify_task - UUID: {}"
                              .format(ws_task.uuid))
@@ -1988,15 +2372,13 @@ def prep_modify(potential_filters, ws_task_src, tag):
                                                  multi_change,
                                                  rec_chg,
                                                  due_chg,
-                                                 hide_chg,
-                                                 None)
+                                                 hide_chg)
         else:
             """
             This is modification for a non recurring task
             """
             LOGGER.debug("Modification requested a NORMAL task")
             multi_change = False
-            ws_task.event_id = event_id
             LOGGER.debug("Sending the NORMAL task for "
                          "modification to modify_task - UUID: {}"
                          .format(ws_task.uuid))
@@ -2006,8 +2388,7 @@ def prep_modify(potential_filters, ws_task_src, tag):
                                              multi_change,
                                              rec_chg,
                                              due_chg,
-                                             hide_chg,
-                                             None)
+                                             hide_chg)
         if ret == FAILURE:
             LOGGER.error("Failure returned while trying to modify task.")
             return ret, None
@@ -2017,7 +2398,7 @@ def prep_modify(potential_filters, ws_task_src, tag):
 
 
 def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
-                hide_chg, ws_rec_dt=None):
+                hide_chg):
     """
     Function to merge the changes provided by the user into the task
     that already exists. 
@@ -2030,6 +2411,7 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
     General logic followed is:
     If user requested update or clearing then overwrite
     If user has not requested update for field then retain original value
+    Event ID to be used should be populated in ws_task_src object
     """
     task_tags_print = []
     # Start merge related activties
@@ -2114,8 +2496,7 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
         LOGGER.debug("\n" + reflect_object_n_print(ws_task, to_print=False,
                                                    print_all=True))
         ret, ws_task, tags_str = add_task_and_tags(ws_task,
-                                                   ws_tags_list,
-                                                   None)
+                                                   ws_tags_list)
         task_tags_print.append((ws_task, tags_str))
     else:
         # A set of recurring tasks need change
@@ -2126,8 +2507,7 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
                                                        print_all=True))
             ret, return_list = prep_recurring_tasks(ws_task,
                                                     ws_tags_list,
-                                                    False,
-                                                    None)
+                                                    False)
             task_list = get_tasks((return_list[0])[0])
             tags_str = (return_list[0])[1]
             # List of tuples
@@ -2141,8 +2521,7 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
                                                        print_all=True))
             ret, ws_task, tags_str = add_task_and_tags(ws_task,
                                                        ws_tags_list,
-                                                       None,
-                                                       ws_rec_dt)
+                                                       None)
             task_tags_print.append((ws_task, tags_str))
 
     if ret == FAILURE:
@@ -2152,6 +2531,21 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
 
 
 def display_full(potential_filters, pager=False, top=None):
+    """
+    Displays all attributes held in the backend for the task. This can be 
+    used as input into other programs if required. Uses a simple structure of
+    'AttributeName : Attribute Value'
+    
+    Parameters:
+        potential_filters(dict): Dictionary with the various types of
+                                 filters to determine tasks for display
+        pager(boolean): Default=False. Determines if a pager should be used
+                        to display the task information
+        top(integer): Limit the number of tasks which should be displayed
+    
+    Returns:
+        integer: Status of Success=0 or Failure=1
+    """
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
@@ -2192,6 +2586,25 @@ def display_full(potential_filters, pager=False, top=None):
 
 
 def display_dates(potential_filters, pager=False, top=None):
+    """
+    Displays a projection of upto 10 due dates for recurring tasks. 
+    
+    Parameters:
+        potential_filters(dict): Dictionary with the various types of
+                                 filters to determine tasks for display
+        pager(boolean): Default=False. Determines if a pager should be used
+                        to display the task information
+        top(integer): Limit the number of tasks which should be displayed
+    
+    Returns:
+        integer: Status of Success=0 or Failure=1
+    """
+    """
+    Where the tasks have been created use them to display the due dates. For
+    the remaining, upto 10 dates use projected dates based on the base task. 
+    This is to ensure any modifications done on individual tasks are reflected
+    in the output.
+    """
     curr_date = datetime.now().date()
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
@@ -2199,6 +2612,7 @@ def display_dates(potential_filters, pager=False, top=None):
         get_and_print_task_count({WS_AREA_PENDING: "yes"})
         return SUCCESS
     task_list = get_tasks(uuid_version_results)
+    #Work on only derived tasks
     task_list = [task for task in task_list if task.task_type==TASK_TYPE_DRVD]
     if task_list:
         CONSOLE.print("Preparing view...", style="default")
@@ -2209,7 +2623,7 @@ def display_dates(potential_filters, pager=False, top=None):
         top = len(task_list)
     else:
         top = int(top)
-    out_str = ""
+    #List to hold base uuids to avoid processing the same recurring tasks again
     prcsd_baseuuid = []
     table = RichTable(box=box.HORIZONTALS, show_header=True,
                       header_style="header", expand=False)
@@ -2221,35 +2635,79 @@ def display_dates(potential_filters, pager=False, top=None):
         if task.base_uuid in prcsd_baseuuid:
             break
         if cnt > 1:
+            #Empty row to separate recurring tasks
             table.add_row(None, None)
+        #For this derived tasks retreive all the derived task instances
         potential_filters = {}
         potential_filters["bybaseuuid"] = task.base_uuid
         uuid_version_results = get_task_uuid_n_ver(potential_filters)
         task_list = get_tasks(uuid_version_results)
-        for innrcnt, task in enumerate(task_list, start=1):
+        innrcnt = 0
+        """
+        For each derived task instance if it is today or beyond add it for 
+        display 
+        """
+        for task in task_list:
+            if (datetime.strptime(task.due, FMT_DATEONLY).date()
+                    < datetime.now().date()):
+                #Show only tasks from today and beyond
+                continue
             due = datetime(int(task.due[0:4]), int(task.due[5:7]),
                            int(task.due[8:])).strftime(FMT_DAY_DATEW)
             table.add_row(task.description, due,style="default")
+            innrcnt = innrcnt + 1
+            if innrcnt > 10:
+                #Only upto 10 dates to display
+                break
         if innrcnt > 10:
+            #Only upto 10 dates to display
             continue
+        """
+        Next using the base task create the prpject due dates but limit to
+        overall 10 dates for display including above existing instances
+        """
         potential_filters = {}
         potential_filters["baseuuidonly"] = task.base_uuid
         uuid_version_results = get_task_uuid_n_ver(potential_filters)
         task_list = get_tasks(uuid_version_results)
         base_task = task_list[0]
+        #Get end date for the base task
         if base_task.recur_end is not None:
             end_dt = (datetime.strptime(base_task.recur_end, FMT_DATEONLY)
                     .date())
         else:
             end_dt = FUTDT
+        """
+        Get the last due date for tasks that have been created. This becomes
+        the start date for the projection. Relying on this over the due date
+        for the last derived instance as that could have been modified by user
+        """ 
+        try:
+            res = (SESSION.query(func.max(WorkspaceRecurDates.due))
+                         .filter(and_(WorkspaceRecurDates.uuid 
+                                            == base_task.uuid,
+                                      WorkspaceRecurDates.version
+                                            == base_task.version))
+                         .all())
+        except SQLAlchemyError as e:
+            LOGGER.error(str(e))
+            CONSOLE.print("Error in retrieving information to display dates.")
+            return FAILURE
+        start_dt = datetime.strptime((res[0])[0],FMT_DATEONLY).date()
+        """
+        Get the projection, getting 11 projections as the function will
+        return the first projected date same as the start date which we have 
+        already covered in earlier section.
+        We then remove that entry from the list and rest are added for display
+        """
         due_list =  calc_next_inst_date(base_task.recur_mode, 
                                         base_task.recur_when,
-                                        datetime.strptime(base_task.due
-                                                          ,FMT_DATEONLY),
+                                        start_dt,
                                         end_dt,
-                                        10 - innrcnt)
+                                        11 - innrcnt)
         if due_list is not None:
-            due_list = [day  for day in due_list if day >= curr_date]
+            due_list = [day  for day in due_list if day >= curr_date and 
+                                                    day != start_dt]
         for day in due_list:
             table.add_row(base_task.description, 
                           day.strftime(FMT_DAY_DATEW),style="default")
@@ -2263,6 +2721,19 @@ def display_dates(potential_filters, pager=False, top=None):
 
 
 def display_by_tags(potential_filters, pager=False, top=None):
+    """
+    Displays a the count of tasks against each tag with breakdown by status. 
+    
+    Parameters:
+        potential_filters(dict): Dictionary with the various types of
+                                 filters to determine tasks for display
+        pager(boolean): Default=False. Determines if a pager should be used
+                        to display the task information
+        top(integer): Limit the number of tags which should be displayed
+    
+    Returns:
+        integer: Status of Success=0 or Failure=1
+    """
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
@@ -2333,6 +2804,25 @@ def display_by_tags(potential_filters, pager=False, top=None):
 
 
 def display_by_groups(potential_filters, pager=False, top=None):
+    """
+    Displays a the count tasks by the groups broken down by hierarchy and 
+    task status. 
+    
+    Parameters:
+        potential_filters(dict): Dictionary with the various types of
+                                 filters to determine tasks for display
+        pager(boolean): Default=False. Determines if a pager should be used
+                        to display the task information
+        top(integer): Limit the number of groups which should be displayed
+    
+    Returns:
+        integer: Status of Success=0 or Failure=1
+    """
+    """
+    The groups are not natievly split by hierarchy and stored in the Workspace 
+    table. This view breaks it down by hierarchy and display the count. This
+    is acheived in the python code without relying on SQL.
+    """
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
@@ -2342,6 +2832,7 @@ def display_by_groups(potential_filters, pager=False, top=None):
     task_list = get_tasks(uuid_version_results)
     area = task_list[0].area
     task_cnt = {}
+    last_parent = None
     for task in task_list:
         if task.groups is not None:
             grp_list = task.groups.split(".")
@@ -2351,7 +2842,7 @@ def display_by_groups(potential_filters, pager=False, top=None):
                 status_cnt = task_cnt.get(grp.lstrip("."))
                 if status_cnt is None:
                     status_cnt = {}
-                status_cnt[task.status]  = (status_cnt.get(task.status) or 0) + 1
+                status_cnt[task.status] = (status_cnt.get(task.status) or 0) + 1
                 task_cnt[grp.lstrip(".")] = status_cnt
     LOGGER.debug("Total grps to print {}".format(len(task_cnt)))
     table = RichTable(box=box.HORIZONTALS, show_header=True,
@@ -2365,12 +2856,12 @@ def display_by_groups(potential_filters, pager=False, top=None):
     else:
         top = int(top)
     prev_grp = None
-    for cnt, grp in enumerate(sorted(task_cnt), start=1):
+    #For each group in the hierarchy create a row for each task status
+    for cnt, grp in enumerate(sorted(task_cnt, reverse=True), start=1):
         if cnt > top:
             break
-        if cnt > 1:
-            table.add_row(None, None, None, None)
         status_cnt = task_cnt.get(grp)
+        #1 row for each task status under that group hierarchy
         for status in sorted(status_cnt):
             trow = []
             if grp == prev_grp:
@@ -2387,15 +2878,37 @@ def display_by_groups(potential_filters, pager=False, top=None):
                 table.add_row(*trow, style="binn")
             else:
                 table.add_row(*trow, style="default")
+        #Add a separator after each hierarchy
+        if "." not in grp and cnt != len(task_cnt):
+            table.add_row("--", "--","--","--")
+    grid = RichTable.grid(padding=3)
+    grid.add_column(justify="right")
+    grid.add_row("NOTE: Tasks rolled up through GROUP hierarchy")
     if pager:
         with CONSOLE.pager(styles=True):
             CONSOLE.print(table, soft_wrap=True)
+            CONSOLE.print(grid, justify="right")
     else:
-        CONSOLE.print(table, soft_wrap=True)        
-    return SUCCESS       
+        CONSOLE.print(table, soft_wrap=True)
+        CONSOLE.print(grid, justify="left")
+    return SUCCESS
         
         
 def display_default(potential_filters, pager=False, top=None):
+    """
+    Displays a tasks with relevant information. Tasks are sorted by their 
+    score in this view.
+    
+    Parameters:
+        potential_filters(dict): Dictionary with the various types of
+                                 filters to determine tasks for display
+        pager(boolean): Default=False. Determines if a pager should be used
+                        to display the task information
+        top(integer): Limit the number of tasks which should be displayed
+    
+    Returns:
+        integer: Status of Success=0 or Failure=1
+    """
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
@@ -2611,8 +3124,32 @@ def calc_task_scores(task_list):
     has a weight assigned to it. The final score for the task is then written
     back to the Workspace object.
     
-    Now - Yes then 100 else 0. Weight of 15
-    Priority - High, Medium, Normal, Low - 100, 75, 
+    Initial Scoring:
+        Now - Yes then 100 else 0. Weight of 15
+        Priority - High, Medium, Normal, Low - 100, 75, 50, 20
+        Status - STARTED 100, TO_DO, 75
+        Groups - If any then 100 else 0
+        Tags - If any then 100 else 0
+        Inception - Older tasks score higher
+        Due - Tasks closer to due date score higher with bias towards tasks 
+        in the future compared to overdue tasks
+
+    Weights assigned are as below totalling to 100:
+        Now - 15
+        Priority - 15
+        Status - 15
+        Groups - 1
+        Tags - 1
+        Inception - 8
+        Due - 45
+
+    Parameters:
+        task_list(list): List of Workspace objects for which the tasks are 
+        scored
+
+    Returns:
+        list: List of Workspace objects recieved as input but with the task
+        score written to the score property
     """
     ret_task_list = []
     sc_now = {1:100}
@@ -2739,7 +3276,7 @@ def get_and_print_task_count(print_dict):
                                "HIDDEN"), ], else_="VISIBLE")
                          .label("VISIBILITY"))
             # Inner query to match max version for a UUID
-            max_ver_xpr = (SESSION.query(Workspace.uuid,
+            max_ver_sqr = (SESSION.query(Workspace.uuid,
                                          func.max(Workspace.version)
                                          .label("maxver"))
                            .group_by(Workspace.uuid).subquery())
@@ -2747,12 +3284,12 @@ def get_and_print_task_count(print_dict):
             results_pend = (SESSION.query(visib_xpr,
                                           func.count(distinct(Workspace.uuid))
                                           .label("CNT"))
-                            .join(max_ver_xpr, Workspace.uuid ==
-                                  max_ver_xpr.c.uuid)
+                            .join(max_ver_sqr, Workspace.uuid ==
+                                  max_ver_sqr.c.uuid)
                             .filter(and_(Workspace.area ==
                                          WS_AREA_PENDING,
                                          Workspace.version ==
-                                         max_ver_xpr.c.maxver,
+                                         max_ver_sqr.c.maxver,
                                          Workspace.task_type.in_(
                                              [TASK_TYPE_NRML,
                                               TASK_TYPE_DRVD])))
@@ -2883,32 +3420,37 @@ def get_task_uuid_n_ver(potential_filters):
     No validations are performed on the filters. Using the priority set 
     in function the filters are applied onto the tasks table.
     As multiple filters can be provided, priority is followed as below.
-    Filters indicated with numbers are mutually exclusive.
-        1. No Filters - Decision is made in parse_filters function
-                        to be more efficient
-        2. IDs for Pending tasks only
-        3. NOW task
+        1. All tasks in pending area
+            OR
+        2. ID based filter for Pending area
+            OR
+        3. NOW task for Pending area
+            OR
         4. Outstanding Recurring Tasks (Not User Callable)
-        5. UUIDs Based
-            5.1 For Completed or Bin tasks only
-            5.2 Derived Tasks with the base uuid (Not User Callable)
-            5.3 Base Task with baseuuid (Not User Callable)
-        6. Groups, Tags. Description, Due
-            a. Overdue, Today, Hidden, Started
-            b. Done tasks
-            c. Bin Tasks
-            d. Defaults to all Pending Tasks
+            OR
+        5. UUID based filter for selected area
+            OR
+        6. Derived Tasks for a base uuid for selected area (Not User Callable)
+            OR
+        7. Base Task only for a baseuuid for selected area (Not User Callable)
+            OR
+        8. By Event ID without area (Not User Callable)
+            OR
+        9. All tasks(base/derived/normal) which are in Pending area but 
+           without an ID (Not User Callable)
+            OR
+        10. Groups AND Tags AND Description AND Due AND Hide AND End AND
+           Overdue AND Today AND Hidden AND Started for selected area
+                OR
+           Defaults to Completed / Bin Tasks, depending on select area
 
     Parameters:
         potential_filters(dict): Dictionary with the various types of
                                  filters
-        area(str): Area from which the tasks have to be retrieved
-                   Default - 'pending'
 
     Returns:
         list: List of tuples of (task UUID,Version) or None if there
               is an exception or no results found
-
     """
     
     """
@@ -2941,37 +3483,42 @@ def get_task_uuid_n_ver(potential_filters):
     bybaseuuid = potential_filters.get("bybaseuuid")
     baseuuidonly = potential_filters.get("baseuuidonly")
     osrecur = potential_filters.get("osrecur")
+    eventid = potential_filters.get("eventid")
+    missingid = potential_filters.get("missingid")
     curr_date = datetime.now().date()
-    # Inner query to match max version for a UUID
-    max_ver_xpr = (SESSION.query(Workspace.uuid,
+    """
+    Inner query to match max version for a UUID. This is the default version
+    and filters on NORMAL and DERIVED tasks. Within each filter if there is a 
+    need to deviate from this then they will use their own max_ver sub queries.
+    
+    """
+    max_ver_sqr = (SESSION.query(Workspace.uuid,
                                  func.max(Workspace.version)
                                  .label("maxver"))
                    .filter(Workspace.task_type.in_([TASK_TYPE_DRVD,
                                                     TASK_TYPE_NRML]))
                    .group_by(Workspace.uuid).subquery())
-    
+    if done_task is not None:
+        drvd_area = WS_AREA_COMPLETED
+    elif bin_task is not None:
+        drvd_area = WS_AREA_BIN
+    else:
+        drvd_area = WS_AREA_PENDING
+    LOGGER.debug("Derived area is {}".format(drvd_area))
     if all_tasks:
         """
         When no filter is provided retrieve all tasks from pending area
         """
         LOGGER.debug("Inside all_tasks filter")
-        try:
-            results = (SESSION.query(Workspace.uuid, Workspace.version)
-                       .join(max_ver_xpr, and_(Workspace.version ==
-                                               max_ver_xpr.c.maxver,
-                                               Workspace.uuid ==
-                                               max_ver_xpr.c.uuid))
-                       .filter(and_(Workspace.area == WS_AREA_PENDING,
-                                    or_(Workspace.hide <= curr_date,
-                                        Workspace.hide == None)))
-                       .all())
-        except (SQLAlchemyError) as e:
-            LOGGER.error(str(e))
-            return None
-        else:
-            LOGGER.debug("List of resulting Task UUIDs and Versions:")
-            LOGGER.debug("------------- {}".format(results))
-            return results
+        innrqr_all = (SESSION.query(Workspace.uuid, Workspace.version)
+                    .join(max_ver_sqr, and_(Workspace.version ==
+                                            max_ver_sqr.c.maxver,
+                                            Workspace.uuid ==
+                                            max_ver_sqr.c.uuid))
+                    .filter(and_(Workspace.area == WS_AREA_PENDING,
+                                or_(Workspace.hide <= curr_date,
+                                    Workspace.hide == None))))
+        innrqr_list.append(innrqr_all)
     elif idn is not None:
         """
         If id(s) is provided extract tasks only based on ID as it is most 
@@ -2980,562 +3527,547 @@ def get_task_uuid_n_ver(potential_filters):
         id_list = idn.split(",")
         LOGGER.debug("Inside id filter with below params")
         LOGGER.debug(id_list)
-        try:
-            results = (SESSION.query(Workspace.uuid, Workspace.version)
-                       .join(max_ver_xpr, and_(Workspace.version ==
-                                               max_ver_xpr.c.maxver,
-                                               Workspace.uuid ==
-                                               max_ver_xpr.c.uuid))
-                       .filter(and_(Workspace.area == WS_AREA_PENDING,
-                                    Workspace.id.in_(id_list)))
-                       .all())
-        except (SQLAlchemyError) as e:
-            LOGGER.error(str(e))
-            return None
-        else:
-            LOGGER.debug("List of resulting Task UUIDs and Versions:")
-            LOGGER.debug("------------- {}".format(results))
-            return results
+        innrqr_idn = (SESSION.query(Workspace.uuid, Workspace.version)
+                    .join(max_ver_sqr, and_(Workspace.version ==
+                                            max_ver_sqr.c.maxver,
+                                            Workspace.uuid ==
+                                            max_ver_sqr.c.uuid))
+                    .filter(and_(Workspace.area == WS_AREA_PENDING,
+                                Workspace.id.in_(id_list))))
+        innrqr_list.append(innrqr_idn)
     elif now_task is not None:
         """
         If now task filter then return the task marked as now_flag = True from 
         pending area
         """
         LOGGER.debug("Inside now filter")
-        try:
-            results = (SESSION.query(Workspace.uuid, Workspace.version)
-                       .filter(and_(Workspace.area == WS_AREA_PENDING,
-                                    Workspace.now_flag == True,
-                                    Workspace.id != '-',
-                                    Workspace.task_type
-                                    .in_([TASK_TYPE_DRVD,
-                                          TASK_TYPE_NRML])))
-                       .all())
-        except (SQLAlchemyError) as e:
-            LOGGER.error(str(e))
-            return None
-        else:
-            LOGGER.debug("List of resulting Task UUIDs and Versions:")
-            LOGGER.debug("------------- {}".format(results))
-            return results
+        innrqr_now = (SESSION.query(Workspace.uuid, Workspace.version)
+                    .filter(and_(Workspace.area == WS_AREA_PENDING,
+                                Workspace.now_flag == True,
+                                Workspace.id != '-',
+                                Workspace.task_type
+                                .in_([TASK_TYPE_DRVD,
+                                        TASK_TYPE_NRML]))))
+        innrqr_list.append(innrqr_now)
     elif osrecur is not None:
         LOGGER.debug("Inside Outstanding Recurring Tasks filter")
-        try:
-            max_ver_xpr1 = (SESSION.query(Workspace.uuid,
-                                          func.max(Workspace.version)
-                                          .label("maxver"))
-                            .filter(Workspace.task_type == TASK_TYPE_BASE)
-                            .group_by(Workspace.uuid).subquery())
-            results = (SESSION.query(Workspace.uuid, Workspace.version)
-                       .join(max_ver_xpr1,
-                             and_(Workspace.version ==
-                                  max_ver_xpr1.c.maxver,
-                                  Workspace.uuid ==
-                                  max_ver_xpr1.c.uuid))
-                       .filter(and_(Workspace.area == WS_AREA_PENDING,
-                                    Workspace.id == '*',
-                                    Workspace.task_type ==
-                                    TASK_TYPE_BASE,
-                                    or_(Workspace.recur_end == None,
-                                        Workspace.recur_end >=
-                                        curr_date)))
-                       .all())
-        except (SQLAlchemyError) as e:
-            LOGGER.error(str(e))
-            return None
-        else:
-            LOGGER.debug("List of resulting Task UUIDs and Versions:")
-            LOGGER.debug("------------- {}".format(results))
-            return results
+        max_ver_sqr1 = (SESSION.query(Workspace.uuid,
+                                        func.max(Workspace.version)
+                                        .label("maxver"))
+                        .filter(Workspace.task_type == TASK_TYPE_BASE)
+                        .group_by(Workspace.uuid).subquery())
+        innrqr_osrecr = (SESSION.query(Workspace.uuid, Workspace.version)
+                    .join(max_ver_sqr1,
+                            and_(Workspace.version ==
+                                max_ver_sqr1.c.maxver,
+                                Workspace.uuid ==
+                                max_ver_sqr1.c.uuid))
+                    .filter(and_(Workspace.area == WS_AREA_PENDING,
+                                Workspace.id == '*',
+                                Workspace.task_type ==
+                                TASK_TYPE_BASE,
+                                or_(Workspace.recur_end == None,
+                                    Workspace.recur_end >=
+                                    curr_date))))
+        innrqr_list.append(innrqr_osrecr)
+    elif uuidn is not None:
+        """
+        If uuid(s) is provided extract tasks only based on UUID as 
+        it is most specific. Works only in completed or bin area.
+        Preference given to UUID based filters.
+        """
+        uuid_list = uuidn.split(",")
+        LOGGER.debug("Inside UUID filter with below params")
+        LOGGER.debug(uuid_list)
+        innrqr_uuid = (SESSION.query(Workspace.uuid, Workspace.version)
+                        .join(max_ver_sqr, and_(Workspace.version ==
+                                                max_ver_sqr.c.maxver,
+                                                Workspace.uuid ==
+                                                max_ver_sqr.c.uuid))
+                        .filter(and_(Workspace.uuid.in_(uuid_list),
+                                    Workspace.area == drvd_area)))
+        innrqr_list.append(innrqr_uuid)
+    elif bybaseuuid is not None:
+        LOGGER.debug("Inside By Base UUID filter with below params")
+        LOGGER.debug(bybaseuuid)
+        max_ver_sqr1 = (SESSION.query(Workspace.uuid,
+                                        func.max(Workspace.version)
+                                        .label("maxver"))
+                        .filter(Workspace.task_type.in_([TASK_TYPE_DRVD]))
+                        .group_by(Workspace.uuid).subquery())
+        innrqr_buuid = (SESSION.query(Workspace.uuid, Workspace.version)
+                        .join(max_ver_sqr1, and_(Workspace.version ==
+                                                max_ver_sqr1.c.maxver,
+                                                Workspace.uuid ==
+                                                max_ver_sqr1.c.uuid))
+                        .filter(and_(Workspace.task_type ==
+                                        TASK_TYPE_DRVD,
+                                        Workspace.base_uuid == bybaseuuid,
+                                        Workspace.area == drvd_area)))
+        innrqr_list.append(innrqr_buuid)
+    elif baseuuidonly is not None:
+        LOGGER.debug("Inside Base UUID Only filter with below params")
+        LOGGER.debug(baseuuidonly)
+        max_ver_sqr1 = (SESSION.query(Workspace.uuid,
+                                        func.max(Workspace.version)
+                                        .label("maxver"))
+                        .filter(Workspace.task_type == TASK_TYPE_BASE)
+                        .group_by(Workspace.uuid).subquery())
+        innrqr_buuido = (SESSION.query(Workspace.uuid, Workspace.version)
+                            .join(max_ver_sqr1, and_(Workspace.version ==
+                                                    max_ver_sqr1.c.maxver,
+                                                    Workspace.uuid ==
+                                                    max_ver_sqr1.c.uuid))
+                            .filter(and_(Workspace.task_type == TASK_TYPE_BASE,
+                                        Workspace.uuid == baseuuidonly,
+                                        Workspace.area == drvd_area)))
+        innrqr_list.append(innrqr_buuido)
+    elif eventid is not None:
+        LOGGER.debug("Inside Event ID filter with below params")
+        LOGGER.debug(eventid)
+        innrqr_eventid = (SESSION.query(Workspace.uuid, Workspace.version)
+                            .filter(Workspace.event_id == eventid))
+        innrqr_list.append(innrqr_eventid)
+    elif missingid is not None:
+        LOGGER.debug("Inside Missing ID filter with below params")
+        LOGGER.debug(baseuuidonly)
+        max_ver_sqr1 = (SESSION.query(Workspace.uuid,
+                                        func.max(Workspace.version)
+                                        .label("maxver"))
+                        .group_by(Workspace.uuid).subquery())
+        innrqr_missid = (SESSION.query(Workspace.uuid, Workspace.version)
+                            .join(max_ver_sqr1, and_(Workspace.version ==
+                                                    max_ver_sqr1.c.maxver,
+                                                    Workspace.uuid ==
+                                                    max_ver_sqr1.c.uuid))
+                            .filter(and_(Workspace.id == '-',
+                                        Workspace.area == WS_AREA_PENDING)))
+        innrqr_list.append(innrqr_missid)
     else:
-        """
-        Filter provided is not a ID, so try to get task list from 
-        combination of other filters provided by user
-        Preference given to UUID filter which can be used in combination
-        with area modifiers of DONE and BIN
-        """
-        if uuidn is not None:
+        if group is not None:
             """
-            If uuid(s) is provided extract tasks only based on UUID as 
-            it is most specific. Works only in completed or bin area
+            Query to get a list of uuid and version for matchiing groups
+            from all 3 areas. Will be case insensitive
             """
-            uuid_list = uuidn.split(",")
-            LOGGER.debug("Inside UUID filter with below params")
-            LOGGER.debug(uuid_list)
-            innrqr_uuid = (SESSION.query(Workspace.uuid, Workspace.version)
-                           .join(max_ver_xpr, and_(Workspace.version ==
-                                                   max_ver_xpr.c.maxver,
-                                                   Workspace.uuid ==
-                                                   max_ver_xpr.c.uuid))
-                           .filter(Workspace.uuid.
-                                   in_(uuid_list)))
-            innrqr_list.append(innrqr_uuid)
-        elif bybaseuuid is not None:
-            LOGGER.debug("Inside By Base UUID filter with below params")
-            LOGGER.debug(bybaseuuid)
-            max_ver_xpr = (SESSION.query(Workspace.uuid,
-                                         func.max(Workspace.version)
-                                         .label("maxver"))
-                           .filter(Workspace.task_type.in_([TASK_TYPE_DRVD]))
-                           .group_by(Workspace.uuid).subquery())
-            innrqr_buuid = (SESSION.query(Workspace.uuid, Workspace.version)
-                            .join(max_ver_xpr, and_(Workspace.version ==
-                                                    max_ver_xpr.c.maxver,
-                                                    Workspace.uuid ==
-                                                    max_ver_xpr.c.uuid))
-                            .filter(and_(Workspace.task_type ==
-                                         TASK_TYPE_DRVD,
-                                         Workspace.base_uuid == bybaseuuid)))
-            innrqr_list.append(innrqr_buuid)
-        elif baseuuidonly is not None:
-            LOGGER.debug("Inside Base UUID Only filter with below params")
-            LOGGER.debug(baseuuidonly)
-            max_ver_xpr = (SESSION.query(Workspace.uuid,
-                                         func.max(Workspace.version)
-                                         .label("maxver"))
-                           .filter(Workspace.task_type == TASK_TYPE_BASE)
-                           .group_by(Workspace.uuid).subquery())
-            innrqr_buuido = (SESSION.query(Workspace.uuid, Workspace.version)
-                             .join(max_ver_xpr, and_(Workspace.version ==
-                                                     max_ver_xpr.c.maxver,
-                                                     Workspace.uuid ==
-                                                     max_ver_xpr.c.uuid))
-                             .filter(and_(Workspace.task_type == TASK_TYPE_BASE,
-                                          Workspace.uuid == baseuuidonly)))
-            innrqr_list.append(innrqr_buuido)
-        else:
-            if group is not None:
-                """
-                Query to get a list of uuid and version for matchiing groups
-                from all 3 areas. Will be case insensitive
-                """
-                LOGGER.debug("Inside group filter with below params")
-                LOGGER.debug("%" + group + "%")
-                innrqr_groups = (SESSION.query(Workspace.uuid,
-                                               Workspace.version)
-                                 .join(max_ver_xpr,
-                                       and_(Workspace.version ==
-                                            max_ver_xpr.c.maxver,
-                                            Workspace.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                 .filter(Workspace.groups.like("%"+group+"%")))
-                innrqr_list.append(innrqr_groups)
-            if tag is not None:
-                """
-                Query to get a list of uuid and version for matchiing tags
-                from all 3 areas
-                """
-                tag_list = tag.split(",")
-                LOGGER.debug("Inside tag filter with below params")
-                LOGGER.debug(tag_list)
-                if tag:
-                    #If tag is provided search by tag
-                    innrqr_tags = (SESSION.query(WorkspaceTags.uuid,
-                                                WorkspaceTags.version)
-                                .join(max_ver_xpr,
-                                        and_(WorkspaceTags.version ==
-                                            max_ver_xpr.c.maxver,
-                                            WorkspaceTags.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                .filter(WorkspaceTags.tags.
-                                        in_(tag_list)))
-                else:
-                    #No tag provided, so any task that has a tag
-                    innrqr_tags = (SESSION.query(WorkspaceTags.uuid,
-                                                WorkspaceTags.version)
-                                .join(max_ver_xpr,
-                                        and_(WorkspaceTags.version ==
-                                            max_ver_xpr.c.maxver,
-                                            WorkspaceTags.uuid ==
-                                            max_ver_xpr.c.uuid)))
-                innrqr_list.append(innrqr_tags)
-            if desc is not None:
-                """
-                Query to get a list of uuid and version for tasks which match
-                the description as a substring. Will be case insensitive
-                """
-                LOGGER.debug("Inside description filter with below params")
-                LOGGER.debug("%" + desc + "%")
-                innrqr_desc = (SESSION.query(Workspace.uuid,
-                                               Workspace.version)
-                                 .join(max_ver_xpr,
-                                       and_(Workspace.version ==
-                                            max_ver_xpr.c.maxver,
-                                            Workspace.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                 .filter(Workspace.description
-                                            .like("%"+desc+"%")))
-                innrqr_list.append(innrqr_desc)
-            if due_list is not None and due_list[0] is not None:
-                """
-                Query to get a list of uuid and version for tasks which meet
-                the due date filters provided
-                """
-                LOGGER.debug("Inside due filter with below params")
-                LOGGER.debug(due_list)
-                if due_list[0] == "eq":
-                    #If tag is provided search by tag
-                    innrqr_due = (SESSION.query(Workspace.uuid,
+            LOGGER.debug("Inside group filter with below params")
+            LOGGER.debug("%" + group + "%")
+            innrqr_groups = (SESSION.query(Workspace.uuid,
                                             Workspace.version)
-                                .join(max_ver_xpr,
+                                .join(max_ver_sqr,
                                     and_(Workspace.version ==
-                                            max_ver_xpr.c.maxver,
-                                            Workspace.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                .filter(Workspace.due == due_list[1]))
-                elif due_list[0] == "gt":
-                    innrqr_due = (SESSION.query(Workspace.uuid,
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                                .filter(and_(Workspace.groups
+                                                    .like("%"+group+"%"),
+                                            Workspace.area == drvd_area)))
+            innrqr_list.append(innrqr_groups)
+        if tag is not None:
+            """
+            Query to get a list of uuid and version for matchiing tags
+            from all 3 areas
+            """
+            tag_list = tag.split(",")
+            LOGGER.debug("Inside tag filter with below params")
+            LOGGER.debug(tag_list)
+            if tag:
+                #If tag is provided search by tag
+                innrqr_tags = (SESSION.query(WorkspaceTags.uuid,
+                                            WorkspaceTags.version)
+                            .join(max_ver_sqr,
+                                    and_(WorkspaceTags.version ==
+                                        max_ver_sqr.c.maxver,
+                                        WorkspaceTags.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(and_(WorkspaceTags.tags.in_(tag_list),
+                                            Workspace.area == drvd_area)))
+            else:
+                #No tag provided, so any task that has a tag
+                innrqr_tags = (SESSION.query(WorkspaceTags.uuid,
+                                            WorkspaceTags.version)
+                            .join(max_ver_sqr,
+                                    and_(WorkspaceTags.version ==
+                                        max_ver_sqr.c.maxver,
+                                        WorkspaceTags.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(Workspace.area == drvd_area))
+            innrqr_list.append(innrqr_tags)
+        if desc is not None:
+            """
+            Query to get a list of uuid and version for tasks which match
+            the description as a substring. Will be case insensitive
+            """
+            LOGGER.debug("Inside description filter with below params")
+            LOGGER.debug("%" + desc + "%")
+            innrqr_desc = (SESSION.query(Workspace.uuid,
                                             Workspace.version)
-                                .join(max_ver_xpr,
+                                .join(max_ver_sqr,
                                     and_(Workspace.version ==
-                                            max_ver_xpr.c.maxver,
-                                            Workspace.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                .filter(Workspace.due > due_list[1]))
-                elif due_list[0] == "ge":
-                    innrqr_due = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                .join(max_ver_xpr,
-                                    and_(Workspace.version ==
-                                            max_ver_xpr.c.maxver,
-                                            Workspace.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                .filter(Workspace.due >= due_list[1]))   
-                elif due_list[0] == "lt":
-                    innrqr_due = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                .join(max_ver_xpr,
-                                    and_(Workspace.version ==
-                                            max_ver_xpr.c.maxver,
-                                            Workspace.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                .filter(Workspace.due < due_list[1]))
-                elif due_list[0] == "le":
-                    innrqr_due = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                .join(max_ver_xpr,
-                                    and_(Workspace.version ==
-                                            max_ver_xpr.c.maxver,
-                                            Workspace.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                .filter(Workspace.due <= due_list[1]))
-                elif due_list[0] == "bt":
-                    innrqr_due = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                            .join(max_ver_xpr,
-                                            and_(Workspace.version ==
-                                                max_ver_xpr.c.maxver,
-                                                Workspace.uuid ==
-                                                max_ver_xpr.c.uuid))
-                                            .filter(and_(Workspace.due >= 
-                                                        due_list[1],
-                                                        Workspace.due <= 
-                                                        due_list[2])))
-                else:
-                    #No valid due filter, so any task that has a due date
-                    innrqr_due = (SESSION.query(Workspace.uuid,
-                                                Workspace.version)
-                                    .join(max_ver_xpr,
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                                .filter(and_(Workspace.description
+                                                    .like("%"+desc+"%"),
+                                            Workspace.area == drvd_area)))
+            innrqr_list.append(innrqr_desc)
+        if due_list is not None and due_list[0] is not None:
+            """
+            Query to get a list of uuid and version for tasks which meet
+            the due date filters provided
+            """
+            LOGGER.debug("Inside due filter with below params")
+            LOGGER.debug(due_list)
+            if due_list[0] == "eq":
+                #If tag is provided search by tag
+                innrqr_due = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                            .join(max_ver_sqr,
+                                and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(and_(Workspace.due == due_list[1],
+                                            Workspace.area == drvd_area)))
+            elif due_list[0] == "gt":
+                innrqr_due = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                            .join(max_ver_sqr,
+                                and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(and_(Workspace.due > due_list[1],
+                                            Workspace.area == drvd_area)))
+            elif due_list[0] == "ge":
+                innrqr_due = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                            .join(max_ver_sqr,
+                                and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(and_(Workspace.due >= due_list[1],
+                                            Workspace.area == drvd_area)))
+            elif due_list[0] == "lt":
+                innrqr_due = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                            .join(max_ver_sqr,
+                                and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(and_(Workspace.due < due_list[1],
+                                            Workspace.area == drvd_area)))
+            elif due_list[0] == "le":
+                innrqr_due = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                            .join(max_ver_sqr,
+                                and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(and_(Workspace.due <= due_list[1],
+                                            Workspace.area == drvd_area)))
+            elif due_list[0] == "bt":
+                innrqr_due = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                                        .join(max_ver_sqr,
                                         and_(Workspace.version ==
-                                                max_ver_xpr.c.maxver,
-                                                Workspace.uuid ==
-                                                max_ver_xpr.c.uuid))
-                                    .filter(Workspace.due != None))
-                innrqr_list.append(innrqr_due) 
-            if hide_list is not None and hide_list[0] is not None:
-                """
-                Query to get a list of uuid and version for tasks which meet
-                the hide date filters provided
-                """
-                LOGGER.debug("Inside hdie filter with below params")
-                LOGGER.debug(hide_list)
-                if hide_list[0] == "eq":
-                    #If tag is provided search by tag
-                    innrqr_hide = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                .join(max_ver_xpr,
-                                    and_(Workspace.version ==
-                                            max_ver_xpr.c.maxver,
+                                            max_ver_sqr.c.maxver,
                                             Workspace.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                .filter(Workspace.hide == hide_list[1]))
-                elif hide_list[0] == "gt":
-                    innrqr_hide = (SESSION.query(Workspace.uuid,
+                                            max_ver_sqr.c.uuid))
+                                        .filter(and_(Workspace.due 
+                                                        >= due_list[1],
+                                                    Workspace.due  
+                                                        <= due_list[2],
+                                                    Workspace.area  
+                                                        == drvd_area)))
+            else:
+                #No valid due filter, so any task that has a due date
+                innrqr_due = (SESSION.query(Workspace.uuid,
                                             Workspace.version)
-                                .join(max_ver_xpr,
+                                .join(max_ver_sqr,
                                     and_(Workspace.version ==
-                                            max_ver_xpr.c.maxver,
+                                            max_ver_sqr.c.maxver,
                                             Workspace.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                .filter(Workspace.hide > hide_list[1]))
-                elif hide_list[0] == "ge":
-                    innrqr_hide = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                .join(max_ver_xpr,
-                                    and_(Workspace.version ==
-                                            max_ver_xpr.c.maxver,
-                                            Workspace.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                .filter(Workspace.hide >= hide_list[1]))   
-                elif hide_list[0] == "lt":
-                    innrqr_hide = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                .join(max_ver_xpr,
-                                    and_(Workspace.version ==
-                                            max_ver_xpr.c.maxver,
-                                            Workspace.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                .filter(Workspace.hide < hide_list[1]))
-                elif hide_list[0] == "le":
-                    innrqr_hide = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                .join(max_ver_xpr,
-                                    and_(Workspace.version ==
-                                            max_ver_xpr.c.maxver,
-                                            Workspace.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                .filter(Workspace.hide <= hide_list[1]))
-                elif hide_list[0] == "bt":
-                    innrqr_hide = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                            .join(max_ver_xpr,
-                                            and_(Workspace.version ==
-                                                max_ver_xpr.c.maxver,
-                                                Workspace.uuid ==
-                                                max_ver_xpr.c.uuid))
-                                            .filter(and_(Workspace.hide >= 
-                                                        hide_list[1],
-                                                        Workspace.hide <= 
-                                                        hide_list[2])))
-                else:
-                    #No valid hide filter, so any task that has a hide date
-                    innrqr_hide = (SESSION.query(Workspace.uuid,
-                                                Workspace.version)
-                                    .join(max_ver_xpr,
+                                            max_ver_sqr.c.uuid))
+                                .filter(and_(Workspace.due != None,
+                                                Workspace.area == drvd_area)))
+            innrqr_list.append(innrqr_due) 
+        if hide_list is not None and hide_list[0] is not None:
+            """
+            Query to get a list of uuid and version for tasks which meet
+            the hide date filters provided
+            """
+            LOGGER.debug("Inside hdie filter with below params")
+            LOGGER.debug(hide_list)
+            if hide_list[0] == "eq":
+                #If tag is provided search by tag
+                innrqr_hide = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                            .join(max_ver_sqr,
+                                and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(and_(Workspace.hide == hide_list[1],
+                                            Workspace.area == drvd_area)))
+            elif hide_list[0] == "gt":
+                innrqr_hide = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                            .join(max_ver_sqr,
+                                and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(and_(Workspace.hide > hide_list[1],
+                                            Workspace.area == drvd_area)))
+            elif hide_list[0] == "ge":
+                innrqr_hide = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                            .join(max_ver_sqr,
+                                and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(and_(Workspace.hide >= hide_list[1],
+                                            Workspace.area == drvd_area)))
+            elif hide_list[0] == "lt":
+                innrqr_hide = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                            .join(max_ver_sqr,
+                                and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(and_(Workspace.hide < hide_list[1],
+                                            Workspace.area == drvd_area)))
+            elif hide_list[0] == "le":
+                innrqr_hide = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                            .join(max_ver_sqr,
+                                and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(and_(Workspace.hide <= hide_list[1],
+                                            Workspace.area == drvd_area)))
+            elif hide_list[0] == "bt":
+                innrqr_hide = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                                        .join(max_ver_sqr,
                                         and_(Workspace.version ==
-                                                max_ver_xpr.c.maxver,
+                                            max_ver_sqr.c.maxver,
+                                            Workspace.uuid ==
+                                            max_ver_sqr.c.uuid))
+                                        .filter(and_(Workspace.hide
+                                                        >= hide_list[1],
+                                                    Workspace.hide 
+                                                        <= hide_list[2],
+                                                    Workspace.area 
+                                                        == drvd_area)))
+            else:
+                #No valid hide filter, so any task that has a hide date
+                innrqr_hide = (SESSION.query(Workspace.uuid,
+                                            Workspace.version)
+                                .join(max_ver_sqr,
+                                    and_(Workspace.version ==
+                                            max_ver_sqr.c.maxver,
+                                            Workspace.uuid ==
+                                            max_ver_sqr.c.uuid))
+                                .filter(and_(Workspace.hide != None,
+                                                Workspace.area == drvd_area)))
+            innrqr_list.append(innrqr_hide)
+        if end_list is not None and end_list[0] is not None:
+            """
+            Query to get a list of uuid and version for tasks which meet
+            the recur end date filters provided
+            """                
+            LOGGER.debug("Inside recur end filter with below params")
+            LOGGER.debug(end_list)
+            if end_list[0] == "eq":
+                #If tag is provided search by tag
+                innrqr_end = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                                        .join(max_ver_sqr,
+                                            and_(Workspace.version ==
+                                                    max_ver_sqr.c.maxver,
                                                 Workspace.uuid ==
-                                                max_ver_xpr.c.uuid))
-                                    .filter(Workspace.hide != None))
-                innrqr_list.append(innrqr_hide)
-            if end_list is not None and end_list[0] is not None:
-                """
-                Query to get a list of uuid and version for tasks which meet
-                the recur end date filters provided
-                """                
-                LOGGER.debug("Inside recur end filter with below params")
-                LOGGER.debug(end_list)
-                if end_list[0] == "eq":
-                    #If tag is provided search by tag
-                    innrqr_end = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                            .join(max_ver_xpr,
-                                                and_(Workspace.version ==
-                                                        max_ver_xpr.c.maxver,
-                                                    Workspace.uuid ==
-                                                        max_ver_xpr.c.uuid))
-                                            .filter(Workspace.recur_end == 
-                                                    end_list[1]))
-                elif end_list[0] == "gt":
-                    innrqr_end = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                        .join(max_ver_xpr,
-                                            and_(Workspace.version ==
-                                                    max_ver_xpr.c.maxver,
-                                                    Workspace.uuid ==
-                                                    max_ver_xpr.c.uuid))
-                                        .filter(Workspace.recur_end > 
-                                                    end_list[1]))
-                elif end_list[0] == "ge":
-                    innrqr_end = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                        .join(max_ver_xpr,
-                                            and_(Workspace.version ==
-                                                    max_ver_xpr.c.maxver,
-                                                    Workspace.uuid ==
-                                                    max_ver_xpr.c.uuid))
-                                        .filter(Workspace.recur_end >= 
-                                                    end_list[1]))   
-                elif end_list[0] == "lt":
-                    innrqr_end = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                        .join(max_ver_xpr,
-                                            and_(Workspace.version ==
-                                                    max_ver_xpr.c.maxver,
-                                                    Workspace.uuid ==
-                                                    max_ver_xpr.c.uuid))
-                                        .filter(Workspace.recur_end < 
-                                                    end_list[1]))
-                elif end_list[0] == "le":
-                    innrqr_end = (SESSION.query(Workspace.uuid,
-                                            Workspace.version)
-                                        .join(max_ver_xpr,
-                                            and_(Workspace.version ==
-                                                    max_ver_xpr.c.maxver,
-                                                    Workspace.uuid ==
-                                                    max_ver_xpr.c.uuid))
-                                        .filter(Workspace.recur_end <= 
-                                                    end_list[1]))
-                elif end_list[0] == "bt":
-                    innrqr_end = (SESSION.query(Workspace.uuid,
-                                                        Workspace.version)
-                                            .join(max_ver_xpr,
-                                            and_(Workspace.version ==
-                                                max_ver_xpr.c.maxver,
+                                                    max_ver_sqr.c.uuid))
+                                        .filter(and_(Workspace.recur_end 
+                                                        == end_list[1],
+                                                        Workspace.area 
+                                                        == drvd_area)))
+            elif end_list[0] == "gt":
+                innrqr_end = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                                    .join(max_ver_sqr,
+                                        and_(Workspace.version ==
+                                                max_ver_sqr.c.maxver,
                                                 Workspace.uuid ==
-                                                max_ver_xpr.c.uuid))
-                                            .filter(and_(Workspace.recur_end 
+                                                max_ver_sqr.c.uuid))
+                                    .filter(and_(and_(Workspace.recur_end  
+                                                        > end_list[1],
+                                                        Workspace.area 
+                                                        == drvd_area))))
+            elif end_list[0] == "ge":
+                innrqr_end = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                                    .join(max_ver_sqr,
+                                        and_(Workspace.version ==
+                                                max_ver_sqr.c.maxver,
+                                                Workspace.uuid ==
+                                                max_ver_sqr.c.uuid))
+                                    .filter(and_(Workspace.recur_end 
                                                     >= end_list[1],
-                                                    Workspace.recur_end 
-                                                    <= end_list[2])))
-                else:
-                    #No valid recur end filter, so any task that has a 
-                    #recur end date
-                    innrqr_end = (SESSION.query(Workspace.uuid,
-                                                Workspace.version)
-                                    .join(max_ver_xpr,
+                                                    Workspace.area 
+                                                    == drvd_area)))   
+            elif end_list[0] == "lt":
+                innrqr_end = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                                    .join(max_ver_sqr,
                                         and_(Workspace.version ==
-                                                max_ver_xpr.c.maxver,
+                                                max_ver_sqr.c.maxver,
                                                 Workspace.uuid ==
-                                                max_ver_xpr.c.uuid))
-                                    .filter(Workspace.recur_end != None))
-                innrqr_list.append(innrqr_end)
+                                                max_ver_sqr.c.uuid))
+                                    .filter(and_(Workspace.recur_end  
+                                                    < end_list[1],
+                                                    Workspace.area 
+                                                    == drvd_area)))
+            elif end_list[0] == "le":
+                innrqr_end = (SESSION.query(Workspace.uuid,
+                                        Workspace.version)
+                                    .join(max_ver_sqr,
+                                        and_(Workspace.version ==
+                                                max_ver_sqr.c.maxver,
+                                                Workspace.uuid ==
+                                                max_ver_sqr.c.uuid))
+                                    .filter(and_(Workspace.recur_end
+                                                    <= end_list[1],
+                                                    Workspace.area 
+                                                    == drvd_area)))
+            elif end_list[0] == "bt":
+                innrqr_end = (SESSION.query(Workspace.uuid,
+                                                    Workspace.version)
+                                        .join(max_ver_sqr,
+                                        and_(Workspace.version ==
+                                            max_ver_sqr.c.maxver,
+                                            Workspace.uuid ==
+                                            max_ver_sqr.c.uuid))
+                                        .filter(and_(Workspace.recur_end 
+                                                    >= end_list[1],
+                                                Workspace.recur_end 
+                                                    <= end_list[2],
+                                                Workspace.area 
+                                                    == drvd_area)))
+            else:
+                #No valid recur end filter, so any task that has a 
+                #recur end date
+                innrqr_end = (SESSION.query(Workspace.uuid,
+                                            Workspace.version)
+                                .join(max_ver_sqr,
+                                    and_(Workspace.version ==
+                                            max_ver_sqr.c.maxver,
+                                            Workspace.uuid ==
+                                            max_ver_sqr.c.uuid))
+                                .filter(and_(Workspace.recur_end != None,
+                                                Workspace.area == drvd_area)))
+            innrqr_list.append(innrqr_end)
         """
         Look for modifiers that work in the pending area
         """
         LOGGER.debug("Status for OVERDUE {}, TODAY {}, HIDDEN {}, STARTED{}"
-                     .format(overdue_task, today_task, hidden_task,
-                             started_task))
-        if (overdue_task is not None or today_task is not None or
-                hidden_task is not None or started_task is not None):
-            if overdue_task is not None:
-                LOGGER.debug("Inside overdue filter")
-                innrqr_overdue = (SESSION.query(Workspace.uuid,
-                                                Workspace.version)
-                                  .join(max_ver_xpr,
-                                        and_(Workspace.version ==
-                                             max_ver_xpr.c.maxver,
-                                             Workspace.uuid ==
-                                             max_ver_xpr.c.uuid))
-                                  .filter(and_(Workspace.area ==
-                                               WS_AREA_PENDING,
-                                               Workspace.due < curr_date,
-                                               or_(Workspace.hide <=
-                                                   curr_date,
-                                                   Workspace.hide ==
-                                                   None))))
-                innrqr_list.append(innrqr_overdue)
-            if today_task is not None:
-                LOGGER.debug("Inside today filter")
-                innrqr_today = (SESSION.query(Workspace.uuid,
-                                              Workspace.version)
-                                .join(max_ver_xpr,
-                                      and_(Workspace.version ==
-                                           max_ver_xpr.c.maxver,
-                                           Workspace.uuid ==
-                                           max_ver_xpr.c.uuid))
-                                .filter(and_(Workspace.area ==
-                                             WS_AREA_PENDING,
-                                             Workspace.due == curr_date,
-                                             or_(Workspace.hide <=
-                                                 curr_date,
-                                                 Workspace.hide ==
-                                                 None))))
-                innrqr_list.append(innrqr_today)
-            if hidden_task is not None:
-                LOGGER.debug("Inside hidden filter")
-                innrqr_hidden = (SESSION.query(Workspace.uuid,
-                                               Workspace.version)
-                                 .join(max_ver_xpr,
-                                       and_(Workspace.version ==
-                                            max_ver_xpr.c.maxver,
+                    .format(overdue_task, today_task, hidden_task,
+                            started_task))
+        if overdue_task is not None:
+            LOGGER.debug("Inside overdue filter")
+            innrqr_overdue = (SESSION.query(Workspace.uuid,
+                                            Workspace.version)
+                                .join(max_ver_sqr,
+                                    and_(Workspace.version ==
+                                            max_ver_sqr.c.maxver,
                                             Workspace.uuid ==
-                                            max_ver_xpr.c.uuid))
-                                 .filter(and_(Workspace.area ==
-                                              WS_AREA_PENDING,
-                                              and_(Workspace.hide >
-                                                   curr_date,
-                                                   Workspace.hide !=
-                                                   None))))
-                innrqr_list.append(innrqr_hidden)
-            if started_task is not None:
-                LOGGER.debug("Inside started filter")
-                innrqr_started = (SESSION.query(Workspace.uuid,
-                                                Workspace.version)
-                                  .join(max_ver_xpr,
-                                        and_(Workspace.version ==
-                                             max_ver_xpr.c.maxver,
-                                             Workspace.uuid ==
-                                             max_ver_xpr.c.uuid))
-                                  .filter(and_(Workspace.area ==
-                                               WS_AREA_PENDING,
-                                               Workspace.status ==
-                                               TASK_STATUS_STARTED
-                                               )))
-                innrqr_list.append(innrqr_started)
-        elif done_task is not None:
-            """
-            If none of the pending area modifiers are given look for other 
-            modifiers. Preference is given to DONE over BIN and they are 
-            mutually exclusive
-            """
-            # Get all completed tasks
-            LOGGER.debug("Inside done filter")
-            max_ver_xpr2 = (SESSION.query(Workspace.uuid,
-                                          func.max(Workspace.version)
-                                          .label("maxver"))
-                            .filter(Workspace.area !=
-                                    WS_AREA_COMPLETED)
-                            .group_by(Workspace.uuid).subquery())
-            innrqr_done = (SESSION.query(Workspace.uuid, Workspace.version)
-                           .join(max_ver_xpr2,
-                                 and_(Workspace.uuid ==
-                                      max_ver_xpr2.c.uuid,
-                                      Workspace.version >
-                                      max_ver_xpr2.c.maxver))
-                           .filter(Workspace.area ==
-                                   WS_AREA_COMPLETED))
-            innrqr_list.append(innrqr_done)
-        elif bin_task is not None:
-            # Get all tasks in the bin
-            LOGGER.debug("Inside bin filter")
-            max_ver_xpr3 = (SESSION.query(Workspace.uuid,
-                                          func.max(Workspace.version)
-                                          .label("maxver"))
-                            .filter(Workspace.area != WS_AREA_BIN)
-                            .group_by(Workspace.uuid).subquery())
-            innrqr_bin = (SESSION.query(Workspace.uuid, Workspace.version)
-                          .join(max_ver_xpr3,
-                                and_(Workspace.uuid ==
-                                     max_ver_xpr3.c.uuid,
-                                     Workspace.version >
-                                     max_ver_xpr3.c.maxver))
-                          .filter(Workspace.area ==
-                                  WS_AREA_BIN))
-            innrqr_list.append(innrqr_bin)
-        else:
-            """
-            If no modifiers provided then default to tasks in pending area
-            Ensure this query is the same as that used in the default for
-            all_tasks
-            """
-            LOGGER.debug("Inside default filter")
-            innrqr_all = (SESSION.query(Workspace.uuid, Workspace.version)
-                          .join(max_ver_xpr,
-                                and_(Workspace.version ==
-                                     max_ver_xpr.c.maxver,
-                                     Workspace.uuid ==
-                                     max_ver_xpr.c.uuid))
-                          .filter(and_(Workspace.area ==
-                                       WS_AREA_PENDING,
-                                  or_(Workspace.hide <= curr_date,
-                                        Workspace.hide == None))))
-            innrqr_list.append(innrqr_all)
-        if innrqr_list is None:
-            return None
+                                            max_ver_sqr.c.uuid))
+                                .filter(and_(Workspace.area ==
+                                            WS_AREA_PENDING,
+                                            Workspace.due < curr_date,
+                                            or_(Workspace.hide <=
+                                                curr_date,
+                                                Workspace.hide ==
+                                                None))))
+            innrqr_list.append(innrqr_overdue)
+        if today_task is not None:
+            LOGGER.debug("Inside today filter")
+            innrqr_today = (SESSION.query(Workspace.uuid,
+                                            Workspace.version)
+                            .join(max_ver_sqr,
+                                    and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(and_(Workspace.area ==
+                                            WS_AREA_PENDING,
+                                            Workspace.due == curr_date,
+                                            or_(Workspace.hide <=
+                                                curr_date,
+                                                Workspace.hide ==
+                                                None))))
+            innrqr_list.append(innrqr_today)
+        if hidden_task is not None:
+            LOGGER.debug("Inside hidden filter")
+            innrqr_hidden = (SESSION.query(Workspace.uuid,
+                                            Workspace.version)
+                                .join(max_ver_sqr,
+                                    and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                                .filter(and_(Workspace.area ==
+                                            WS_AREA_PENDING,
+                                            and_(Workspace.hide >
+                                                curr_date,
+                                                Workspace.hide !=
+                                                None))))
+            innrqr_list.append(innrqr_hidden)
+        if started_task is not None:
+            LOGGER.debug("Inside started filter")
+            innrqr_started = (SESSION.query(Workspace.uuid,
+                                            Workspace.version)
+                                .join(max_ver_sqr,
+                                    and_(Workspace.version ==
+                                            max_ver_sqr.c.maxver,
+                                            Workspace.uuid ==
+                                            max_ver_sqr.c.uuid))
+                                .filter(and_(Workspace.area ==
+                                            WS_AREA_PENDING,
+                                            Workspace.status ==
+                                            TASK_STATUS_STARTED
+                                            )))
+            innrqr_list.append(innrqr_started)
+        if not innrqr_list:
+            #If no query has been created check if the HL area filters for
+            #done or bin are provided
+            if done_task is not None or bin_task is not None:
+                """
+                If no modifiers provided and if done or bin filters provided  
+                then create a default query for all tasks from completed  or 
+                bin area
+                """
+                LOGGER.debug("Inside default filter")
+                innrqr_all = (SESSION.query(Workspace.uuid, Workspace.version)
+                            .join(max_ver_sqr,
+                                    and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(Workspace.area == drvd_area))
+                innrqr_list.append(innrqr_all)
+            else:
+                #No valid filters, so return None
+                return None
     try:
-        # Tuple of rows, UUID,Version
         firstqr = innrqr_list.pop(0)
+        # Returns Tuple of rows, UUID,Version
         results = firstqr.intersect(*innrqr_list).all()
     except (SQLAlchemyError) as e:
         LOGGER.error(str(e))
@@ -3627,14 +4159,10 @@ def reflect_object_n_print(src_object, to_print=False, print_all=False):
         return out_str
 
 
-def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst, event_id):
+def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
     uuid_version_list = []
-    del_uuid_ver_list = []
-    ulnk_uuid_ver_list = []
     create_one = False
     tags_str = ""
-    del_tags_str = ""
-    ulnk_tags_str = ""
     curr_date = datetime.now().date()
     """
     The base task is there to hold a verion of the task using which the 
@@ -3644,19 +4172,21 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst, event_id):
     """
     ws_task_base = ws_task_src
     results = None
+    if ws_task_base.event_id is None:
+        ws_task_base.event_id = get_event_id()
     if add_recur_inst:
         # Get last done or pending task whichever is the latest. Create
         # the next occurence from the next due date
-        max_ver_xpr = (SESSION.query(Workspace.uuid,
+        max_ver_sqr = (SESSION.query(Workspace.uuid,
                                      func.max(Workspace.version)
                                      .label("maxver"))
                        .filter(Workspace.task_type == TASK_TYPE_BASE)
                        .group_by(Workspace.uuid).subquery())
         results = (SESSION.query(func.max(WorkspaceRecurDates.due))
-                   .join(max_ver_xpr, and_(WorkspaceRecurDates.version ==
-                                           max_ver_xpr.c.maxver,
+                   .join(max_ver_sqr, and_(WorkspaceRecurDates.version ==
+                                           max_ver_sqr.c.maxver,
                                            WorkspaceRecurDates.uuid ==
-                                           max_ver_xpr.c.uuid))
+                                           max_ver_sqr.c.uuid))
                    .filter(WorkspaceRecurDates.uuid ==
                            ws_task_base.uuid)
                    .all())
@@ -3683,23 +4213,19 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst, event_id):
                                                 == ws_task_base.uuid))
                                   .all())
         if not task_exists:
-            print("tanuchi is konkeychiiiiiiiiiiiiiiiiiiiiiiii")
             create_one = True
     else:
         # Create a new base task - from add or
         # version for the base task - from modify
         ws_task_base.uuid = None
         ws_task_base.task_type = TASK_TYPE_BASE
-        if ws_task_base.event_id is None:
-            ws_task_base.event_id = event_id
         ws_task_base.status = TASK_STATUS_TODO
         ws_task_base.area = WS_AREA_PENDING
         ws_task_base.id = "*"
         ws_task_base.base_uuid = None
         ws_task_base.now_flag = None
         ret, ws_task_base, tags_str = add_task_and_tags(ws_task_base, 
-                                                        ws_tags_list,
-                                                        event_id)
+                                                        ws_tags_list)
         if ret == FAILURE:
             LOGGER.error("Failure recived while trying to add base task. "
                          "Stopping adding of derived tasks.")
@@ -3784,6 +4310,7 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst, event_id):
     task's due and hide dates. This factor then gets propogated to all
     derived tasks
     """
+    hide_due_diff = 0
     if ws_task_drvd.hide is not None:
         hide_due_diff = (datetime.strptime(ws_task_drvd.hide, FMT_DATEONLY)
                          - datetime.strptime(ws_task_drvd.due,
@@ -3822,8 +4349,7 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst, event_id):
         ws_rec_dt = WorkspaceRecurDates(uuid=base_uuid, version=base_ver,
                                         due=ws_task_drvd.due)
         ret, ws_task_drvd, r_tags_str = add_task_and_tags(ws_task_drvd,
-                                                            ws_tags_list, 
-                                                            event_id,
+                                                            ws_tags_list,
                                                             ws_rec_dt)
         if ret == FAILURE:
             LOGGER.error("Error will adding recurring tasks")
@@ -3864,6 +4390,7 @@ def calc_next_inst_date(recur_mode, recur_when, start_dt, end_dt, cnt=2):
                             date
     """
     #Start with the BASIC modes (which do not need a 'when')
+    next_due = None
     if recur_mode == MODE_DAILY:
         if recur_when is None:
             next_due = (list(rrule(DAILY, count=cnt, dtstart=start_dt,
@@ -3986,8 +4513,7 @@ def parse_n_validate_recur(recur):
     return SUCCESS, mode, when
 
 
-def add_task_and_tags(ws_task_src, ws_tags_list=None, event_id=None,
-                      ws_rec_dt=None):
+def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None):
     LOGGER.debug("Incoming values for task:")
     LOGGER.debug("\n" + reflect_object_n_print(ws_task_src, to_print=False,
                                                print_all=True))
@@ -3995,8 +4521,6 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None, event_id=None,
     LOGGER.debug("\n" + reflect_object_n_print(ws_rec_dt, to_print=False,
                                                print_all=True))
     ws_task = Workspace()
-    if event_id is None:
-        event_id = get_event_id()
     if ws_task_src.id is None:
         ws_task.id = derive_task_id()
     else:
@@ -4019,7 +4543,7 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None, event_id=None,
     else:
         ws_task.uuid = ws_task_src.uuid
     if ws_task_src.event_id is None:
-        ws_task.event_id = event_id
+        ws_task.event_id = get_event_id()
     else:
         ws_task.event_id = ws_task_src.event_id
     ws_task.priority = translate_priority(ws_task_src.priority)
