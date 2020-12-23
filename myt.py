@@ -48,7 +48,7 @@ TASK_TODAY = "TODAY"
 TASK_TOMMR = "TOMORROW"
 TASK_HIDDEN = "HIDDEN"
 TASK_BIN = "BIN"
-TASK_DONE = "DONE"
+TASK_COMPLETE = "COMPLETE"
 TASK_STARTED = "STARTED"
 TASK_NOW = "NOW"
 # For Search, when no filters are provided or only area filters provided
@@ -150,6 +150,7 @@ class Workspace(Base):
     """
     ORM for the 'workspace' table which holds all primary information
     for the tasks.
+        
         Primary Key: uuid, version
         Indexes: idx_ws_due(due)
     """
@@ -217,6 +218,7 @@ class WorkspaceTags(Base):
     """
     ORM for the 'workspace_tags' table which holds all the tags for each task.
     Every tags is stored as a row.
+        
         Primary Key: uuid, version, tag
         Foreign Key: uuid->workspace.uuid, version->workspace.version
         Indexes: idx_ws_tg_uuid_ver(uuid, version)
@@ -256,6 +258,7 @@ class WorkspaceRecurDates(Base):
     ORM for the table 'workspace_recur_dates' which holds all due dates for 
     which a task has been created.
     Every due date is stored as a row.
+        
         Primary Key: uuid, version, due
         Foreign Key: uuid->workspace.uuid, version->workspace.version
     """
@@ -273,6 +276,11 @@ Index("idx_ws_recr_uuid_ver", WorkspaceRecurDates.uuid,
 
 
 class AppMetadata(Base):
+    """
+    ORM for the table 'app_metadata' which holds application metadata.
+        
+        Primary Key: key
+    """
     __tablename__ = "app_metadata"
     key = Column(String, primary_key=True)
     value = Column(String)
@@ -554,7 +562,7 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end,
     Modify task details. Specify 1 or more filters and provide the new values 
     for attributes which need modification using the options available.
     
-    --- FILTERS- -- 
+    --- FILTERS --- 
     
     Filters can take various forms, refer below. Format is 'field:value'.
 
@@ -804,6 +812,84 @@ def done(filters, verbose):
               help="Enable verbose Logging.",
               )
 def revert(filters, verbose):
+    """
+    Revert a task to TO_DO status.
+    This works on tasks in STARTED status or tasks in DONE status. For 
+    reverting DONE tasks, the filyer modifier, COMPLETE needs to be used.
+    Does not work for DELETED tasks.
+
+    --- FILTERS --- 
+    
+    Filters can take various forms, refer below. Format is 'field:value'.
+
+    id - Filter on tasks by id. This filters works by itself and cannot be
+    combined as this is most specific. Works on tasks which are in status 
+    'TO_DO', 'STARTED'. Ex - id:4,10
+
+    uuid - Filter on tasks by uuid. This works by itself and cannot be 
+    combined with other filters. Works on tasks with status 'DONE' or 
+    'DELETED'. Ex - uuid:31726cd2-2db3-4ae4-97ae-b2b7b29a7307
+    
+    desc - Filter on tasks by description. The filter searches within task
+    descriptions. Can be combined with other filters. Ex - de:fitness or
+    desc:fitness
+    
+    groups - Filter on tasks by the group name. Can be combined with other
+    filters. Ex - gr:HOME.BILLS or group:HOME.BILLS
+    
+    tags - Filter tasks on tags, can be provided as comman separated. Can be
+    combined with other filters. Ex - tg:bills,finance or tag:bills,finance
+    
+    priority - Filter tasks on the priority. Can be combined with other 
+    filters. Ex - pr:M or priority:Medium
+
+    due, hide, end - Filter tasks on dates. It is possible to filter based on
+    various conditions as explained below with examples using due/du
+    
+        Equal To - du:eq:+1 Tasks due tomorrow\n
+        Less Than - du:lt:+0 Tasks with due dates earlier than today\n
+        Less Than or Equal To - due:le:+0 Tasks due today or earlier\n
+        Greater Than - du:gt:2020-12-10 Tasks with due date after 10th Dec '20
+        \n
+        Greater Than or Equal To - du:ge:+7 Tasks due in 7 days or beyond\n
+        Between - du:bt:2020-12-01:2020-12-07 Tasks due in the first 7 days of
+        Dec '20. Both dates are inclusive\n
+        The same works for hide/hi and end/en as well. For hide when using the 
+        short form of the date as '-X' this is relative to today and noty due 
+        date. When providing an input value for hide with this format '-X' is
+        relative to the due date.\n
+    
+    'started' - Filter all tasks that are in 'STARTED' status. Can be combined 
+    with other filters.
+    
+    'now' - Filter on the task marked as 'NOW'.
+    
+    The next section documents High Level Filters and should be used with 
+    caution as they could modify large number of tasks.
+    
+    'done' - Filters all tasks that are in 'DONE' status. Mandatory filter when 
+    operating on tasks in the 'completed' are or tasks which are 'DONE'.
+    
+    'bin' - Filters all tasks that are in the DELETED status or in the bin and 
+    mandatory when operating on such tasks.
+    
+    'hidden' - Filters all tasks that are currently hidden from the normal
+    view command but are still pending, 'TO_DO' or 'STARTED'. Mandatory filter
+    when operating on tasks that are currently hidden.
+    
+    'today' - Filters all tasks that are due today. Works on pending tasks only
+    
+    'overdue' - Filters all tasks that are overdue. Works on pending tasks only
+
+    --- EXAMPLES ---
+    myt revert id:1 - Revert a task with ID = 1
+
+    myt revert complete uuid:45da6633-d335-4a00-99f2-3678e132a85e - Revert a 
+    done task with a particular uuid
+
+    myt revert tg:planning - Revert all tasks in STARTED status with a tag as 
+    'planning'
+    """
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
@@ -867,43 +953,39 @@ def stop(filters, verbose):
               )
 @click.option("--top",
               "-t",
+              type=int,
               help="Display only the top 'x' number of tasks",
               )
 @click.option("--default",
               "viewmode",
               flag_value="default",
               default=True,
-              help="Viewmode - Default view of tasks sorted by the task's "
-                   "score",
+              help="Default view of tasks sorted by the task's score"
               )
 @click.option("--full",
               "viewmode",
               flag_value="full",
-              help="Viewmode - Display all attributes of the task stored in "
-                   "the backend",
+              help="Display all attributes of the task stored in the backend"
               )
 @click.option("--history",
               "viewmode",
               flag_value="history",
-              help="Viewmode - Display all versions of the task across "
-              "irrespective of their status",
+              help="Display all versions of the task"
               )
 @click.option("--tags",
               "viewmode",
               flag_value="tags",
-              help="Viewmode - Display tags and the number of tasks against "
-                   "each of them",
+              help="Display tags and  number of tasks against each of them"
               )
 @click.option("--groups",
               "viewmode",
               flag_value="groups",
-              help="Viewmode - Display groups and the number of tasks "
-                   "against each of them",
+              help="Display groups and number of tasks against each of them"
               )
 @click.option("--dates",
               "viewmode",
               flag_value="dates",
-              help="Viewmode - Display the future dates for recurring tasks",
+              help="Display the future dates for recurring tasks",
               )
 @click.option("--verbose",
               "-v",
@@ -912,7 +994,9 @@ def stop(filters, verbose):
               )
 def view(filters, verbose, pager, top, viewmode):
     """
-    Display tasks using various views and filters
+    Display tasks using various views and filters.
+
+
     """
     ret = SUCCESS
     if verbose:
@@ -920,19 +1004,13 @@ def view(filters, verbose, pager, top, viewmode):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if top is not None:
-        try:
-            top = int(top)
-        except ValueError:
-            print("Invalid value provided for --top/-t. Should be a number.")
-            exit_app(FAILURE)
     if viewmode == "default":
         ret = display_default(potential_filters, pager, top)
     elif viewmode == "full":
         ret = display_full(potential_filters, pager, top)
         ret = SUCCESS
     elif viewmode == "history":
-        ret = SUCCESS
+        ret = display_history(potential_filters, pager, top)
     elif viewmode == "tags":
         ret = display_by_tags(potential_filters, pager, top)
     elif viewmode == "groups":
@@ -1511,7 +1589,7 @@ def prep_delete(potential_filters, event_id, delete_all=False):
                 #Next unlink all done tasks
                 potential_filters = {}
                 potential_filters["bybaseuuid"] = base_uuid
-                potential_filters[TASK_DONE] = "yes"
+                potential_filters[TASK_COMPLETE] = "yes"
                 ret, ret_task_tags_print = unlink_tasks(potential_filters,
                                                         event_id)
                 task_tags_print = (task_tags_print + (ret_task_tags_print
@@ -1617,7 +1695,7 @@ def prep_delete(potential_filters, event_id, delete_all=False):
                                  "done tasks.")
                     potential_filters = {}
                     potential_filters["bybaseuuid"] = base_uuid
-                    potential_filters[TASK_DONE] = "yes"
+                    potential_filters[TASK_COMPLETE] = "yes"
                     ret, ret_task_tags_print = unlink_tasks(potential_filters,
                                                             event_id)
                     task_tags_print = (task_tags_print + (ret_task_tags_print
@@ -1706,7 +1784,7 @@ def revert_task(potential_filters, event_id):
             LOGGER.debug("Checking if base task {} is done".format(base_uuid))
             potential_filters = {}
             potential_filters["baseuuidonly"] = base_uuid
-            potential_filters[TASK_DONE] = "yes"
+            potential_filters[TASK_COMPLETE] = "yes"
             uuid_version_results = get_task_uuid_n_ver(potential_filters)
             print(uuid_version_results)
             if uuid_version_results:
@@ -1912,7 +1990,8 @@ def complete_task(potential_filters, event_id):
             results = (SESSION.query(Workspace.uuid, Workspace.version)
                             .join(max_ver_sqr,
                                     and_(Workspace.uuid == max_ver_sqr.c.uuid,
-                                        Workspace.version == max_ver_sqr.c.maxver)
+                                        Workspace.version 
+                                            == max_ver_sqr.c.maxver)
                                         )
                             .filter(and_(Workspace.task_type == TASK_TYPE_DRVD,
                                         Workspace.area == WS_AREA_PENDING,
@@ -1942,7 +2021,8 @@ def complete_task(potential_filters, event_id):
                 base_task.now_flag = None
                 LOGGER.debug("Completing Base Task UUID {} and Task ID {}"
                                 .format(base_task.uuid, base_task.id))
-                ret, base_task, tags_str = add_task_and_tags(base_task, ws_tags_list)
+                ret, base_task, tags_str = add_task_and_tags(base_task, 
+                                                             ws_tags_list)
                 if ret == FAILURE:
                     LOGGER.error("Error encountered in adding task version, "
                                     "stopping")
@@ -2049,8 +2129,8 @@ def parse_filters(filters):
                 potential_filters[TASK_TODAY] = "yes"
             if str(fl).upper() == TASK_HIDDEN:
                 potential_filters[TASK_HIDDEN] = "yes"
-            if str(fl).upper() == TASK_DONE:
-                potential_filters[TASK_DONE] = "yes"
+            if str(fl).upper() == TASK_COMPLETE:
+                potential_filters[TASK_COMPLETE] = "yes"
             if str(fl).upper() == TASK_BIN:
                 potential_filters[TASK_BIN] = "yes"
             if str(fl).upper() == TASK_STARTED:
@@ -2342,7 +2422,8 @@ def prep_modify(potential_filters, ws_task_src, tag):
                                                             due_chg,
                                                             hide_chg)
                         if ret == FAILURE:
-                            LOGGER.error("Failure returned while trying to modify task.")
+                            LOGGER.error("Failure returned while trying to "
+                                         "modify task.")
                             return ret, None
                         r_tsk_tg_prnt5 = (r_tsk_tg_prnt5
                                           + (r_tsk_tg_prnt5_1 or []))
@@ -2567,7 +2648,7 @@ def display_full(potential_filters, pager=False, top=None):
             for tag in tags_list:
                 tags_str = tags_str + "," + tag.tags
         else:
-            tags_str = "--"
+            tags_str = "-..."
         # Gather all output into a string
         # This is done to allow to print all at once via a pager
         out_str = out_str + "\n" + reflect_object_n_print(task,
@@ -2720,6 +2801,200 @@ def display_dates(potential_filters, pager=False, top=None):
     return SUCCESS
 
 
+def display_history(potential_filters, pager=False, top=None):
+    """
+    Display all versions of a task.
+
+    Parameters:
+        potential_filters(dict): Dictionary with the various types of
+                                    filters to determine tasks for display
+        pager(boolean): Default=False. Determines if a pager should be used
+                        to display the task information
+        top(integer): Limit the number of tags which should be displayed
+    
+    Returns:
+        integer: Status of Success=0 or Failure=1
+    """
+    uuid_version_results = get_task_uuid_n_ver(potential_filters)
+    uuid_list = map(lambda x: x[0], uuid_version_results) 
+    if not uuid_version_results:
+        CONSOLE.print("No tasks to display...", style="default")
+        get_and_print_task_count({WS_AREA_PENDING: "yes"})
+        return SUCCESS
+    CONSOLE.print("Preparing view...", style="default")
+    curr_day = datetime.now().date()
+    tommr = curr_day + relativedelta(days=1)
+    try:
+        due_xpr = (case([(Workspace.due == None, None), ], 
+                        else_=Workspace.due))
+        hide_xpr = (case([(Workspace.hide == None, None),], 
+                         else_=Workspace.hide))
+        groups_xpr = (case([(Workspace.groups == None, None)],
+                           else_=Workspace.groups))
+        now_flag_xpr = (case([(Workspace.now_flag == True, INDC_NOW), ],
+                             else_=""))
+        recur_xpr = (case([(Workspace.recur_mode != None, Workspace.recur_mode
+                            + " " + func.ifnull(Workspace.recur_when, ""))],
+                          else_=None))
+        end_xpr = (case([(Workspace.recur_end == None, None)],
+                        else_=Workspace.recur_end))
+        pri_xpr = (case([(Workspace.priority == PRIORITY_HIGH[0],
+                          INDC_PR_HIGH),
+                         (Workspace.priority == PRIORITY_MEDIUM[0],
+                          INDC_PR_MED),
+                         (Workspace.priority == PRIORITY_LOW[0],
+                          INDC_PR_LOW)],
+                        else_=INDC_PR_NRML))
+
+        # Sub Query for Tags - START
+        tags_subqr = (SESSION.query(WorkspaceTags.uuid, WorkspaceTags.version,
+                                    func.group_concat(WorkspaceTags.tags, " ")
+                                    .label("tags"))
+                      .group_by(WorkspaceTags.uuid,
+                                WorkspaceTags.version)
+                      .subquery())
+        # Sub Query for Tags - END
+        # Main query
+        task_list = (SESSION.query(Workspace.uuid.label("uuid"),
+                                   Workspace.id.label("id"),
+                                   Workspace.description.label("description"),
+                                   due_xpr.label("due"),
+                                   recur_xpr.label("recur"),
+                                   end_xpr.label("end"),
+                                   groups_xpr.label("groups"),
+                                   case([(tags_subqr.c.tags == None, None), ],
+                                        else_=tags_subqr.c.tags).label("tags"),
+                                   Workspace.status.label("status"),
+                                   pri_xpr.label("priority_flg"),
+                                   now_flag_xpr.label("now"),
+                                   hide_xpr.label("hide"),
+                                   Workspace.version.label("version"),
+                                   Workspace.inception.label("inception"),
+                                   Workspace.created.label("created"),
+                                   Workspace.event_id.label("eventid"),
+                                   Workspace.area.label("area"))
+                     .outerjoin(tags_subqr,
+                                and_(Workspace.uuid ==
+                                     tags_subqr.c.uuid,
+                                     Workspace.version ==
+                                     tags_subqr.c.version))
+                     .filter(Workspace.uuid
+                             .in_(uuid_list))
+                     .order_by(Workspace.uuid, Workspace.version.desc())
+                     .all())
+    except SQLAlchemyError as e:
+        LOGGER.error(str(e))
+        return FAILURE
+
+    LOGGER.debug("Task Details for display:\n{}".format(task_list))
+    table = RichTable(box=box.HORIZONTALS, show_header=True,
+                      header_style="header", expand=True)
+    # Column and Header Names
+    # Only uuid has fxied column width to ensure uuid does not get cropped
+    table.add_column("uuid", justify="right", width=36)
+    table.add_column("id", justify="right")
+    table.add_column("description", justify="left")
+    table.add_column("due date", justify="left")
+    table.add_column("recur", justify="left")
+    table.add_column("end", justify="left")
+    table.add_column("groups", justify="right")
+    table.add_column("tags", justify="right")
+    table.add_column("status", justify="left")
+    table.add_column("priority", justify="center")
+    table.add_column("now", justify="center")
+    table.add_column("hide until", justify="left")
+    table.add_column("version", justify="right")
+    table.add_column("inception_date", justify="left")
+    table.add_column("modifed_date", justify="left")
+    if top is None:
+        top = len(task_list)
+    last_uuid = None
+    cnt = 0
+    for task in task_list:
+        if last_uuid != task.uuid:  
+            """
+            As this can have various UUIDs and the top is applied at a UUID 
+            level, so doing the top check in a different manner to other 
+            view functions
+            """
+            last_uuid = task.uuid
+            cnt = cnt + 1
+            if cnt > top:
+                break
+            if cnt > 1:
+                #Empty row to separate recurring tasks
+                trow = [None] * 15
+                table.add_row(*trow)
+        # Format the dates to
+        # YYYY-MM-DD
+        # 0:4 - YYYY, 5:7 - MM, 8: - DD
+        if task.due is not None:
+            due = datetime(int(task.due[0:4]), int(task.due[5:7]),
+                           int(task.due[8:])).strftime(FMT_DAY_DATEW)
+        else:
+            due = ""
+
+        if task.hide is not None:
+            hide = datetime(int(task.hide[0:4]), int(task.hide[5:7]),
+                            int(task.hide[8:])).strftime(FMT_DAY_DATEW)
+        else:
+            hide = ""
+
+        if task.end is not None:
+            end = datetime(int(task.end[0:4]), int(task.end[5:7]),
+                           int(task.end[8:])).strftime(FMT_DAY_DATEW)
+        else:
+            end = ""
+        # YYYY-MM-DD HH:MM
+        # 0:4 - YYYY, 5:7 - MM, 8:10 - DD, 11:13 - HH, 14: - MM
+        created = datetime(int(task.created[0:4]),
+                           int(task.created[5:7]),
+                           int(task.created[8:10]),
+                           int(task.created[11:13]),
+                           int(task.created[14:])).strftime(FMT_DATEW_TIME)
+
+        inception = datetime(int(task.inception[0:4]), 
+                             int(task.inception[5:7]),
+                             int(task.inception[8:10]), 
+                             int(task.inception[11:13]),
+                             int(task.inception[14:])).strftime(FMT_DATEW_TIME)                           
+        # Create a list to print
+        trow = [task.uuid, str(task.id), task.description, due, task.recur,end, 
+                task.groups, task.tags, task.status, task.priority_flg, 
+                task.now, hide, str(task.version), inception, created]
+        table.add_row(*trow, style="default")
+
+    # Print a legend on the indicators used for priority and now
+    grid = RichTable.grid(padding=3)
+    grid.add_column(justify="center")
+    grid.add_column(justify="center")
+    grid.add_column(justify="center")
+    grid.add_column(justify="center")
+    grid.add_row(INDC_PR_HIGH + " High Priority",
+                 INDC_PR_MED + " Medium Priority",
+                 INDC_PR_LOW + " Low Priority",
+                 INDC_NOW + " Now Task")
+
+    if pager:
+        with CONSOLE.pager(styles=True):
+            CONSOLE.print(table, soft_wrap=True)
+            CONSOLE.print(grid, justify="right")
+    else:
+        CONSOLE.print(table, soft_wrap=True)
+        CONSOLE.print(grid, justify="right")
+
+    print_dict = {}
+    print_dict[PRNT_CURR_VW_CNT] = len(task_list)
+    print_dict[WS_AREA_PENDING] = "yes"
+    if potential_filters.get(TASK_COMPLETE) == "yes":
+        print_dict[WS_AREA_COMPLETED] = "yes"
+    elif potential_filters.get(TASK_BIN) == "yes":
+        print_dict[WS_AREA_BIN] = "yes"
+    get_and_print_task_count(print_dict)
+    return SUCCESS
+    return
+
+
 def display_by_tags(potential_filters, pager=False, top=None):
     """
     Displays a the count of tasks against each tag with breakdown by status. 
@@ -2842,7 +3117,8 @@ def display_by_groups(potential_filters, pager=False, top=None):
                 status_cnt = task_cnt.get(grp.lstrip("."))
                 if status_cnt is None:
                     status_cnt = {}
-                status_cnt[task.status] = (status_cnt.get(task.status) or 0) + 1
+                status_cnt[task.status] = ((status_cnt.get(task.status) or 0) 
+                                            + 1)
                 task_cnt[grp.lstrip(".")] = status_cnt
     LOGGER.debug("Total grps to print {}".format(len(task_cnt)))
     table = RichTable(box=box.HORIZONTALS, show_header=True,
@@ -3111,7 +3387,7 @@ def display_default(potential_filters, pager=False, top=None):
     print_dict = {}
     print_dict[PRNT_CURR_VW_CNT] = len(task_list)
     print_dict[WS_AREA_PENDING] = "yes"
-    if potential_filters.get(TASK_DONE) == "yes":
+    if potential_filters.get(TASK_COMPLETE) == "yes":
         print_dict[WS_AREA_COMPLETED] = "yes"
     elif potential_filters.get(TASK_BIN) == "yes":
         print_dict[WS_AREA_BIN] = "yes"
@@ -3468,7 +3744,7 @@ def get_task_uuid_n_ver(potential_filters):
     overdue_task = potential_filters.get(TASK_OVERDUE)
     today_task = potential_filters.get(TASK_TODAY)
     hidden_task = potential_filters.get(TASK_HIDDEN)
-    done_task = potential_filters.get(TASK_DONE)
+    done_task = potential_filters.get(TASK_COMPLETE)
     bin_task = potential_filters.get(TASK_BIN)
     started_task = potential_filters.get(TASK_STARTED)
     now_task = potential_filters.get(TASK_NOW)

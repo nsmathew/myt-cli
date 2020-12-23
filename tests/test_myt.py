@@ -191,7 +191,7 @@ def test_modify_7(create_task):
     result = runner.invoke(modify, ['id:'+str(create_task),'-hi','clr'])
     assert result.exit_code == 0
     assert "Added/Updated Task ID:" in result.output
-    assert "hide : None" in result.output
+    assert "hide : ..." in result.output
     runner.invoke(delete, ['id:'+str(create_task)])
 
 def test_modify_8(create_task):
@@ -199,7 +199,7 @@ def test_modify_8(create_task):
                            'GRPL1.GRPL2_1'])
     assert result.exit_code == 0
     assert "Added/Updated Task ID:" in result.output
-    assert "due : None" in result.output
+    assert "due : ..." in result.output
     assert "groups : GRPL1.GRPL2_1" in result.output
     runner.invoke(delete, ['id:'+str(create_task)])
 
@@ -208,7 +208,7 @@ def test_modify_9(create_task):
                            '-tag1,-tag6,tag8,tag9'])
     assert result.exit_code == 0
     assert "Added/Updated Task ID:" in result.output
-    assert "groups : None" in result.output
+    assert "groups : ..." in result.output
     assert "tags : tag2,tag3,tag8,tag9" in result.output
     runner.invoke(delete, ['id:'+str(create_task)])
 
@@ -216,7 +216,7 @@ def test_modify_10(create_task):
     result = runner.invoke(modify, ['id:'+str(create_task),'-tg','clr'])
     assert result.exit_code == 0
     assert "Added/Updated Task ID:" in result.output
-    assert "tags : None" in result.output
+    assert "tags : ..." in result.output
     runner.invoke(delete, ['id:'+str(create_task)])
 
 def test_modify_11_1(create_task):
