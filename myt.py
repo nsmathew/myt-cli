@@ -12,7 +12,7 @@ import logging
 import calendar
 
 import click
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from dateutil.parser import parse
 from dateutil.rrule import *
@@ -142,6 +142,16 @@ FMT_DATETIME = "%Y-%m-%d %H:%M"
 FMT_EVENTID = "%Y%m%d%H%M%S%f"
 FMT_DAY_DATEW = "%a %d%b%y"
 FMT_DATEW_TIME = "%d%b%y %H%M"
+#Operations
+OPS_ADD = "add"
+OPS_MODIFY = "modify"
+OPS_START = "start"
+OPS_STOP = "stop"
+OPS_REVERT = "revert"
+OPS_DELETE = "delete"
+OPS_NOW = "now"
+OPS_UNLINK = "unlink"
+OPS_DONE = "done"
 # ORM Definition
 Base = declarative_base()
 
@@ -175,17 +185,19 @@ class Workspace(Base):
     recur_end = Column(String)
     inception = Column(String, nullable=False)
     score = Column(Integer)
+    duration = Column(Integer, default=0)
+    dur_event = Column(String)
 
     # To get due date difference to today
     @hybrid_property
     def due_diff_today(self):
         curr_date = datetime.now().date()
-        return (datetime.strptime(self.due, "%Y-%m-%d").date() 
+        return (datetime.strptime(self.due, FMT_DATEONLY).date() 
                     - curr_date).days
 
     @due_diff_today.expression
     def due_diff_today(cls):
-        curr_date = datetime.now().date().strftime("%Y-%m-%d")
+        curr_date = datetime.now().date().strftime(FMT_DATEONLY)
         # julianday is an sqlite function
         date_diff = func.julianday(cls.due) - func.julianday(curr_date)
         """
@@ -196,20 +208,37 @@ class Workspace(Base):
         """
         return func.substr(date_diff, 1, func.instr(date_diff, ".")-1)
     
-    # To get date difference of inception to today
+    # To get time difference of inception to now in minutes
     @hybrid_property
-    def incep_diff_today(self):
+    def incep_diff_now(self):
         curr_date = datetime.now()
         return round((datetime.strptime(self.inception, FMT_DATETIME)
                     - curr_date).seconds / 60)
 
-    @incep_diff_today.expression
-    def incep_diff_today(cls):
-        curr_date = datetime.now().date().strftime(FMT_DATEONLY)
+    @incep_diff_now.expression
+    def incep_diff_now(cls):
+        #curr_date = datetime.now().date().strftime(FMT_DATEONLY)
+        curr_date = datetime.now()
         # julianday is an sqlite function
-        date_diff = round(((func.julianday(cls.inception) 
-                        - func.julianday(curr_date)) * 24 * 60))
+        date_diff = func.round(((func.julianday(curr_date) 
+                        - func.julianday(cls.inception)) * 24 * 60))
         return func.substr(date_diff, 1, func.instr(date_diff, ".")-1)
+
+    # To get time difference of duration event to now in minutes
+    @hybrid_property
+    def dur_ev_diff_now(self):
+        curr_time = datetime.now()
+        return round((datetime.strptime(self.dur_event, FMT_DATETIME)
+                    - curr_time).seconds / 60)
+
+    @dur_ev_diff_now.expression
+    def dur_ev_diff_now(cls):
+        curr_time = datetime.now()
+        # julianday is an sqlite function
+        date_diff = func.round(((func.julianday(curr_time) 
+                        - func.julianday(cls.dur_event)) * 24 * 60))
+        return date_diff
+        #return func.substr(date_diff, 1, func.instr(date_diff, ".")-1)
 
 Index("idx_ws_due", Workspace.due)
 
@@ -498,7 +527,10 @@ def add(desc, priority, due, hide, group, tag, recur, end, verbose):
         else:
             ws_task.task_type = TASK_TYPE_NRML
             ws_task.event_id = event_id
-            ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
+            ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+                                                       ws_tags_list,
+                                                       None,
+                                                       OPS_ADD)
             if ret == SUCCESS:
                 SESSION.commit()
                 get_and_print_task_count({WS_AREA_PENDING: "yes",
@@ -1078,6 +1110,7 @@ def admin(verbose, empty, reinit):
         ret = empty_bin()
     exit_app(ret)
 
+
 @myt.command()
 @click.option("--verbose",
               "-v",
@@ -1467,7 +1500,10 @@ def delete_tasks(ws_task):
     LOGGER.debug("Deleting Task UUID {} and Task ID {}"
                     .format(ws_task.uuid, ws_task.id))
     ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-    ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
+    ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+                                               ws_tags_list,
+                                               None,
+                                               OPS_DELETE)
     task_tags_print.append((ws_task, tags_str))  
     if ret == FAILURE:
         LOGGER.error("Error encountered in adding task version, stopping")
@@ -1735,7 +1771,10 @@ def unlink_tasks(potential_filters, event_id):
         LOGGER.debug("Unlinking Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
+        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+                                                   ws_tags_list,
+                                                   None,
+                                                   OPS_UNLINK)
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
@@ -1802,7 +1841,9 @@ def revert_task(potential_filters, event_id):
                         base_task.event_id = event_id
                     ws_tags_list = get_tags(base_task.uuid, base_task.version)
                     ret, base_task, tags_str = add_task_and_tags(base_task, 
-                                                                ws_tags_list)
+                                                                 ws_tags_list,
+                                                                 None,
+                                                                 OPS_REVERT)
                     if ret == FAILURE:
                         LOGGER.error("Error encountered while deleting tasks")
                         return ret, None
@@ -1815,7 +1856,10 @@ def revert_task(potential_filters, event_id):
         Next apply the revert action for the task
         """
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
+        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+                                                   ws_tags_list,
+                                                   None,
+                                                   OPS_REVERT)
         
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
@@ -1855,6 +1899,10 @@ def start_task(potential_filters, event_id):
     for task in task_list:
         LOGGER.debug("Working on Task UUID {} and Task ID {}"
                      .format(task.uuid, task.id))
+        if task.status == TASK_STATUS_STARTED:
+            CONSOLE.print("{}, {} - This task is already in STARTED status..."
+                        .format(task.description, task.due))
+            continue
         make_transient(task)
         ws_task = task
         ws_task.status = TASK_STATUS_STARTED
@@ -1863,7 +1911,10 @@ def start_task(potential_filters, event_id):
         LOGGER.debug("Starting Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
+        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+                                                   ws_tags_list,
+                                                   None,
+                                                   OPS_START)
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
@@ -1873,6 +1924,9 @@ def start_task(potential_filters, event_id):
 
 def stop_task(potential_filters, event_id):
     task_tags_print = []
+    last_dur = 0
+    last_created = None
+    setdur = False
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable tasks to stop", style="default")
@@ -1882,6 +1936,10 @@ def stop_task(potential_filters, event_id):
     for task in task_list:
         LOGGER.debug("Working on Task UUID {} and Task ID {}"
                      .format(task.uuid, task.id))
+        if task.status == TASK_STATUS_TODO:
+            CONSOLE.print("{}, {} - This task is already in TO_DO status..."
+                        .format(task.description, task.due))
+            continue        
         make_transient(task)
         ws_task = task
         ws_task.status = TASK_STATUS_TODO
@@ -1890,7 +1948,10 @@ def stop_task(potential_filters, event_id):
         LOGGER.debug("Stopping Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
+        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+                                                   ws_tags_list,
+                                                   None,
+                                                   OPS_STOP)
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
@@ -1922,7 +1983,10 @@ def complete_task(potential_filters, event_id):
         LOGGER.debug("Completing Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
+        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+                                                   ws_tags_list,
+                                                   None,
+                                                   OPS_DONE)
         task_tags_print.append((ws_task, tags_str))
         if ws_task.task_type == TASK_TYPE_DRVD:
             base_uuids.add(ws_task.base_uuid)
@@ -2022,7 +2086,9 @@ def complete_task(potential_filters, event_id):
                 LOGGER.debug("Completing Base Task UUID {} and Task ID {}"
                                 .format(base_task.uuid, base_task.id))
                 ret, base_task, tags_str = add_task_and_tags(base_task, 
-                                                             ws_tags_list)
+                                                             ws_tags_list,
+                                                             None,
+                                                             OPS_DONE)
                 if ret == FAILURE:
                     LOGGER.error("Error encountered in adding task version, "
                                     "stopping")
@@ -2056,7 +2122,10 @@ def toggle_now(potential_filters, event_id):
         LOGGER.debug("Setting Task UUID {} and Task ID {} as NOW"
                      .format(ws_task.uuid, ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, ws_tags_list)
+        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+                                                   ws_tags_list,
+                                                   None,
+                                                   OPS_NOW)
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
@@ -2095,7 +2164,9 @@ def toggle_now(potential_filters, event_id):
                 ws_tags_innr_list = get_tags(ws_task_innr.uuid,
                                              ws_task_innr.version)
                 ret, ws_task, tags_str = add_task_and_tags(ws_task_innr,
-                                                           ws_tags_innr_list)
+                                                           ws_tags_innr_list,
+                                                           None,
+                                                           OPS_NOW)
                 task_tags_print.append((ws_task, tags_str))
                 if ret == FAILURE:
                     # Rollback already performed from nested
@@ -2497,7 +2568,6 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
     task_tags_print = []
     # Start merge related activties
     uuidn = ws_task.uuid
-    base_uuid = ws_task.base_uuid
     make_transient(ws_task)
     ws_task.uuid = uuidn
     LOGGER.debug("Modification for Task UUID {} and Task ID {}"
@@ -2577,7 +2647,9 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
         LOGGER.debug("\n" + reflect_object_n_print(ws_task, to_print=False,
                                                    print_all=True))
         ret, ws_task, tags_str = add_task_and_tags(ws_task,
-                                                   ws_tags_list)
+                                                   ws_tags_list,
+                                                   None,
+                                                   OPS_MODIFY)
         task_tags_print.append((ws_task, tags_str))
     else:
         # A set of recurring tasks need change
@@ -2602,7 +2674,8 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
                                                        print_all=True))
             ret, ws_task, tags_str = add_task_and_tags(ws_task,
                                                        ws_tags_list,
-                                                       None)
+                                                       None,
+                                                       OPS_MODIFY)
             task_tags_print.append((ws_task, tags_str))
 
     if ret == FAILURE:
@@ -3224,6 +3297,9 @@ def display_default(potential_filters, pager=False, top=None):
         score_xpr = (case([(Workspace.area == WS_AREA_PENDING, 
                             Workspace.score),],
                           else_=""))
+        dur_xpr = (case ([(Workspace.status == TASK_STATUS_STARTED, 
+                            Workspace.duration + Workspace.dur_ev_diff_now),],
+                        else_=Workspace.duration))
 
         # Sub Query for Tags - START
         tags_subqr = (SESSION.query(WorkspaceTags.uuid, WorkspaceTags.version,
@@ -3261,6 +3337,7 @@ def display_default(potential_filters, pager=False, top=None):
                                    Workspace.version.label("version"),
                                    Workspace.area.label("area"),
                                    Workspace.created.label("created"),
+                                   dur_xpr.label("duration"),
                                    score_xpr.label("score"))
                      .outerjoin(tags_subqr,
                                 and_(Workspace.uuid ==
@@ -3292,6 +3369,7 @@ def display_default(potential_filters, pager=False, top=None):
     table.add_column("groups", justify="right")
     table.add_column("tags", justify="right")
     table.add_column("status", justify="left")
+    table.add_column("duration", justify="left")
     table.add_column("priority", justify="center")
     table.add_column("now", justify="center")
     table.add_column("hide until", justify="left")
@@ -3336,11 +3414,13 @@ def display_default(potential_filters, pager=False, top=None):
         created = datetime(int(task.created[0:4]), int(task.created[5:7]),
                            int(task.created[8:10]), int(task.created[11:13]),
                            int(task.created[14:])).strftime(FMT_DATEW_TIME)
+        print(task.duration)
+        duration = convert_time_unit(task.duration)
         # Create a list to print
         trow = [str(task.id_or_uuid), task.description, task.due_in, due,
                 task.recur, end, task.groups, task.tags, task.status,
-                task.priority_flg, task.now, hide, str(task.version), created,
-                str(task.score)]
+                duration, task.priority_flg, task.now, hide, str(task.version),
+                created, str(task.score)]
                 #str(score_dict.get(task.uuid))]
         # Next Display the tasks with formatting based on various conditions
         if task.status == TASK_STATUS_DONE:
@@ -3394,6 +3474,52 @@ def display_default(potential_filters, pager=False, top=None):
     get_and_print_task_count(print_dict)
     return SUCCESS
 
+def convert_time_unit(in_time):
+    """
+    Converts a duration provided in minutes to time as below:
+    [xD] [yh] zm or <1m
+    If the duration is over a day the xD will be returned indicating x Day(s)
+    If the duration is over an hour then yh will be returned indicating 
+    y hour(s)
+    If the duration is over a minute then zm will be returned indicating z 
+    minutes 
+    If duration is less than a minutes then a fixed string of <1m will be 
+    returned.
+    If duration is 0 then an empty string is returned.
+    The functiona internally use datetime.timedelta.
+
+    Parameters:
+        in_time(int): The duration in minutes
+
+    Returns:
+        str: Duration converted in time units as described above.
+    """
+    if in_time == 0:
+        return ""
+    out_str = ""
+    td = timedelta(minutes=in_time)
+    #When the days is not 0 the it returns 'x days, h/hh:mm:ss' else 
+    #it returns 'h/hh:mm:ss'
+    if td.days != 0:
+        out_str = "".join([str(td.days)],"D")
+        temp = str(td).split(",")
+        time_comp = temp[1].split(":")
+    else:
+        time_comp = str(td).split(":")
+    if time_comp[0] != "0":
+        out_str = "".join([out_str," ",time_comp[0].lstrip("0"),"h"])
+        if time_comp[1] != "00":
+            out_str = "".join([out_str," ",time_comp[1].lstrip("0"),"m"])
+    else:
+        if time_comp[1] != "00":
+            out_str = "".join([out_str," ",time_comp[1].lstrip("0"),"m"])
+        elif time_comp[2] == "00":
+            #No duration
+            out_str = ""
+        else:
+            out_str = "<1m"
+    return out_str
+
 def calc_task_scores(task_list):
     """
     Assigns a score for tasks based on the below task properties. Each property
@@ -3437,8 +3563,6 @@ def calc_task_scores(task_list):
     sc_due = {"today":100, "past":110, "fut":90}
     weights = {"now":15, "due":45, "priority":15, "status":15, "inception":8,
                "groups":1,"tags":1}
-    curr_day = datetime.now().date()
-    fut_sum = 0
     due_sum = 0
     incep_sum = 0
     for task in task_list:
@@ -3446,7 +3570,7 @@ def calc_task_scores(task_list):
             #For Due scoring
             due_sum = (due_sum + abs(task.due_diff_today))  
         #For inception scoring
-        incep_sum = (incep_sum + task.incep_diff_today)
+        incep_sum = (incep_sum + task.incep_diff_now)
     for task in task_list:
         tags = get_tags(task.uuid, task.version, expunge=False)
         score = 0
@@ -3465,7 +3589,7 @@ def calc_task_scores(task_list):
         if tags:
             score = score + (sc_tags.get("yes")) * weights.get("tags")
         #Inception
-        score = (score + (sc_due.get("today") * int(task.incep_diff_today)
+        score = (score + (sc_due.get("today") * int(task.incep_diff_now)
                             /incep_sum)
                          * weights.get("inception"))
         #Due
@@ -4501,7 +4625,9 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
         ws_task_base.base_uuid = None
         ws_task_base.now_flag = None
         ret, ws_task_base, tags_str = add_task_and_tags(ws_task_base, 
-                                                        ws_tags_list)
+                                                        ws_tags_list,
+                                                        None,
+                                                        OPS_ADD)
         if ret == FAILURE:
             LOGGER.error("Failure recived while trying to add base task. "
                          "Stopping adding of derived tasks.")
@@ -4626,7 +4752,8 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
                                         due=ws_task_drvd.due)
         ret, ws_task_drvd, r_tags_str = add_task_and_tags(ws_task_drvd,
                                                             ws_tags_list,
-                                                            ws_rec_dt)
+                                                            ws_rec_dt,
+                                                            OPS_ADD)
         if ret == FAILURE:
             LOGGER.error("Error will adding recurring tasks")
             return FAILURE, None, None
@@ -4789,7 +4916,8 @@ def parse_n_validate_recur(recur):
     return SUCCESS, mode, when
 
 
-def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None):
+def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None,
+                      src_ops=None):
     LOGGER.debug("Incoming values for task:")
     LOGGER.debug("\n" + reflect_object_n_print(ws_task_src, to_print=False,
                                                print_all=True))
@@ -4849,6 +4977,10 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None):
     else:
         ws_task.task_type = ws_task_src.task_type
     ws_task.base_uuid = ws_task_src.base_uuid
+    
+    ws_task.duration, ws_task.dur_event = calc_duration(src_ops, ws_task_src, 
+                                                        ws_task)
+    
     try:
         LOGGER.debug("Adding values for task to database:")
         LOGGER.debug("\n" + reflect_object_n_print(ws_task, to_print=False,
@@ -4886,6 +5018,45 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None):
         print(str(e))
         return FAILURE, None, None
     return SUCCESS, ws_task, tags_str
+
+def calc_duration(src_ops, ws_task_src, ws_task):
+    if ws_task_src.task_type in [TASK_TYPE_NRML, TASK_TYPE_DRVD]:
+        if src_ops == OPS_STOP:
+            #Since the task is stopped calculate the duration
+            print("Previous Task Duration: {}".format(str(ws_task_src.duration)))
+            duration = round(ws_task_src.duration 
+                                        + (datetime.strptime(ws_task.created,
+                                                             FMT_DATETIME) 
+                                            - datetime
+                                               .strptime(ws_task_src.dur_event,
+                                                          FMT_DATETIME))
+                                           .seconds/60)
+        elif src_ops in  [OPS_START, OPS_MODIFY]:
+            #For Starting or modifying the task, carry forward last version's
+            #duration
+            duration = ws_task_src.duration
+        else:
+            #For any other operation just set the duration to 0
+            duration = 0
+        if src_ops in [OPS_MODIFY]:
+            """
+            As modify can be run when the task is started ensure the last 
+            started version's created time is carried forward. This is to 
+            ensure duration can be calculated accurately
+            """
+            dur_event = ws_task_src.created
+        else:
+            """
+            For start and stop the time will be creation time to calculate the
+            duration. For Add and Revert they are not relevant so just use the
+            version's created time
+            """
+            dur_event = ws_task.created
+    else:
+        #For base task there will be no duration and duration event time
+        duration = 0
+        dur_event = None
+    return duration, dur_event
 
 
 def reset_now_flag():
