@@ -3,13 +3,14 @@ try:
 except ImportError:
     # Running on pre-3.8 Python; use importlib-metadata package
     import importlib_metadata as metadata
+from operator import itemgetter
 import re
 import os
 import uuid
 import sys
 from pathlib import Path
 import logging
-import calendar
+import webbrowser
 
 import click
 from datetime import date, datetime, timedelta
@@ -22,7 +23,7 @@ from rich.style import Style
 from rich.theme import Theme
 from rich.prompt import Prompt
 from rich.columns import Columns
-from sqlalchemy import (create_engine, Column, Integer, String, Table, Index,
+from sqlalchemy import (create_engine, Column, Integer, String, Index,
                         ForeignKeyConstraint, tuple_, and_, case, func, 
                         BOOLEAN, distinct, cast, Date, inspect, or_)
 from sqlalchemy.orm import relationship, sessionmaker, make_transient, aliased
@@ -138,7 +139,7 @@ INDC_PR_LOW = "[.]"
 INDC_NOW = "[++]"
 # Date formats
 FMT_DATEONLY = "%Y-%m-%d"
-FMT_DATETIME = "%Y-%m-%d %H:%M"
+FMT_DATETIME = "%Y-%m-%d %H:%M:%S"
 FMT_EVENTID = "%Y%m%d%H%M%S%f"
 FMT_DAY_DATEW = "%a %d%b%y"
 FMT_DATEW_TIME = "%d%b%y %H%M"
@@ -184,9 +185,9 @@ class Workspace(Base):
     recur_when = Column(String)
     recur_end = Column(String)
     inception = Column(String, nullable=False)
-    score = Column(Integer)
     duration = Column(Integer, default=0)
     dur_event = Column(String)
+    notes = Column(String)
 
     # To get due date difference to today
     @hybrid_property
@@ -208,12 +209,12 @@ class Workspace(Base):
         """
         return func.substr(date_diff, 1, func.instr(date_diff, ".")-1)
     
-    # To get time difference of inception to now in minutes
+    # To get time difference of inception to now in seconds
     @hybrid_property
     def incep_diff_now(self):
         curr_date = datetime.now()
         return round((datetime.strptime(self.inception, FMT_DATETIME)
-                    - curr_date).seconds / 60)
+                    - curr_date).seconds)
 
     @incep_diff_now.expression
     def incep_diff_now(cls):
@@ -221,24 +222,23 @@ class Workspace(Base):
         curr_date = datetime.now()
         # julianday is an sqlite function
         date_diff = func.round(((func.julianday(curr_date) 
-                        - func.julianday(cls.inception)) * 24 * 60))
-        return func.substr(date_diff, 1, func.instr(date_diff, ".")-1)
+                        - func.julianday(cls.inception)) * 24 * 60 * 60))
+        return date_diff
 
-    # To get time difference of duration event to now in minutes
+    # To get time difference of duration event to now in seconds
     @hybrid_property
     def dur_ev_diff_now(self):
         curr_time = datetime.now()
         return round((datetime.strptime(self.dur_event, FMT_DATETIME)
-                    - curr_time).seconds / 60)
+                    - curr_time).seconds)
 
     @dur_ev_diff_now.expression
     def dur_ev_diff_now(cls):
         curr_time = datetime.now()
         # julianday is an sqlite function
         date_diff = func.round(((func.julianday(curr_time) 
-                        - func.julianday(cls.dur_event)) * 24 * 60))
+                        - func.julianday(cls.dur_event)) * 24 * 60 * 60))
         return date_diff
-        #return func.substr(date_diff, 1, func.instr(date_diff, ".")-1)
 
 Index("idx_ws_due", Workspace.due)
 
@@ -378,12 +378,17 @@ def version():
               type=str,
               help="Set end date for recurrence, valid for recurring tasks.",
               )
+@click.option("--notes",
+              "-no",
+              type=str,
+              help="Add some notes",
+              )
 @click.option("--verbose",
               "-v",
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def add(desc, priority, due, hide, group, tag, recur, end, verbose):
+def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose):
     """
     Add a task. Provide details of task using the various options available.
     Task gets added with a TO_DO status and as a 'pending' task.
@@ -470,7 +475,8 @@ def add(desc, priority, due, hide, group, tag, recur, end, verbose):
     else:
         event_id = get_event_id()
         ws_task = Workspace(description=desc, priority=priority,
-                            due=due, hide=hide, groups=group, now_flag=False)
+                            due=due, hide=hide, groups=group, now_flag=False,
+                            notes=notes)
         if tag is not None:
             ws_tags_list = generate_tags((tag.lstrip(",")).rstrip(","))
         else:
@@ -502,7 +508,6 @@ def add(desc, priority, due, hide, group, tag, recur, end, verbose):
             ws_task.event_id = event_id
             ret, return_list = prep_recurring_tasks(ws_task, ws_tags_list,
                                                     False)
-            print(ret)
             if ret == SUCCESS:
                 SESSION.commit()
                 """
@@ -583,12 +588,17 @@ def add(desc, priority, due, hide, group, tag, recur, end, verbose):
               type=str,
               help="Set end date for recurrence, valid for recurring tasks.",
               )
+@click.option("--notes",
+              "-no",
+              type=str,
+              help="Add some notes",
+              )
 @click.option("--verbose",
               "-v",
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def modify(filters, desc, priority, due, hide, group, tag, recur, end,
+def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
            verbose):
     """
     Modify task details. Specify 1 or more filters and provide the new values 
@@ -702,7 +712,8 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end,
                  .format(desc, due, hide, group, tag))
     # Perform validations
     if (desc is None and priority is None and due is None and hide is None
-            and group is None and tag is None and recur is None):
+            and group is None and tag is None and recur is None 
+            and notes is None):
         CONSOLE.print("No modification values provided. Nothing to do...",
                       style="default")
         exit_app(SUCCESS)
@@ -726,7 +737,8 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end,
     event_id = get_event_id()
     ws_task = Workspace(description=desc, priority=priority,
                         due=due, hide=hide, groups=group, recur_end=end,
-                        recur_when=when, recur_mode=mode, event_id=event_id)
+                        notes=notes, recur_when=when, recur_mode=mode, 
+                        event_id=event_id)
     ret, task_tags_print = prep_modify(potential_filters, 
                                        ws_task, 
                                        tag)
@@ -1019,6 +1031,11 @@ def stop(filters, verbose):
               flag_value="dates",
               help="Display the future dates for recurring tasks",
               )
+@click.option("--notes",
+              "viewmode",
+              flag_value="notes",
+              help="Display the notes for tasks",
+              )
 @click.option("--verbose",
               "-v",
               is_flag=True,
@@ -1049,6 +1066,8 @@ def view(filters, verbose, pager, top, viewmode):
         ret = display_by_groups(potential_filters, pager, top)
     elif viewmode == "dates":
         ret = display_dates(potential_filters, pager, top)
+    elif viewmode == "notes":
+        ret = display_notes(potential_filters, pager, top)        
     exit_app(ret)
 
 
@@ -1136,6 +1155,143 @@ def undo(verbose):
     else:
         SESSION.commit()
     exit_app(ret)
+
+
+@myt.command()
+@click.argument("filters",
+                nargs=-1,
+                )
+@click.option("--urlno",
+              "-no",
+              type=int,
+              help="Which link to open based on order of links in the notes",
+              )                
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable verbose Logging.",
+              )
+def urlopen(filters, urlno, verbose):
+    """
+    Parses task notes for URLs which can then be opened.
+    The task notes are parsed to identify valid URLs. This is then listed out
+    for the users with a number against each URL. The user chooses one URL to 
+    be opened by indicating the number.
+    If there is only 1 URL in the notes then it is opened by default when the
+    command is run for a task ID/UUID.
+    This command works only with the ID or UUID filters and with just 1 task. 
+    If more than 1 task ID or UUID is provided the command just processes the 
+    first valid task for URLs.
+    The user can use the --urlno or -no option to provide a number as part of 
+    the command to open that particular URL without having to choose from the
+    menu.
+
+    --- EXAMPLES ---
+    
+    myt urlopen id:3 - Displays all URLS from the notes for task 3 post which 
+    the user can choose which one they want to open. If there is only 1 URL 
+    then it will be opened without requiring a user prompt.
+
+    myt urlopen uuid:65138024-31ec-4ddc-9706-26adc1bfac40 -no 3 - This will
+    open the 3rd URL mentioned in the notes without a user prompt. If there
+    is no 3rd URL then it will display availabel URLs for the user to choose.
+    """
+    if verbose:
+        set_versbose_logging()
+    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        exit_app(FAILURE)
+    potential_filters = parse_filters(filters)
+    if not potential_filters.get("id") and not potential_filters.get("uuid"):
+        CONSOLE.print("Provide an ID or UUID to open link")
+        exit_app(SUCCESS)
+    ret = process_url(potential_filters, urlno)
+    exit_app(ret)
+    
+
+def process_url(potential_filters, urlno=None):
+    """
+    Processes the notes for a task to identify the URLs and then list them for
+    the user to select one to be opened. The task is identified using the 
+    filters provided by users. Only the first task from the filtered tasks is 
+    processed as this command is meant to work for only 1 task at a time.
+    If a urlno is provided then the function attempts to open that URL in that
+    position in the notes. If there is no URL in that position then it defaults
+    to the behavious mentioned above.
+    If there is only 1 URL in the notes then that is opened without a user 
+    prompt.
+
+    Parameters:
+        potential_filters(dict): Dictionary with ID or UUID filters
+        urlno(int, default=None): Position of a URL in the notes which should
+                                  be opened without a user prompt
+
+    Returns:
+        (int): 0 is successful else returns 1
+    """
+    uuid_version_results = get_task_uuid_n_ver(potential_filters)
+    if not uuid_version_results:
+        with CONSOLE.capture() as capture:
+            CONSOLE.print("No applicable tasks with this ID/UUID", 
+                            style="default")
+        click.echo(capture.get(), nl=False)
+        return SUCCESS
+    task_list = get_tasks(uuid_version_results)
+    ws_task = task_list[0]
+    LOGGER.debug("Working on Task UUID {} and Task ID {}"
+                    .format(ws_task.uuid, ws_task.id))
+    if ws_task.notes is None:
+        CONSOLE.print("No notes for this task")
+        return SUCCESS
+    regex_ = r"(onenote?:\S+|outlook?:\S+|https?://\S+)"
+    url_list = re.findall(regex_, ws_task.notes)
+    LOGGER.debug("Identified URLs:")
+    LOGGER.debug(url_list)
+    if url_list is not None:
+        if urlno is not None:
+            try:
+                ret = open_url(url_list[urlno])
+                return ret
+            except IndexError as e:
+                CONSOLE.print("No URL found at the position provided {}"
+                              .format(urlno))
+        if len(url_list) == 1:
+            #Only 1 link sop just open that
+            open_url(url_list[0])
+        else:
+            cnt = 1
+            for cnt, url_ in enumerate(url_list, start=1):
+                CONSOLE.print("{} - {}".format(str(cnt), url_))      
+            choice_rng = [str(x) for x in list(range(1,cnt+1))]
+            res = Prompt.ask("Choose the URL to be openned:",
+                                choices=[*choice_rng,"none"], 
+                                default="none")
+            if res == "none":
+                return SUCCESS
+            else:
+                ret = open_url(url_list[int(res)-1])
+                return ret
+    else:
+        CONSOLE.print("No URLS found in notes for this task")
+        return SUCCESS
+
+
+def open_url(url_):
+    """
+    Opens a url using the system's default web browser.
+
+    Parameters:
+        url_(string): The URL which needs to be openned
+    
+    Returns:
+        int: 0 if successful, 1 if error encountered
+    """
+    CONSOLE.print("Opening URL: {}".format(url_))
+    try:
+        webbrowser.open(url_, new=0, autoraise=True)
+    except webbrowser.Error as e:
+        CONSOLE.print("Error while trying open URL")
+        return FAILURE
+    return SUCCESS
 
 
 def perform_undo():
@@ -1493,6 +1649,26 @@ def delete_tasks(ws_task):
     task_tags_print = []
     LOGGER.debug("Working on Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
+    """
+    A task in started state could be requested for deletion. In this case the 
+    task needs to be stopped first and then marked as complete. This allows 
+    the task druation to be recorded before completing.
+    """
+    if ws_task.status == TASK_STATUS_STARTED:
+        uuidn = ws_task.uuid
+        potential_filters = {}
+        potential_filters["uuid"] = uuidn
+        ret, innr_tsk_tgs_prnt = stop_task(potential_filters, ws_task.event_id)
+        #The stopping of task is not communicated to the user unless there
+        #is an issue
+        if ret == FAILURE:
+            CONSOLE.print("Error while trying to stop task...")
+            return ret, None
+        innr_task_list = get_tasks(get_task_uuid_n_ver(potential_filters))
+        ws_task = innr_task_list[0]
+        make_transient(ws_task)
+        ws_task.uuid = uuidn
+    #Proceed to complete the task
     ws_task.id = "-"
     ws_task.status = TASK_STATUS_DELETED
     ws_task.area = WS_AREA_BIN
@@ -1788,7 +1964,7 @@ def revert_task(potential_filters, event_id):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable tasks to revert", style="default")
-        return SUCCESS
+        return SUCCESS, None
     task_list = get_tasks(uuid_version_results)
     for task in task_list:
         LOGGER.debug("Working on Task UUID {} and Task ID {}"
@@ -1825,7 +2001,6 @@ def revert_task(potential_filters, event_id):
             potential_filters["baseuuidonly"] = base_uuid
             potential_filters[TASK_COMPLETE] = "yes"
             uuid_version_results = get_task_uuid_n_ver(potential_filters)
-            print(uuid_version_results)
             if uuid_version_results:
                 task_list = get_tasks(uuid_version_results)
                 base_task = task_list[0]
@@ -1864,7 +2039,7 @@ def revert_task(potential_filters, event_id):
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
-            return ret
+            return ret, None
     return SUCCESS, task_tags_print
 
 def carryover_recur_dates(base_task):
@@ -1924,9 +2099,6 @@ def start_task(potential_filters, event_id):
 
 def stop_task(potential_filters, event_id):
     task_tags_print = []
-    last_dur = 0
-    last_created = None
-    setdur = False
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable tasks to stop", style="default")
@@ -1974,6 +2146,26 @@ def complete_task(potential_filters, event_id):
         make_transient(task)
         ws_task = task
         ws_task.uuid = uuidn
+        """
+        A task in started state could be requested for move to completed 
+        status. In this case the task needs to be stopped first and then 
+        marked as complete. This allows the task druation to be recorded 
+        before completing.
+        """
+        if ws_task.status == TASK_STATUS_STARTED:
+            potential_filters = {}
+            potential_filters["uuid"] = uuidn
+            ret, innr_tsk_tgs_prnt = stop_task(potential_filters, event_id)
+            #The stopping of task is not communicated to the user unless there
+            #is an issue
+            if ret == FAILURE:
+                CONSOLE.print("Error while trying to stop task...")
+                return ret, None
+            innr_task_list = get_tasks(get_task_uuid_n_ver(potential_filters))
+            ws_task = innr_task_list[0]
+            make_transient(ws_task)
+            ws_task.uuid = uuidn
+        #Proceed to complete the task
         ws_task.id = "-"
         ws_task.area = WS_AREA_COMPLETED
         ws_task.status = TASK_STATUS_DONE
@@ -2036,11 +2228,11 @@ def complete_task(potential_filters, event_id):
             below:
             1. Base task has a recur_end date
             2. recur_end date = max of the due date in workspace_recur_dates 
-                table. That is all derived tasks have been created for this base
-                task.
+                table. That is all derived tasks have been created for this 
+                base task.
             3. No derived task exists in the 'pending' area for this base task.
-                That is all derived tasks have either been completed or have ben
-                deleted.
+                That is all derived tasks have either been completed or have 
+                been deleted.
             Task creation output is not printed and is silent.
             """
             LOGGER.debug("Checking if there are no more instances in "
@@ -2061,7 +2253,6 @@ def complete_task(potential_filters, event_id):
                                         Workspace.area == WS_AREA_PENDING,
                                         Workspace.base_uuid == base_uuid))
                             .all())
-            print(results)
             if not results:
                 #Now get the actual base tasks for these UUIDs which need to be
                 #completed.
@@ -2114,7 +2305,7 @@ def toggle_now(potential_filters, event_id):
         make_transient(task)
         ws_task = task
         if ws_task.now_flag == True:
-            ws_task.now_flag = False
+            ws_task.now_flag = None
         else:
             ws_task.now_flag = True
         if ws_task.event_id is None:
@@ -2122,6 +2313,7 @@ def toggle_now(potential_filters, event_id):
         LOGGER.debug("Setting Task UUID {} and Task ID {} as NOW"
                      .format(ws_task.uuid, ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
+        print(ws_task.created)
         ret, ws_task, tags_str = add_task_and_tags(ws_task, 
                                                    ws_tags_list,
                                                    None,
@@ -2157,7 +2349,6 @@ def toggle_now(potential_filters, event_id):
                 make_transient(task)
                 ws_task_innr = task
                 ws_task_innr.event_id = ws_task.event_id
-                ws_task_innr.created = now
                 ws_task_innr.now_flag = False
                 LOGGER.debug("Resetting NOW: Task UUID {} and Task ID {}"
                              .format(ws_task_innr.uuid, ws_task_innr.id))
@@ -2597,6 +2788,13 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
     elif ws_task_src.groups is not None:
         ws_task.groups = ws_task_src.groups
 
+    if ws_task_src.notes == CLR_STR:
+        ws_task.notes = None
+    elif ws_task_src.notes is not None:
+        #For notes defauklt modify action is to append
+        ws_task.notes = "".join([(ws_task.notes or ""), " ", 
+                                 ws_task_src.notes])
+
     if ws_task_src.recur_end == CLR_STR:
         ws_task.recur_end = None
     elif ws_task_src.recur_end is not None:
@@ -2736,6 +2934,123 @@ def display_full(potential_filters, pager=False, top=None):
             CONSOLE.print(out_str)
     else:
         CONSOLE.print(out_str)
+    return SUCCESS
+
+def display_notes(potential_filters, pager=False, top=None):
+    """
+    Diplays the notes for the filtered tasks
+
+    Parameters:
+        potential_filters(dict): Dictionary with the various types of
+                                 filters to determine tasks for display
+        pager(boolean): Default=False. Determines if a pager should be used
+                        to display the task information
+        top(integer): Limit the number of tasks which should be displayed
+    
+    Returns:
+        integer: Status of Success=0 or Failure=1
+    """
+    curr_day = datetime.now().date()
+    tommr = curr_day + relativedelta(days=1)
+    uuid_version_results = get_task_uuid_n_ver(potential_filters)
+    if not uuid_version_results:
+        CONSOLE.print("No tasks to display...", style="default")
+        get_and_print_task_count({WS_AREA_PENDING: "yes"})
+        return SUCCESS
+    task_list = get_tasks(uuid_version_results)
+    try:
+        id_xpr = (case([(Workspace.area == WS_AREA_PENDING, Workspace.id),
+                        (Workspace.area.in_([WS_AREA_COMPLETED, WS_AREA_BIN]),
+                            Workspace.uuid), ]))
+        now_flag_xpr = (case([(Workspace.now_flag == True, INDC_NOW), ],
+                             else_=""))
+        # Additional information
+        addl_info_xpr = (case([(Workspace.area == WS_AREA_COMPLETED,
+                                'IS DONE'),
+                               (Workspace.area == WS_AREA_BIN,
+                                'IS DELETED'),
+                               (Workspace.due < curr_day, TASK_OVERDUE),
+                               (Workspace.due == curr_day, TASK_TODAY),
+                               (Workspace.due == tommr, TASK_TOMMR),
+                               (Workspace.due != None,
+                                Workspace.due_diff_today + " DAYS"), ],
+                              else_=""))      
+        # Main query
+        task_list = (SESSION.query(id_xpr.label("id_or_uuid"),
+                                   addl_info_xpr.label("due_in"),
+                                   Workspace.description.label("description"),
+                                   now_flag_xpr.label("now"),
+                                   Workspace.notes.label("notes"),
+                                   Workspace.uuid.label("uuid"),
+                                   Workspace.area.label("area"),
+                                   Workspace.status.label("status"))
+                     .filter(tuple_(Workspace.uuid, Workspace.version)
+                             .in_(uuid_version_results))
+                     .order_by(Workspace.created.desc())
+                     .all())
+    except SQLAlchemyError as e:
+        LOGGER.error(str(e))
+        return FAILURE
+    table = RichTable(box=box.HORIZONTALS, show_header=True,
+                      header_style="header", expand=False)
+    # Column and Header Names
+    # Only uuid has fxied column width to ensure uuid does not get cropped
+    if (task_list[0]).area == WS_AREA_PENDING:
+        table.add_column("id", justify="right")
+    else:
+        table.add_column("uuid", justify="right", width=36)
+    table.add_column("description", justify="left")
+    table.add_column("due in", justify="left")
+    table.add_column("notes", justify="left")
+    if top is None:
+        top = len(task_list)
+    else:
+        top = int(top)
+    for cnt, task in enumerate(task_list, start=1):
+        if cnt > top:
+            break
+        trow = [str(task.id_or_uuid), task.description, task.due_in, 
+                task.notes]
+        if task.status == TASK_STATUS_DONE:
+            table.add_row(*trow, style="done")
+        elif task.status == TASK_STATUS_DELETED:
+            table.add_row(*trow, style="binn")
+        elif task.due_in == TASK_OVERDUE:
+            table.add_row(*trow, style="overdue")
+        elif task.due_in == TASK_TODAY:
+            table.add_row(*trow, style="today")
+        elif task.status == TASK_STATUS_STARTED:
+            table.add_row(*trow, style="started")
+        elif task.now == INDC_NOW:
+            table.add_row(*trow, style="now")
+        else:
+            table.add_row(*trow, style="default")
+    
+    # Print a legend on the indicators used for priority and now
+    grid = RichTable.grid(padding=3)
+    grid.add_column(style="overdue", justify="center")
+    grid.add_column(style="today", justify="center")
+    grid.add_column(style="started", justify="center")
+    grid.add_column(style="now", justify="center")
+    grid.add_column(style="done", justify="center")
+    grid.add_column(style="binn", justify="center")
+    grid.add_row("OVERDUE", "TODAY", "STARTED", "NOW", "DONE", "BIN")
+    if pager:
+        with CONSOLE.pager(styles=True):
+            CONSOLE.print(table, soft_wrap=True)
+            CONSOLE.print(grid, justify="right")
+    else:
+        CONSOLE.print(table, soft_wrap=True)
+        CONSOLE.print(grid, justify="right")
+
+    print_dict = {}
+    print_dict[PRNT_CURR_VW_CNT] = len(task_list)
+    print_dict[WS_AREA_PENDING] = "yes"
+    if potential_filters.get(TASK_COMPLETE) == "yes":
+        print_dict[WS_AREA_COMPLETED] = "yes"
+    elif potential_filters.get(TASK_BIN) == "yes":
+        print_dict[WS_AREA_BIN] = "yes"
+    get_and_print_task_count(print_dict)
     return SUCCESS
 
 
@@ -3019,18 +3334,20 @@ def display_history(potential_filters, pager=False, top=None):
         else:
             end = ""
         # YYYY-MM-DD HH:MM
-        # 0:4 - YYYY, 5:7 - MM, 8:10 - DD, 11:13 - HH, 14: - MM
-        created = datetime(int(task.created[0:4]),
+        # 0:4 - YYYY, 5:7 - MM, 8:10 - DD, 11:13 - HH, 14:16 - MM
+        created = (datetime(int(task.created[0:4]),
                            int(task.created[5:7]),
                            int(task.created[8:10]),
                            int(task.created[11:13]),
-                           int(task.created[14:])).strftime(FMT_DATEW_TIME)
+                           int(task.created[14:16]))
+                    .strftime(FMT_DATEW_TIME))
 
-        inception = datetime(int(task.inception[0:4]), 
+        inception = (datetime(int(task.inception[0:4]), 
                              int(task.inception[5:7]),
                              int(task.inception[8:10]), 
                              int(task.inception[11:13]),
-                             int(task.inception[14:])).strftime(FMT_DATEW_TIME)                           
+                             int(task.inception[14:16]))
+                        .strftime(FMT_DATEW_TIME))
         # Create a list to print
         trow = [task.uuid, str(task.id), task.description, due, task.recur,end, 
                 task.groups, task.tags, task.status, task.priority_flg, 
@@ -3065,7 +3382,6 @@ def display_history(potential_filters, pager=False, top=None):
         print_dict[WS_AREA_BIN] = "yes"
     get_and_print_task_count(print_dict)
     return SUCCESS
-    return
 
 
 def display_by_tags(potential_filters, pager=False, top=None):
@@ -3264,10 +3580,6 @@ def display_default(potential_filters, pager=False, top=None):
         get_and_print_task_count({WS_AREA_PENDING: "yes"})
         return SUCCESS
     CONSOLE.print("Preparing view...", style="default")
-    #Calculate the task score and write back to database
-    #The score is written to the ORM Workspace objects which we then commit
-    calc_task_scores(get_tasks(uuid_version_results, expunge=False))
-    SESSION.commit()
     curr_day = datetime.now().date()
     tommr = curr_day + relativedelta(days=1)
     try:
@@ -3294,9 +3606,6 @@ def display_default(potential_filters, pager=False, top=None):
                          (Workspace.priority == PRIORITY_LOW[0],
                           INDC_PR_LOW)],
                         else_=INDC_PR_NRML))
-        score_xpr = (case([(Workspace.area == WS_AREA_PENDING, 
-                            Workspace.score),],
-                          else_=""))
         dur_xpr = (case ([(Workspace.status == TASK_STATUS_STARTED, 
                             Workspace.duration + Workspace.dur_ev_diff_now),],
                         else_=Workspace.duration))
@@ -3338,7 +3647,8 @@ def display_default(potential_filters, pager=False, top=None):
                                    Workspace.area.label("area"),
                                    Workspace.created.label("created"),
                                    dur_xpr.label("duration"),
-                                   score_xpr.label("score"))
+                                   Workspace.incep_diff_now.label("age"),
+                                   Workspace.uuid.label("uuid"))
                      .outerjoin(tags_subqr,
                                 and_(Workspace.uuid ==
                                      tags_subqr.c.uuid,
@@ -3346,12 +3656,18 @@ def display_default(potential_filters, pager=False, top=None):
                                      tags_subqr.c.version))
                      .filter(tuple_(Workspace.uuid, Workspace.version)
                              .in_(uuid_version_results))
-                     .order_by(Workspace.score.desc())
+                     .order_by(Workspace.created.desc())
                      .all())
     except SQLAlchemyError as e:
         LOGGER.error(str(e))
         return FAILURE
-
+    #Calculate the task score if we are displaying pending tasks
+    if task_list[0].area == WS_AREA_PENDING:
+        LOGGER.debug("Attempting to get scores for tasks for Pending area")
+        score_list = calc_task_scores(get_tasks(uuid_version_results, expunge=False))
+    else:
+        LOGGER.debug("Not Pending area, so no scores to be calculated")
+        score_list = None
     LOGGER.debug("Task Details for display:\n{}".format(task_list))
     table = RichTable(box=box.HORIZONTALS, show_header=True,
                       header_style="header", expand=True)
@@ -3374,6 +3690,7 @@ def display_default(potential_filters, pager=False, top=None):
     table.add_column("now", justify="center")
     table.add_column("hide until", justify="left")
     table.add_column("version", justify="right")
+    table.add_column("age", justify="right")
     if(task_list[0].area == WS_AREA_COMPLETED):
         table.add_column("done_date", justify="left")
     elif(task_list[0].area == WS_AREA_BIN):
@@ -3385,7 +3702,7 @@ def display_default(potential_filters, pager=False, top=None):
         top = len(task_list)
     else:
         top = int(top)
-    
+    tdata = []
     for cnt, task in enumerate(task_list, start=1):
         if cnt > top:
             break
@@ -3410,30 +3727,47 @@ def display_default(potential_filters, pager=False, top=None):
         else:
             end = ""
         # YYYY-MM-DD HH:MM
-        # 0:4 - YYYY, 5:7 - MM, 8:10 - DD, 11:13 - HH, 14: - MM
+        # 0:4 - YYYY, 5:7 - MM, 8:10 - DD, 11:13 - HH, 14:16 - MM
         created = datetime(int(task.created[0:4]), int(task.created[5:7]),
                            int(task.created[8:10]), int(task.created[11:13]),
-                           int(task.created[14:])).strftime(FMT_DATEW_TIME)
-        print(task.duration)
+                           int(task.created[14:16])).strftime(FMT_DATEW_TIME)
+        age = convert_time_unit(task.age)
         duration = convert_time_unit(task.duration)
-        # Create a list to print
+        if score_list is not None:
+            score = str(score_list.get(task.uuid))
+        else:
+            #Not a view on pending tasks, so do not look for a score
+            score = ""
+
+        # Create a list to print. Any change in order ensure the if/else 
+        #in below loop is also modified
         trow = [str(task.id_or_uuid), task.description, task.due_in, due,
                 task.recur, end, task.groups, task.tags, task.status,
                 duration, task.priority_flg, task.now, hide, str(task.version),
-                created, str(task.score)]
+                age, created, score]
                 #str(score_dict.get(task.uuid))]
+        tdata.append(trow)
+    #Now sort the list depending on which area we are displaying
+    if task_list[0].area == WS_AREA_PENDING:
+        #based on score, descending
+        tdata = sorted(tdata, key=itemgetter(16), reverse=True)
+    else:
+        #hidden or bin task, so based on created date
+        tdata = sorted(tdata, key=itemgetter(15), reverse=True)
+
+    for trow in tdata:
         # Next Display the tasks with formatting based on various conditions
-        if task.status == TASK_STATUS_DONE:
+        if trow[8] == TASK_STATUS_DONE:
             table.add_row(*trow, style="done")
-        elif task.area == WS_AREA_BIN:
+        elif trow[8] == TASK_STATUS_DELETED:
             table.add_row(*trow, style="binn")
-        elif task.due_in == TASK_OVERDUE:
+        elif trow[2] == TASK_OVERDUE:
             table.add_row(*trow, style="overdue")
-        elif task.due_in == TASK_TODAY:
+        elif trow[2] == TASK_TODAY:
             table.add_row(*trow, style="today")
-        elif task.status == TASK_STATUS_STARTED:
+        elif trow[8] == TASK_STATUS_STARTED:
             table.add_row(*trow, style="started")
-        elif task.now == INDC_NOW:
+        elif trow[11] == INDC_NOW:
             table.add_row(*trow, style="now")
         else:
             table.add_row(*trow, style="default")
@@ -3474,6 +3808,7 @@ def display_default(potential_filters, pager=False, top=None):
     get_and_print_task_count(print_dict)
     return SUCCESS
 
+
 def convert_time_unit(in_time):
     """
     Converts a duration provided in minutes to time as below:
@@ -3497,26 +3832,29 @@ def convert_time_unit(in_time):
     if in_time == 0:
         return ""
     out_str = ""
-    td = timedelta(minutes=in_time)
+    td = timedelta(seconds=in_time)
     #When the days is not 0 the it returns 'x days, h/hh:mm:ss' else 
     #it returns 'h/hh:mm:ss'
     if td.days != 0:
-        out_str = "".join([str(td.days)],"D")
+        #If there is non zero days then include it
+        out_str = "".join([str(td.days),"D"])
         temp = str(td).split(",")
         time_comp = temp[1].split(":")
     else:
         time_comp = str(td).split(":")
-    if time_comp[0] != "0":
-        out_str = "".join([out_str," ",time_comp[0].lstrip("0"),"h"])
-        if time_comp[1] != "00":
-            out_str = "".join([out_str," ",time_comp[1].lstrip("0"),"m"])
+    hour_ = (time_comp[0].lstrip(" ")).lstrip("0")
+    minute_ = (time_comp[1].lstrip(" ")).lstrip("0")
+    if hour_:
+        #If there is non zero hour component then include it along with minutes
+        out_str = "".join([out_str,hour_,"h"])
+        if minute_:
+            out_str = "".join([out_str,minute_,"m"])
     else:
-        if time_comp[1] != "00":
-            out_str = "".join([out_str," ",time_comp[1].lstrip("0"),"m"])
-        elif time_comp[2] == "00":
-            #No duration
-            out_str = ""
+        #There is no hour, so only include minutes
+        if minute_:
+            out_str = "".join([out_str,minute_,"m"])
         else:
+            #Less than a minute
             out_str = "<1m"
     return out_str
 
@@ -3532,6 +3870,7 @@ def calc_task_scores(task_list):
         Status - STARTED 100, TO_DO, 75
         Groups - If any then 100 else 0
         Tags - If any then 100 else 0
+        Notes - If any then 100 else 0
         Inception - Older tasks score higher
         Due - Tasks closer to due date score higher with bias towards tasks 
         in the future compared to overdue tasks
@@ -3539,9 +3878,10 @@ def calc_task_scores(task_list):
     Weights assigned are as below totalling to 100:
         Now - 15
         Priority - 15
-        Status - 15
+        Status - 14
         Groups - 1
         Tags - 1
+        Notes - 1
         Inception - 8
         Due - 45
 
@@ -3560,9 +3900,10 @@ def calc_task_scores(task_list):
     sc_status = {TASK_STATUS_STARTED:100, TASK_STATUS_TODO:75}
     sc_groups = {"yes":100}
     sc_tags = {"yes":100}
-    sc_due = {"today":100, "past":110, "fut":90}
-    weights = {"now":15, "due":45, "priority":15, "status":15, "inception":8,
-               "groups":1,"tags":1}
+    sc_notes = {"yes":100}
+    sc_due = {"today":100, "past":99.9, "fut":100}
+    weights = {"now":15, "due":45, "priority":15, "status":14, "inception":8,
+               "groups":1,"tags":1,"notes":1}
     due_sum = 0
     incep_sum = 0
     for task in task_list:
@@ -3571,45 +3912,48 @@ def calc_task_scores(task_list):
             due_sum = (due_sum + abs(task.due_diff_today))  
         #For inception scoring
         incep_sum = (incep_sum + task.incep_diff_now)
+    ret_score_list = {}
     for task in task_list:
         tags = get_tags(task.uuid, task.version, expunge=False)
-        score = 0
+        score = {}
         #Now
-        score = score + ((sc_now.get(task.now_flag) or 0)) * weights.get("now")
+        score["now"] = (sc_now.get(task.now_flag) or 0) * weights.get("now")
         #Priority
-        score = (score + ((sc_priority.get(task.priority) or 0))
-                            * weights.get("priority"))
+        score["pri"] = ((sc_priority.get(task.priority) or 0)
+                                * weights.get("priority"))
         #Status
-        score = (score + ((sc_status.get(task.status) or 0))
-                            * weights.get("status"))
+        score["sts"] = ((sc_status.get(task.status) or 0) 
+                                * weights.get("status"))
         #Groups
         if task.groups:
-            score = score + (sc_groups.get("yes")) * weights.get("groups")
+            score["grp"] =  (sc_groups.get("yes")) * weights.get("groups")
         #Tags
         if tags:
-            score = score + (sc_tags.get("yes")) * weights.get("tags")
+            score["tag"] =  (sc_tags.get("yes")) * weights.get("tags")
+        #Notes
+        if task.notes:
+            score["notes"] =  (sc_notes.get("yes")) * weights.get("tags")        
         #Inception
-        score = (score + (sc_due.get("today") * int(task.incep_diff_now)
-                            /incep_sum)
-                         * weights.get("inception"))
+        score["incp"] = ((sc_due.get("today") * int(task.incep_diff_now)
+                            /incep_sum) * weights.get("inception"))
         #Due
         if task.due is not None:
             if int(task.due_diff_today) == 0:
-                score = score + (sc_due.get("today")) * weights.get("due")
+                score["due"] =  (sc_due.get("today")) * weights.get("due")
             elif int(task.due_diff_today) < 0:
-                score = (score + (sc_due.get("today")
-                                  + (sc_due.get("past")
-                                     *int(task.due_diff_today)/due_sum))
-                         * weights.get("due"))
+                score["due"] =  ((sc_due.get("past") 
+                                    - abs(int(task.due_diff_today)/due_sum))
+                                 * weights.get("due"))
             else:
-                score = (score + (sc_due.get("today")
-                                  - (sc_due.get("fut")
-                                     *int(task.due_diff_today)/due_sum))
-                         * weights.get("due"))
-        task.score = round(score/100,2)
-        ret_task_list.append(task)
-    return ret_task_list
+                score["due"] = ((sc_due.get("fut") 
+                                    - (int(task.due_diff_today)/due_sum))
+                                * weights.get("due"))
+        LOGGER.debug("Score for task id {} as below".format(task.uuid))
+        LOGGER.debug(score)
+        ret_score_list[task.uuid] = round(sum(score.values())/100,2)
+    return ret_score_list
     
+
 def get_and_print_task_count(print_dict):
     # Print Task Details
     if print_dict.get(PRNT_TASK_DTLS):
@@ -4951,7 +5295,7 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None,
     else:
         ws_task.event_id = ws_task_src.event_id
     ws_task.priority = translate_priority(ws_task_src.priority)
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = datetime.now().strftime(FMT_DATETIME)
     ws_task.created = now
     if not ws_task_src.inception:
         ws_task.inception = now
@@ -4960,6 +5304,7 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None,
     ws_task.version = get_task_new_version(str(ws_task.uuid))
     ws_task.description = ws_task_src.description
     ws_task.groups = ws_task_src.groups
+    ws_task.notes = ws_task_src.notes
     ws_task.now_flag = ws_task_src.now_flag
     if not ws_task_src.area:
         ws_task.area = WS_AREA_PENDING
@@ -5015,7 +5360,7 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None,
                  synchronize_session=False))
     except SQLAlchemyError as e:
         SESSION.rollback()
-        print(str(e))
+        LOGGER.error(str(e))
         return FAILURE, None, None
     return SUCCESS, ws_task, tags_str
 
@@ -5023,28 +5368,27 @@ def calc_duration(src_ops, ws_task_src, ws_task):
     if ws_task_src.task_type in [TASK_TYPE_NRML, TASK_TYPE_DRVD]:
         if src_ops == OPS_STOP:
             #Since the task is stopped calculate the duration
-            print("Previous Task Duration: {}".format(str(ws_task_src.duration)))
             duration = round(ws_task_src.duration 
                                         + (datetime.strptime(ws_task.created,
                                                              FMT_DATETIME) 
                                             - datetime
                                                .strptime(ws_task_src.dur_event,
                                                           FMT_DATETIME))
-                                           .seconds/60)
-        elif src_ops in  [OPS_START, OPS_MODIFY]:
-            #For Starting or modifying the task, carry forward last version's
-            #duration
+                                           .seconds)
+        elif src_ops in  [OPS_START, OPS_MODIFY, OPS_DONE, OPS_DELETE]:
+            #For Starting or modifying or completing the task, carry forward 
+            #last version's duration
             duration = ws_task_src.duration
         else:
             #For any other operation just set the duration to 0
             duration = 0
-        if src_ops in [OPS_MODIFY]:
+        if src_ops in [OPS_MODIFY, OPS_NOW, OPS_UNLINK, OPS_DELETE, OPS_DONE]:
             """
-            As modify can be run when the task is started ensure the last 
-            started version's created time is carried forward. This is to 
-            ensure duration can be calculated accurately
+            For these Ops ensure the last started/stopped version's duration 
+            event time is carried forward. This is to ensure duration can be 
+            calculated accurately
             """
-            dur_event = ws_task_src.created
+            dur_event = ws_task_src.dur_event
         else:
             """
             For start and stop the time will be creation time to calculate the
