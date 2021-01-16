@@ -131,10 +131,10 @@ UNTIL_WHEN = {MODE_DAILY: 2, MODE_WEEKLY: 8, MODE_MONTHLY: 32,
 # Future date for date and None comparisons
 FUTDT = datetime.strptime("2300-01-01", "%Y-%m-%d").date()
 # Indictor Symbols
-INDC_PR_HIGH = "[**]"
-INDC_PR_MED = "[*]"
+INDC_PR_HIGH = "[H]"
+INDC_PR_MED = "[M]"
 INDC_PR_NRML = ""
-INDC_PR_LOW = "[.]"
+INDC_PR_LOW = "[L]"
 INDC_NOW = "[++]"
 INDC_NOTES = "[^]"
 # Date formats
@@ -5166,7 +5166,7 @@ def display_default(potential_filters, pager=False, top=None):
         trow = [str(task.id_or_uuid), task.description, task.due_in, due,
                 task.recur, end, task.groups, task.tags, task.status,
                 duration, hide, 
-                "".join([task.now ,task.notes, task.priority_flg]),
+                "".join([task.now,task.notes, task.priority_flg]),
                 str(task.version), age, created, score]
                 #str(score_dict.get(task.uuid))]
         tdata.append(trow)
