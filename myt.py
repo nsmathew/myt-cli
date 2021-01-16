@@ -4433,14 +4433,14 @@ def display_notes(potential_filters, pager=False, top=None):
             table.add_row(*trow, style="done")
         elif task.status == TASK_STATUS_DELETED:
             table.add_row(*trow, style="binn")
+        elif task.now == INDC_NOW:
+            table.add_row(*trow, style="now")
+        elif task.status == TASK_STATUS_STARTED:
+            table.add_row(*trow, style="started")
         elif task.due_in == TASK_OVERDUE:
             table.add_row(*trow, style="overdue")
         elif task.due_in == TASK_TODAY:
             table.add_row(*trow, style="today")
-        elif task.status == TASK_STATUS_STARTED:
-            table.add_row(*trow, style="started")
-        elif task.now == INDC_NOW:
-            table.add_row(*trow, style="now")
         else:
             table.add_row(*trow, style="default")
     
@@ -5184,14 +5184,14 @@ def display_default(potential_filters, pager=False, top=None):
             table.add_row(*trow, style="done")
         elif trow[8] == TASK_STATUS_DELETED:
             table.add_row(*trow, style="binn")
+        elif INDC_NOW in trow[11]:
+            table.add_row(*trow, style="now")
+        elif trow[8] == TASK_STATUS_STARTED:
+            table.add_row(*trow, style="started")
         elif trow[2] == TASK_OVERDUE:
             table.add_row(*trow, style="overdue")
         elif trow[2] == TASK_TODAY:
             table.add_row(*trow, style="today")
-        elif trow[8] == TASK_STATUS_STARTED:
-            table.add_row(*trow, style="started")
-        elif trow[11] == INDC_NOW:
-            table.add_row(*trow, style="now")
         else:
             table.add_row(*trow, style="default")
 
