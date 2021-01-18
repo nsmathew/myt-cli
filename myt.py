@@ -3391,7 +3391,7 @@ def delete_tasks(ws_task):
     task_tags_print.append((ws_task, tags_str))  
     if ret == FAILURE:
         LOGGER.error("Error encountered in adding task version, stopping")
-        return ret, None, None
+        return ret, None
     return ret, task_tags_print
 
 
@@ -3788,7 +3788,7 @@ def start_task(potential_filters, event_id):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable tasks to start", style="default")
-        return SUCCESS
+        return SUCCESS, None
     task_list = get_tasks(uuid_version_results)
     LOGGER.debug("Total Tasks to Start {}".format(len(task_list)))
     for task in task_list:
@@ -3813,7 +3813,7 @@ def start_task(potential_filters, event_id):
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
-            return ret
+            return ret, None
     return SUCCESS, task_tags_print
 
 
@@ -3822,7 +3822,7 @@ def stop_task(potential_filters, event_id):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable tasks to stop", style="default")
-        return SUCCESS
+        return SUCCESS, None
     task_list = get_tasks(uuid_version_results)
     LOGGER.debug("Total Tasks to Stop {}".format(len(task_list)))
     for task in task_list:
@@ -3847,7 +3847,7 @@ def stop_task(potential_filters, event_id):
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
-            return ret
+            return ret, None
     return SUCCESS, task_tags_print
 
 
@@ -4017,7 +4017,7 @@ def toggle_now(potential_filters, event_id):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable task to set as NOW", style="default")
-        return SUCCESS
+        return SUCCESS, None
     task_list = get_tasks(uuid_version_results)
     for task in task_list:
         LOGGER.debug("Working on Task UUID {} and Task ID {}"
@@ -4040,7 +4040,7 @@ def toggle_now(potential_filters, event_id):
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
-            return ret
+            return ret, None
         """
         Next, any other task having its NOW as True should be set to False.
         For this we will first identify the task UUID and version and then
@@ -4081,7 +4081,7 @@ def toggle_now(potential_filters, event_id):
                 if ret == FAILURE:
                     # Rollback already performed from nested
                     LOGGER.error("Error encountered in reset of NOW")
-                    return FAILURE
+                    return FAILURE, None
     return SUCCESS, task_tags_print
 
 
