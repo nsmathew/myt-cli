@@ -2209,10 +2209,11 @@ def calc_duration(src_ops, ws_task_src, ws_task):
                                             - datetime
                                                .strptime(ws_task_src.dur_event,
                                                           FMT_DATETIME))
-                                           .seconds)
-        elif src_ops in  [OPS_START, OPS_MODIFY, OPS_DONE, OPS_DELETE, OPS_REVERT]:
-            #For Starting or modifying, completing, deleting or reverting the 
-            #task, carry forward last version's duration
+                                           .total_seconds())
+        elif src_ops in ([OPS_START, OPS_MODIFY, OPS_DONE, OPS_DELETE, 
+                          OPS_REVERT, OPS_NOW]):
+            #For Starting or modifying, completing, deleting, reverting the 
+            #task or setting now, carry forward last version's duration
             duration = ws_task_src.duration
         else:
             #For any other operation just set the duration to 0
