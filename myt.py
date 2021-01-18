@@ -131,10 +131,10 @@ UNTIL_WHEN = {MODE_DAILY: 2, MODE_WEEKLY: 8, MODE_MONTHLY: 32,
 # Future date for date and None comparisons
 FUTDT = datetime.strptime("2300-01-01", "%Y-%m-%d").date()
 # Indictor Symbols
-INDC_PR_HIGH = "[**]"
-INDC_PR_MED = "[*]"
+INDC_PR_HIGH = "[H]"
+INDC_PR_MED = "[M]"
 INDC_PR_NRML = ""
-INDC_PR_LOW = "[.]"
+INDC_PR_LOW = "[L]"
 INDC_NOW = "[++]"
 INDC_NOTES = "[^]"
 # Date formats
@@ -149,6 +149,7 @@ OPS_MODIFY = "modify"
 OPS_START = "start"
 OPS_STOP = "stop"
 OPS_REVERT = "revert"
+OPS_RESET = "reset"
 OPS_DELETE = "delete"
 OPS_NOW = "now"
 OPS_UNLINK = "unlink"
@@ -661,8 +662,8 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
     The next section documents High Level Filters and should be used with 
     caution as they could modify large number of tasks.
     
-    'done' - Filters all tasks that are in 'DONE' status. Mandatory filter when 
-    operating on tasks in the 'completed' are or tasks which are 'DONE'.
+    'complete' - Filters all tasks that are in 'DONE' status. Mandatory filter  
+    when operating on tasks in the 'completed' are or tasks which are 'DONE'.
     
     'bin' - Filters all tasks that are in the DELETED status or in the bin and 
     mandatory when operating on such tasks.
@@ -722,7 +723,7 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
     # Perform validations
     if (desc is None and priority is None and due is None and hide is None
             and group is None and tag is None and recur is None 
-            and notes is None):
+            and notes is None and end is None):
         CONSOLE.print("No modification values provided. Nothing to do...",
                       style="default")
         exit_app(SUCCESS)
@@ -743,6 +744,8 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
         tag = (tag.lstrip(",")).rstrip(",")
     else:
         tag = None
+    if end is not None:
+        end = convert_date(end)
     event_id = get_event_id()
     ws_task = Workspace(description=desc, priority=priority,
                         due=due, hide=hide, groups=group, recur_end=end,
@@ -866,10 +869,9 @@ def done(filters, verbose):
               )
 def revert(filters, verbose):
     """
-    Revert a task to TO_DO status.
-    This works on tasks in STARTED status or tasks in DONE status. For 
-    reverting DONE tasks, the filyer modifier, COMPLETE needs to be used.
-    Does not work for DELETED tasks.
+    Revert a completed task to pending area and from DONE to TO_DO status.
+    Ensure the high level modifier 'COMPLETE' is used.
+    Does not work for DELETED tasks and TO_DO tasks.
 
     --- FILTERS --- 
     
@@ -923,8 +925,8 @@ def revert(filters, verbose):
     The next section documents High Level Filters and should be used with 
     caution as they could modify large number of tasks.
     
-    'done' - Filters all tasks that are in 'DONE' status. Mandatory filter when 
-    operating on tasks in the 'completed' are or tasks which are 'DONE'.
+    'complete' - Filters all tasks that are in 'DONE' status. Mandatory filter  
+    when operating on tasks in the 'completed' are or tasks which are 'DONE'.
     
     'bin' - Filters all tasks that are in the DELETED status or in the bin and 
     mandatory when operating on such tasks.
@@ -938,12 +940,122 @@ def revert(filters, verbose):
     'overdue' - Filters all tasks that are overdue. Works on pending tasks only
 
     --- EXAMPLES ---
-    myt revert id:1 - Revert a task with ID = 1
-
     myt revert complete uuid:45da6633-d335-4a00-99f2-3678e132a85e - Revert a 
     done task with a particular uuid
 
-    myt revert tg:planning - Revert all tasks in STARTED status with a tag as 
+    myt revert complete tg:planning - Revert all tasks in DONE status with a 
+    tag as 'planning'
+    """
+    if verbose:
+        set_versbose_logging()
+    potential_filters = parse_filters(filters)
+    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        exit_app(FAILURE)
+    if potential_filters.get(TASK_COMPLETE) != "yes":
+        CONSOLE.print("Revert is applicable only to completed tasks. Use "
+                      "'complete' filter in command")
+        exit_app(SUCCESS)
+    if potential_filters.get(TASK_BIN) == "yes":
+        CONSOLE.print("Cannot apply operation to deleted tasks")
+        exit_app(SUCCESS)
+    if potential_filters.get(HL_FILTERS_ONLY) == "yes":
+        if not confirm_prompt("No detailed filters given for reverting tasks "
+                              "to TO_DO status, are you sure?"):
+            exit_app(SUCCESS)
+    event_id = get_event_id()
+    ret, task_tags_print = revert_task(potential_filters, event_id)
+    if ret == SUCCESS:
+        SESSION.commit()
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                  PRNT_TASK_DTLS: task_tags_print})
+    exit_app(ret)
+
+
+@myt.command()
+@click.argument("filters",
+                nargs=-1,
+                )
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable verbose Logging.",
+              )
+def reset(filters, verbose):
+    """
+    Reset a task's duration to 0 and the status to TO_DO status.
+    This works on tasks in STARTED status. 
+    Does not work for COMPLETED and DELETED tasks.
+
+    --- FILTERS --- 
+    
+    Filters can take various forms, refer below. Format is 'field:value'.
+
+    id - Filter on tasks by id. This filters works by itself and cannot be
+    combined as this is most specific. Works on tasks which are in status 
+    'TO_DO', 'STARTED'. Ex - id:4,10
+
+    uuid - Filter on tasks by uuid. This works by itself and cannot be 
+    combined with other filters. Works on tasks with status 'DONE' or 
+    'DELETED'. Ex - uuid:31726cd2-2db3-4ae4-97ae-b2b7b29a7307
+    
+    desc - Filter on tasks by description. The filter searches within task
+    descriptions. Can be combined with other filters. Ex - de:fitness or
+    desc:fitness
+    
+    groups - Filter on tasks by the group name. Can be combined with other
+    filters. Ex - gr:HOME.BILLS or group:HOME.BILLS
+    
+    tags - Filter tasks on tags, can be provided as comman separated. Can be
+    combined with other filters. Ex - tg:bills,finance or tag:bills,finance
+    
+    priority - Filter tasks on the priority. Can be combined with other 
+    filters. Ex - pr:M or priority:Medium
+
+    notes - Filter tasks on the notes. Can be combined with other filters. 
+    Ex - no:"avenue 6" or notes:"avenue 6"
+
+    due, hide, end - Filter tasks on dates. It is possible to filter based on
+    various conditions as explained below with examples using due/du
+    
+        Equal To - du:eq:+1 Tasks due tomorrow\n
+        Less Than - du:lt:+0 Tasks with due dates earlier than today\n
+        Less Than or Equal To - due:le:+0 Tasks due today or earlier\n
+        Greater Than - du:gt:2020-12-10 Tasks with due date after 10th Dec '20
+        \n
+        Greater Than or Equal To - du:ge:+7 Tasks due in 7 days or beyond\n
+        Between - du:bt:2020-12-01:2020-12-07 Tasks due in the first 7 days of
+        Dec '20. Both dates are inclusive\n
+        The same works for hide/hi and end/en as well. For hide when using the 
+        short form of the date as '-X' this is relative to today and noty due 
+        date. When providing an input value for hide with this format '-X' is
+        relative to the due date.\n
+    
+    'started' - Filter all tasks that are in 'STARTED' status. Can be combined 
+    with other filters.
+    
+    'now' - Filter on the task marked as 'NOW'.
+    
+    The next section documents High Level Filters and should be used with 
+    caution as they could modify large number of tasks.
+    
+    'complete' - Filters all tasks that are in 'DONE' status. Mandatory filter  
+    when operating on tasks in the 'completed' are or tasks which are 'DONE'.
+    
+    'bin' - Filters all tasks that are in the DELETED status or in the bin and 
+    mandatory when operating on such tasks.
+    
+    'hidden' - Filters all tasks that are currently hidden from the normal
+    view command but are still pending, 'TO_DO' or 'STARTED'. Mandatory filter
+    when operating on tasks that are currently hidden.
+    
+    'today' - Filters all tasks that are due today. Works on pending tasks only
+    
+    'overdue' - Filters all tasks that are overdue. Works on pending tasks only
+
+    --- EXAMPLES ---
+    myt reset id:1 - Reset a task with ID = 1
+
+    myt reset tg:planning - Reset all tasks in STARTED status with a tag as 
     'planning'
     """
     if verbose:
@@ -954,12 +1066,15 @@ def revert(filters, verbose):
     if potential_filters.get(TASK_BIN) == "yes":
         CONSOLE.print("Cannot apply operation to deleted tasks")
         exit_app(SUCCESS)
+    if potential_filters.get(TASK_COMPLETE) == "yes":
+        CONSOLE.print("Cannot apply operation to completed tasks")
+        exit_app(SUCCESS)
     if potential_filters.get(HL_FILTERS_ONLY) == "yes":
-        if not confirm_prompt("No detailed filters given for reverting tasks "
-                              "to TO_DO status, are you sure?"):
+        if not confirm_prompt("No detailed filters given for reset of tasks "
+                              ", are you sure?"):
             exit_app(SUCCESS)
     event_id = get_event_id()
-    ret, task_tags_print = revert_task(potential_filters, event_id)
+    ret, task_tags_print = reset_task(potential_filters, event_id)
     if ret == SUCCESS:
         SESSION.commit()
         get_and_print_task_count({WS_AREA_PENDING: "yes",
@@ -2094,26 +2209,28 @@ def calc_duration(src_ops, ws_task_src, ws_task):
                                             - datetime
                                                .strptime(ws_task_src.dur_event,
                                                           FMT_DATETIME))
-                                           .seconds)
-        elif src_ops in  [OPS_START, OPS_MODIFY, OPS_DONE, OPS_DELETE]:
-            #For Starting or modifying or completing the task, carry forward 
-            #last version's duration
+                                           .total_seconds())
+        elif src_ops in ([OPS_START, OPS_MODIFY, OPS_DONE, OPS_DELETE, 
+                          OPS_REVERT, OPS_NOW]):
+            #For Starting or modifying, completing, deleting, reverting the 
+            #task or setting now, carry forward last version's duration
             duration = ws_task_src.duration
         else:
             #For any other operation just set the duration to 0
             duration = 0
-        if src_ops in [OPS_MODIFY, OPS_NOW, OPS_UNLINK, OPS_DELETE, OPS_DONE]:
+        if (src_ops in [OPS_MODIFY, OPS_NOW, OPS_UNLINK, OPS_DELETE, OPS_DONE,
+                        OPS_REVERT]):
             """
             For these Ops ensure the last started/stopped version's duration 
             event time is carried forward. This is to ensure duration can be 
-            calculated accurately
+            calculated accurately. Revert should retain the last duration event
+            time as well
             """
             dur_event = ws_task_src.dur_event
         else:
             """
             For start and stop the time will be creation time to calculate the
-            duration. For Add and Revert they are not relevant so just use the
-            version's created time
+            duration. For reset we use the version's created time, same or Add
             """
             dur_event = ws_task.created
     else:
@@ -3275,7 +3392,7 @@ def delete_tasks(ws_task):
     task_tags_print.append((ws_task, tags_str))  
     if ret == FAILURE:
         LOGGER.error("Error encountered in adding task version, stopping")
-        return ret, None, None
+        return ret, None
     return ret, task_tags_print
 
 
@@ -3552,7 +3669,6 @@ def unlink_tasks(potential_filters, event_id):
 
 def revert_task(potential_filters, event_id):
     task_tags_print = []
-    curr_pending = False
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable tasks to revert", style="default")
@@ -3567,10 +3683,6 @@ def revert_task(potential_filters, event_id):
         ws_task.uuid = uuidn
         if ws_task.id == '-':
             ws_task.id = None
-        if ws_task.area == WS_AREA_PENDING:
-            #To use later on to determine if additional checks need to be
-            #done related to base tasks
-            curr_pending = True
         base_uuid = ws_task.base_uuid
         ws_task.area = WS_AREA_PENDING
         ws_task.status = TASK_STATUS_TODO
@@ -3578,7 +3690,7 @@ def revert_task(potential_filters, event_id):
             ws_task.event_id = event_id
         LOGGER.debug("Reverting Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))        
-        if ws_task.task_type == TASK_TYPE_DRVD and not curr_pending:
+        if ws_task.task_type == TASK_TYPE_DRVD:
             """
             Need additional check on if base task should also be moved back
             to pending area. This is required when all tasks for the recurring
@@ -3635,12 +3747,49 @@ def revert_task(potential_filters, event_id):
     return SUCCESS, task_tags_print
 
 
+def reset_task(potential_filters, event_id):
+    task_tags_print = []
+    uuid_version_results = get_task_uuid_n_ver(potential_filters)
+    if not uuid_version_results:
+        CONSOLE.print("No applicable tasks to reset", style="default")
+        return SUCCESS, None
+    task_list = get_tasks(uuid_version_results)
+    for task in task_list:
+        LOGGER.debug("Working on Task UUID {} and Task ID {}"
+                     .format(task.uuid, task.id))
+        uuidn = task.uuid
+        make_transient(task)
+        ws_task = task
+        ws_task.uuid = uuidn
+        base_uuid = ws_task.base_uuid
+        ws_task.area = WS_AREA_PENDING
+        ws_task.status = TASK_STATUS_TODO
+        if ws_task.event_id is None:
+            ws_task.event_id = event_id
+        LOGGER.debug("Reset of Task UUID {} and Task ID {}"
+                     .format(ws_task.uuid, ws_task.id))        
+        """
+        Next apply the reset action for the task
+        """
+        ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
+        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+                                                   ws_tags_list,
+                                                   None,
+                                                   OPS_RESET)
+        
+        task_tags_print.append((ws_task, tags_str))
+        if ret == FAILURE:
+            LOGGER.error("Error encountered in adding task version, stopping")
+            return ret, None
+    return SUCCESS, task_tags_print
+
+
 def start_task(potential_filters, event_id):
     task_tags_print = []
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable tasks to start", style="default")
-        return SUCCESS
+        return SUCCESS, None
     task_list = get_tasks(uuid_version_results)
     LOGGER.debug("Total Tasks to Start {}".format(len(task_list)))
     for task in task_list:
@@ -3665,7 +3814,7 @@ def start_task(potential_filters, event_id):
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
-            return ret
+            return ret, None
     return SUCCESS, task_tags_print
 
 
@@ -3674,7 +3823,7 @@ def stop_task(potential_filters, event_id):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable tasks to stop", style="default")
-        return SUCCESS
+        return SUCCESS, None
     task_list = get_tasks(uuid_version_results)
     LOGGER.debug("Total Tasks to Stop {}".format(len(task_list)))
     for task in task_list:
@@ -3699,7 +3848,7 @@ def stop_task(potential_filters, event_id):
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
-            return ret
+            return ret, None
     return SUCCESS, task_tags_print
 
 
@@ -3869,7 +4018,7 @@ def toggle_now(potential_filters, event_id):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable task to set as NOW", style="default")
-        return SUCCESS
+        return SUCCESS, None
     task_list = get_tasks(uuid_version_results)
     for task in task_list:
         LOGGER.debug("Working on Task UUID {} and Task ID {}"
@@ -3892,7 +4041,7 @@ def toggle_now(potential_filters, event_id):
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
-            return ret
+            return ret, None
         """
         Next, any other task having its NOW as True should be set to False.
         For this we will first identify the task UUID and version and then
@@ -3933,7 +4082,7 @@ def toggle_now(potential_filters, event_id):
                 if ret == FAILURE:
                     # Rollback already performed from nested
                     LOGGER.error("Error encountered in reset of NOW")
-                    return FAILURE
+                    return FAILURE, None
     return SUCCESS, task_tags_print
 
 
@@ -4433,14 +4582,14 @@ def display_notes(potential_filters, pager=False, top=None):
             table.add_row(*trow, style="done")
         elif task.status == TASK_STATUS_DELETED:
             table.add_row(*trow, style="binn")
+        elif task.now == INDC_NOW:
+            table.add_row(*trow, style="now")
+        elif task.status == TASK_STATUS_STARTED:
+            table.add_row(*trow, style="started")
         elif task.due_in == TASK_OVERDUE:
             table.add_row(*trow, style="overdue")
         elif task.due_in == TASK_TODAY:
             table.add_row(*trow, style="today")
-        elif task.status == TASK_STATUS_STARTED:
-            table.add_row(*trow, style="started")
-        elif task.now == INDC_NOW:
-            table.add_row(*trow, style="now")
         else:
             table.add_row(*trow, style="default")
     
@@ -5166,7 +5315,7 @@ def display_default(potential_filters, pager=False, top=None):
         trow = [str(task.id_or_uuid), task.description, task.due_in, due,
                 task.recur, end, task.groups, task.tags, task.status,
                 duration, hide, 
-                "".join([task.now ,task.notes, task.priority_flg]),
+                "".join([task.now,task.notes, task.priority_flg]),
                 str(task.version), age, created, score]
                 #str(score_dict.get(task.uuid))]
         tdata.append(trow)
@@ -5184,14 +5333,14 @@ def display_default(potential_filters, pager=False, top=None):
             table.add_row(*trow, style="done")
         elif trow[8] == TASK_STATUS_DELETED:
             table.add_row(*trow, style="binn")
+        elif INDC_NOW in trow[11]:
+            table.add_row(*trow, style="now")
+        elif trow[8] == TASK_STATUS_STARTED:
+            table.add_row(*trow, style="started")
         elif trow[2] == TASK_OVERDUE:
             table.add_row(*trow, style="overdue")
         elif trow[2] == TASK_TODAY:
             table.add_row(*trow, style="today")
-        elif trow[8] == TASK_STATUS_STARTED:
-            table.add_row(*trow, style="started")
-        elif trow[11] == INDC_NOW:
-            table.add_row(*trow, style="now")
         else:
             table.add_row(*trow, style="default")
 

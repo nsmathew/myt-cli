@@ -12,6 +12,7 @@ from myt import delete
 from myt import start
 from myt import stop
 from myt import revert
+from myt import reset
 from myt import done
 from myt import admin
 from myt import view
@@ -551,9 +552,9 @@ def test_stop_1(create_task2):
     assert "status : TO_DO" in result.output
     runner.invoke(delete, ['id:'+str(create_task2)])
 
-def test_revert_1(create_task2):
+def test_reset_1(create_task2):
     result = runner.invoke(start, ['id:'+str(create_task2)])
-    result = runner.invoke(revert, ['id:'+str(create_task2)])    
+    result = runner.invoke(reset, ['id:'+str(create_task2)])
     temp = result.output.replace("\n"," ")
     new_id = temp.split(" ")[3]
     assert result.exit_code == 0
@@ -561,7 +562,7 @@ def test_revert_1(create_task2):
     assert "status : TO_DO" in result.output
     runner.invoke(delete, ['id:'+str(new_id)])
 
-def test_revert_2(create_task2):
+def test_revert_1(create_task2):
     result = runner.invoke(start, ['id:'+str(create_task2)])
     result = runner.invoke(done, ['id:'+str(create_task2)])    
     temp = result.output.replace("\n"," ")
