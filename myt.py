@@ -1235,12 +1235,22 @@ def delete(filters, verbose):
               help=("Reinitialize the database. Recreates the database, hence "
                     "all data will be removed."),
               )
+@click.option("--tags",
+              is_flag=True,
+              help=("View all tags available across pending and completed "
+                    "tasks."),
+              )
+@click.option("--groups",
+              is_flag=True,
+              help=("View all groups available across pending and completed "
+                    "tasks."),
+              )              
 @click.option("--verbose",
               "-v",
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def admin(verbose, empty, reinit):
+def admin(verbose, empty, reinit, tags, groups):
     """
     Allows to run admin related operations on the tasks database. This includes
     reinitialization of database and emptying the bin area. Refer to the 
@@ -1259,6 +1269,10 @@ def admin(verbose, empty, reinit):
         exit_app(FAILURE)
     if empty:
         ret = empty_bin()
+    if tags:
+        ret = display_all_tags()
+    if groups:
+        ret = display_all_groups()
     exit_app(ret)
 
 
@@ -5704,3 +5718,47 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None,
         LOGGER.error(str(e))
         return FAILURE, None, None
     return SUCCESS, ws_task, tags_str
+
+
+def display_all_tags():
+    """
+    Displays a list of the tags used in pending and completed tasks.
+    Does not show any tags from the deleted tasks 
+    
+    Parameters:
+        None
+    
+    Returns:
+        integer: Status of Success=0 or Failure=1
+    """
+    CONSOLE.print("Preparing view...", style="default")
+    try:
+        max_ver_sqr = (SESSION.query(Workspace.uuid,
+                                func.max(Workspace.version)
+                                .label("maxver"))
+                               .filter(and_(Workspace.area.in_(
+                                                            [WS_AREA_PENDING,
+                                                            WS_AREA_COMPLETED]
+                                                            )))
+                               .group_by(Workspace.uuid).subquery())
+        tags_list = (SESSION.query(distinct(WorkspaceTags.tags).label("tags"))
+                            .filter(and_(WorkspaceTags.uuid 
+                                                    == max_ver_sqr.c.uuid,
+                                                WorkspaceTags.version 
+                                                    == max_ver_sqr.c.maxver))
+                            .order_by(WorkspaceTags.tags).all())
+    except SQLAlchemyError as e:
+        CONSOLE.print("Error while trying to display all tags")
+        LOGGER.error(str(e))
+        return FAILURE
+    LOGGER.debug("Total tags to print {}".format(len(tags_list)))
+    table = RichTable(box=box.HORIZONTALS, show_header=True,
+                      header_style="header", expand=False)
+    table.add_column("tag", justify="left")
+    for tag in tags_list:
+        trow = []
+        LOGGER.debug("Tag: " + tag.tags)
+        trow.append(tag.tags)
+        table.add_row(*trow, style="default")
+    CONSOLE.print(table, soft_wrap=True)        
+    return SUCCESS
