@@ -4376,6 +4376,8 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
         #For notes default modify action is to append
         ws_task.notes = "".join([(ws_task.notes or ""), " ", 
                                  ws_task_src.notes])
+        #Remove the prefix whitespace if notes added to task without notes
+        ws_task.notes = ws_task.notes.lstrip(" ")
 
     if ws_task_src.recur_end == CLR_STR:
         ws_task.recur_end = None
