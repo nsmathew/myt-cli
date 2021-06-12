@@ -5731,7 +5731,6 @@ def display_all_tags():
     Returns:
         integer: Status of Success=0 or Failure=1
     """
-    CONSOLE.print("Preparing view...", style="default")
     try:
         max_ver_sqr = (SESSION.query(Workspace.uuid,
                                 func.max(Workspace.version)
@@ -5751,6 +5750,10 @@ def display_all_tags():
         CONSOLE.print("Error while trying to display all tags")
         LOGGER.error(str(e))
         return FAILURE
+    if not tags_list:
+        LOGGER.debug("No tags found")
+        CONSOLE.print("No tags added to tasks.", style="default")
+        return SUCCESS
     LOGGER.debug("Total tags to print {}".format(len(tags_list)))
     table = RichTable(box=box.HORIZONTALS, show_header=True,
                       header_style="header", expand=False)
@@ -5760,5 +5763,69 @@ def display_all_tags():
         LOGGER.debug("Tag: " + tag.tags)
         trow.append(tag.tags)
         table.add_row(*trow, style="default")
+    CONSOLE.print("Total number of tags: {}".format(len(tags_list)),
+                  style="default")        
+    CONSOLE.print(table, soft_wrap=True)        
+    return SUCCESS
+
+
+def display_all_groups():
+    """
+    Displays a list of the groups used in pending and completed tasks.
+    Shows groups broken down by hierarchy
+    Does not show any groups from the deleted tasks 
+    
+    Parameters:
+        None
+    
+    Returns:
+        integer: Status of Success=0 or Failure=1
+    """
+    try:
+        max_ver_sqr = (SESSION.query(Workspace.uuid,
+                                func.max(Workspace.version)
+                                .label("maxver"))
+                               .filter(and_(Workspace.area.in_(
+                                                            [WS_AREA_PENDING,
+                                                            WS_AREA_COMPLETED]
+                                                            )))
+                               .group_by(Workspace.uuid).subquery())
+        groups_list = (SESSION.query(distinct(Workspace.groups)
+                                .label("groups"))
+                              .filter(and_(Workspace.uuid 
+                                                      == max_ver_sqr.c.uuid,
+                                                Workspace.version 
+                                                    == max_ver_sqr.c.maxver))
+                            .order_by(Workspace.groups).all())
+    except SQLAlchemyError as e:
+        CONSOLE.print("Error while trying to display all groups")
+        LOGGER.error(str(e))
+        return FAILURE
+    if not groups_list:
+        LOGGER.debug("No groups found")
+        CONSOLE.print("No groups added to tasks.", style="default")
+        return SUCCESS
+    LOGGER.debug("Total groups to print before breaking "
+                 " into hierarchy {}".format(len(groups_list)))
+    table = RichTable(box=box.HORIZONTALS, show_header=True,
+                      header_style="header", expand=False)
+    table.add_column("groups", justify="left")
+    all_groups = set()
+    for group in groups_list:
+        if group is not None and group[0] is not None:
+            grp_split = str(group[0]).split(".")
+            grp = ""
+            for item in grp_split:
+                grp = grp + "." + item
+                grp = grp.lstrip(".")
+                if grp.lstrip(".") not in all_groups:
+                    LOGGER.debug("Group: " + grp)
+                    trow = []
+                    trow.append(grp)
+                    table.add_row(*trow, style="default")                    
+                    all_groups.add(grp)
+    CONSOLE.print("Total number of groups: {}".format(len(all_groups)),
+                  style="default")
+    LOGGER.debug("Total grps to print {}".format(len(all_groups)))
     CONSOLE.print(table, soft_wrap=True)        
     return SUCCESS

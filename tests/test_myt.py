@@ -699,3 +699,39 @@ def test_admin_reinit_1():
         result = runner.invoke(admin, ['--reinit'])
         assert "Database removed..." in result.output
         assert "Tasks database initialized..." in result.output
+
+def test_admin_tags_1():
+    with mock.patch('builtins.input', return_value="yes"):
+        runner.invoke(admin, ['--reinit'])    
+    result = runner.invoke(admin, ['--tags'])
+    assert "No tags added to tasks." in result.output
+
+def test_admin_tags_2():
+    runner.invoke(add, ['-de', 'Test task 11.1', '-tg', 'abc,xyz'])
+    runner.invoke(add, ['-de', 'Test task 11.2', '-tg', 'tgh'])
+    result = runner.invoke(admin, ['--tags'])
+    assert "Total number of tags: 3" in result.output
+    assert "abc" in result.output
+    assert "xyz" in result.output
+    assert "tgh" in result.output
+    runner.invoke(delete, ['tg:abc,xyz,tgh'])
+
+def test_admin_groups_1():
+    with mock.patch('builtins.input', return_value="yes"):
+        runner.invoke(admin, ['--reinit'])    
+    result = runner.invoke(admin, ['--groups'])
+    assert "No groups added to tasks." in result.output
+
+def test_admin_groups_2():
+    runner.invoke(add, ['-de', 'Test task 12.1', '-gr', 'PERS.AA1'])
+    runner.invoke(add, ['-de', 'Test task 12.2', '-gr', 'PERS.AA1.AA2'])
+    runner.invoke(add, ['-de', 'Test task 12.3', '-gr', 'OTH.AA3'])
+    result = runner.invoke(admin, ['--groups'])
+    assert "Total number of groups: 5" in result.output
+    assert "OTH" in result.output
+    assert "OTH.AA3" in result.output
+    assert "PERS" in result.output
+    assert "PERS.AA1" in result.output
+    assert "PERS.AA1.AA2" in result.output
+    runner.invoke(delete, ['gr:OTH'])
+    runner.invoke(delete, ['gr:PERS'])
