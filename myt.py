@@ -5756,7 +5756,7 @@ def display_all_tags():
         return FAILURE
     if not tags_list:
         LOGGER.debug("No tags found")
-        CONSOLE.print("No tags added to tasks.", style="default")
+        click.echo("No tags added to tasks.")
         return SUCCESS
     LOGGER.debug("Total tags to print {}".format(len(tags_list)))
     table = RichTable(box=box.HORIZONTALS, show_header=True,
@@ -5767,9 +5767,8 @@ def display_all_tags():
         LOGGER.debug("Tag: " + tag.tags)
         trow.append(tag.tags)
         table.add_row(*trow, style="default")
-    CONSOLE.print("Total number of tags: {}".format(len(tags_list)),
-                  style="default")        
-    CONSOLE.print(table, soft_wrap=True)        
+    click.echo("Total number of tags: {}".format(len(tags_list)))        
+    CONSOLE.print(table, soft_wrap=True)   
     return SUCCESS
 
 
@@ -5807,7 +5806,7 @@ def display_all_groups():
         return FAILURE
     if not groups_list:
         LOGGER.debug("No groups found")
-        CONSOLE.print("No groups added to tasks.", style="default")
+        click.echo("No groups added to tasks.")
         return SUCCESS
     LOGGER.debug("Total groups to print before breaking "
                  " into hierarchy {}".format(len(groups_list)))
@@ -5828,8 +5827,7 @@ def display_all_groups():
                     trow.append(grp)
                     table.add_row(*trow, style="default")                    
                     all_groups.add(grp)
-    CONSOLE.print("Total number of groups: {}".format(len(all_groups)),
-                  style="default")
+    click.echo("Total number of groups: {}".format(len(all_groups)))
     LOGGER.debug("Total grps to print {}".format(len(all_groups)))
-    CONSOLE.print(table, soft_wrap=True)        
+    CONSOLE.print(table, soft_wrap=True)
     return SUCCESS

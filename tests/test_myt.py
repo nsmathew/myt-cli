@@ -626,6 +626,9 @@ def test_now_3(create_task2):
 
 @pytest.fixture
 def create_task3():
+    with mock.patch('builtins.input', return_value="yes"):
+        runner.invoke(delete)
+        runner.invoke(delete, ['hidden'])
     duedt = (date.today() + relativedelta(days=+5)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de','Test task9','-du',duedt, '-gr',
                                  'GRPL1AB.GRPL2CD', '-tg', 
@@ -633,13 +636,7 @@ def create_task3():
     temp = result.output.replace("\n"," ")
     return temp.split(" ")[3]
 
-@pytest.fixture
-def delete_all():
-    with mock.patch('builtins.input', return_value="yes"):
-        result = runner.invoke(delete)
-        result = runner.invoke(delete, ['hidden'])
-
-def test_view1(delete_all, create_task3):
+def test_view1(create_task3):
     duedt = date.today().strftime("%Y-%m-%d")
     runner.invoke(add, ['-de', 'Test task 9.1', '-tg','view1', '-du', duedt])
     result = runner.invoke(view, ['TODAY'])
@@ -648,7 +645,7 @@ def test_view1(delete_all, create_task3):
     assert "Total Pending Tasks: 2, of which Hidden: 0" in result.output
     runner.invoke(delete, ['tg:view1'])
 
-def test_view2(delete_all, create_task3):
+def test_view2(create_task3):
     duedt = (date.today() + relativedelta(days=-4)).strftime("%Y-%m-%d")
     runner.invoke(add, ['-de', 'Test task 9.1', '-tg','view2','-du', duedt])
     result = runner.invoke(view, ['overdue'])
@@ -657,7 +654,7 @@ def test_view2(delete_all, create_task3):
     assert "Total Pending Tasks: 2, of which Hidden: 0" in result.output
     runner.invoke(delete, ['tg:view2'])
 
-def test_view3(delete_all, create_task3):
+def test_view3(create_task3): 
     duedt = (date.today() + relativedelta(days=+10)).strftime("%Y-%m-%d")
     hidedt = (date.today() + relativedelta(days=+8)).strftime("%Y-%m-%d")
     runner.invoke(add, ['-de', 'Test task 9.1', '-tg','view3','-du', 
@@ -668,7 +665,7 @@ def test_view3(delete_all, create_task3):
     assert "Total Pending Tasks: 2, of which Hidden: 1" in result.output
     runner.invoke(delete, ['tg:view3'])
 
-def test_view4(delete_all, create_task3):
+def test_view4(create_task3):
     duedt = (date.today() + relativedelta(days=+10)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de', 'Test task 9.1', '-tg','view4','-du', 
                         duedt])
@@ -704,6 +701,7 @@ def test_admin_tags_1():
     with mock.patch('builtins.input', return_value="yes"):
         runner.invoke(admin, ['--reinit'])    
     result = runner.invoke(admin, ['--tags'])
+    assert result.exit_code == 0
     assert "No tags added to tasks." in result.output
 
 def test_admin_tags_2():
@@ -711,9 +709,6 @@ def test_admin_tags_2():
     runner.invoke(add, ['-de', 'Test task 11.2', '-tg', 'tgh'])
     result = runner.invoke(admin, ['--tags'])
     assert "Total number of tags: 3" in result.output
-    assert "abc" in result.output
-    assert "xyz" in result.output
-    assert "tgh" in result.output
     runner.invoke(delete, ['tg:abc,xyz,tgh'])
 
 def test_admin_groups_1():
@@ -728,10 +723,5 @@ def test_admin_groups_2():
     runner.invoke(add, ['-de', 'Test task 12.3', '-gr', 'OTH.AA3'])
     result = runner.invoke(admin, ['--groups'])
     assert "Total number of groups: 5" in result.output
-    assert "OTH" in result.output
-    assert "OTH.AA3" in result.output
-    assert "PERS" in result.output
-    assert "PERS.AA1" in result.output
-    assert "PERS.AA1.AA2" in result.output
     runner.invoke(delete, ['gr:OTH'])
     runner.invoke(delete, ['gr:PERS'])
