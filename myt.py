@@ -30,6 +30,7 @@ from sqlalchemy.orm import sessionmaker, make_transient
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.sql.functions import coalesce
 
 #Global - START
 DB_SCHEMA_VER = 0.1
@@ -4988,23 +4989,24 @@ def display_by_tags(potential_filters, pager=False, top=None):
         return SUCCESS
     CONSOLE.print("Preparing view...", style="default")
     try:
-        tasksubqr = (SESSION.query(Workspace.uuid,
-                                Workspace.version,
-                                Workspace.area,
-                                Workspace.status)
-                            .filter(tuple_(Workspace.uuid, Workspace.version)
-                                    .in_(uuid_version_results)).subquery())
-        
-        tags_list = (SESSION.query(WorkspaceTags.tags.label("tags"), 
-                                tasksubqr.c.area.label("area"), 
-                                tasksubqr.c.status.label("status"),
-                                func.count(WorkspaceTags.uuid).label("count"))
-                            .join(tasksubqr, and_(WorkspaceTags.uuid 
-                                                    == tasksubqr.c.uuid,
-                                                WorkspaceTags.version 
-                                                    == tasksubqr.c.version))
-                            .group_by(WorkspaceTags.tags, tasksubqr.c.area, 
-                                    tasksubqr.c.status)
+        """
+        bug-7: replaced the query to now include tasks with no tags.
+        Order by is on tags without coalesce to ensure the no tag task count
+        with NULL is shown on the first row.
+        """
+        tags_list = (SESSION.query(coalesce(WorkspaceTags.tags,"No Tag").label("tags"), 
+                                Workspace.area.label("area"), 
+                                Workspace.status.label("status"),
+                                func.count(Workspace.uuid).label("count"))
+                            .outerjoin(WorkspaceTags, and_(Workspace.uuid 
+                                                    == WorkspaceTags.uuid,
+                                                Workspace.version 
+                                                    == WorkspaceTags.version))
+                            .filter(tuple_(Workspace.uuid, 
+                                           Workspace.version)
+                                           .in_(uuid_version_results))
+                            .group_by(WorkspaceTags.tags, Workspace.area, 
+                                    Workspace.status)
                             .order_by(WorkspaceTags.tags).all())
     except SQLAlchemyError as e:
         CONSOLE.print("Error while trying to print by tags")
