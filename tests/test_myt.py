@@ -636,7 +636,7 @@ def test_view4(create_task3):
     assert result.exit_code == 0
     assert "Displayed Tasks: 1" in result.output
     assert "Total Pending Tasks: 2, of which Hidden: 0" in result.output
-    runner.invoke(delete, ['tg:view4'])
+    runner.invoke(delete, ['tg:view4'])                     
 
 def test_admin_empty_1():
     result = runner.invoke(add, ['-de', 'Test task 10.1'])

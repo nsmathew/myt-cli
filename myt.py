@@ -5094,6 +5094,17 @@ def display_by_groups(potential_filters, pager=False, top=None):
                 status_cnt[task.status] = ((status_cnt.get(task.status) or 0) 
                                             + 1)
                 task_cnt[grp.lstrip(".")] = status_cnt
+        else:
+            """
+            Added for Bug-7. Shows additional rows for tasks which do not 
+            have a group
+            """
+            status_cnt = task_cnt.get("No Group")
+            if status_cnt is None:
+                status_cnt = {}
+            status_cnt[task.status] = ((status_cnt.get(task.status) or 0) 
+                                        + 1)
+            task_cnt["No Group"] = status_cnt
     LOGGER.debug("Total grps to print {}".format(len(task_cnt)))
     table = RichTable(box=box.HORIZONTALS, show_header=True,
                       header_style="header", expand=False)
