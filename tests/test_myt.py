@@ -142,10 +142,10 @@ def test_add_re_1():
 
 def test_add_re_2():
     #Witjhout end date
-    duedt = "2021-01-06"
-    nextdt = "2021-01-07"
+    duedt = (date.today() + relativedelta(days=-1)).strftime("%Y-%m-%d")
+    nextdt = (date.today()).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de', 'Test task re 2', '-re', 'D',
-                                 '-tg', 'abc,bnh', '-gr', 'ABC.ONH', '-du',
+                                 '-tg', 're2,bnh', '-gr', 'ABC.ONH', '-du',
                                  duedt])
     assert result.exit_code == 0
     assert ("Recurring task add/updated from " + duedt + 
@@ -153,24 +153,22 @@ def test_add_re_2():
     assert "Added/Updated Task ID:" in result.output
     assert "due : " + duedt in result.output
     assert "due : " + nextdt in result.output
-    assert "tags : abc,bnh" in result.output
+    assert "tags : re2,bnh" in result.output
     assert "task_type : DERIVED" in result.output
     assert "groups : ABC.ONH" in result.output
     assert "recur_mode : D" in result.output
     assert "recur_when : ..." in result.output
-    temp = result.output.replace("\n"," ")
-    create_task = temp.split(" ")[14]
     with mock.patch('builtins.input', return_value="all"):
-        create_task = runner.invoke(delete, ['id:'+str(create_task)])
+        runner.invoke(delete, ['tg:re2'])
 
 def test_add_re_3():
     #With End date
-    duedt = "2021-01-06"
-    nextdt = "2021-01-07"
+    duedt = (date.today() + relativedelta(days=-1)).strftime("%Y-%m-%d")
+    nextdt = (date.today()).strftime("%Y-%m-%d")
     enddt = (datetime.strptime(nextdt,"%Y-%m-%d") 
                 + relativedelta(days=1)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de', 'Test task re 2', '-re', 'D',
-                                 '-tg', 'abc,bnh', '-gr', 'ABC.ONH', '-du',
+                                 '-tg', 're3,bnh', '-gr', 'ABC.ONH', '-du',
                                  duedt, '-en', enddt])
     assert result.exit_code == 0
     assert ("Recurring task add/updated from " + duedt + " until " + enddt + 
@@ -178,24 +176,22 @@ def test_add_re_3():
     assert "Added/Updated Task ID:" in result.output
     assert "due : " + duedt in result.output
     assert "due : " + nextdt in result.output
-    assert "tags : abc,bnh" in result.output
+    assert "tags : re3,bnh" in result.output
     assert "task_type : DERIVED" in result.output
     assert "groups : ABC.ONH" in result.output
     assert "recur_mode : D" in result.output
     assert "recur_when : ..." in result.output
-    temp = result.output.replace("\n"," ")
-    create_task = temp.split(" ")[15]
     with mock.patch('builtins.input', return_value="all"):
-        create_task = runner.invoke(delete, ['id:'+str(create_task)])
+        runner.invoke(delete, ['tg:re3'])
 
 def test_add_re_4():
     #Weekly
-    duedt = "2021-01-06"
-    nextdt = "2021-01-13"
+    duedt = (date.today()).strftime("%Y-%m-%d")
+    nextdt = (date.today() + relativedelta(days=+7)).strftime("%Y-%m-%d")
     enddt = (datetime.strptime(nextdt,"%Y-%m-%d") 
                 + relativedelta(days=1)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de', 'Test task re 2', '-re', 'W','-du',
-                                 duedt, '-en', enddt])
+                                 duedt, '-en', enddt, '-tg', 're4'])
     assert result.exit_code == 0
     assert ("Recurring task add/updated from " + duedt + " until " + enddt + 
             " for recurrence type W-None") in result.output.replace("\n","")
@@ -204,18 +200,16 @@ def test_add_re_4():
     assert "due : " + nextdt in result.output
     assert "recur_mode : W" in result.output
     assert "recur_when : ..." in result.output
-    temp = result.output.replace("\n"," ")
-    create_task = temp.split(" ")[15]
     with mock.patch('builtins.input', return_value="all"):
-        create_task = runner.invoke(delete, ['id:'+str(create_task)])
+        runner.invoke(delete, ['tg:re4'])
 
 def test_add_re_5():
     #Monthly
-    duedt = "2021-01-06"
+    duedt = (date.today()).strftime("%Y-%m-%d")
     enddt = (datetime.strptime(duedt,"%Y-%m-%d") 
                 + relativedelta(days=1)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de', 'Test task re 2', '-re', 'M','-du',
-                                 duedt, '-en', enddt])
+                                 duedt, '-en', enddt, '-tg', 're5'])
     assert result.exit_code == 0
     assert ("Recurring task add/updated from " + duedt + " until " + enddt + 
             " for recurrence type M-None") in result.output.replace("\n","")
@@ -223,18 +217,16 @@ def test_add_re_5():
     assert "due : " + duedt in result.output
     assert "recur_mode : M" in result.output
     assert "recur_when : ..." in result.output
-    temp = result.output.replace("\n"," ")
-    create_task = temp.split(" ")[15]
     with mock.patch('builtins.input', return_value="all"):
-        create_task = runner.invoke(delete, ['id:'+str(create_task)])
+        runner.invoke(delete, ['tg:re5'])
 
 def test_add_re_6():
     #Yearly
-    duedt = "2021-01-06"
+    duedt = (date.today()).strftime("%Y-%m-%d")
     enddt = (datetime.strptime(duedt,"%Y-%m-%d") 
                 + relativedelta(days=1)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de', 'Test task re 2', '-re', 'Y','-du',
-                                 duedt, '-en', enddt])
+                                 duedt, '-en', enddt, '-tg', 're6'])
     assert result.exit_code == 0
     assert ("Recurring task add/updated from " + duedt + " until " + enddt + 
             " for recurrence type Y-None") in result.output.replace("\n","")
@@ -242,19 +234,18 @@ def test_add_re_6():
     assert "due : " + duedt in result.output
     assert "recur_mode : Y" in result.output
     assert "recur_when : ..." in result.output
-    temp = result.output.replace("\n"," ")
-    create_task = temp.split(" ")[15]
     with mock.patch('builtins.input', return_value="all"):
-        create_task = runner.invoke(delete, ['id:'+str(create_task)])
+        runner.invoke(delete, ['tg:re6'])
 
 def test_add_re_7():
     #Every 3 days
-    duedt = "2021-01-03"
-    nextdt = "2021-01-06"
+    duedt = (date.today() + relativedelta(days=-4)).strftime("%Y-%m-%d")
+    nextdt = (datetime.strptime(duedt,"%Y-%m-%d") 
+                + relativedelta(days=3)).strftime("%Y-%m-%d")
     enddt = (datetime.strptime(nextdt,"%Y-%m-%d") 
                 + relativedelta(days=1)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de', 'Test task re 2', '-re', 'DE3','-du',
-                                 duedt, '-en', enddt])
+                                 duedt, '-en', enddt, '-tg', 're7'])
     assert result.exit_code == 0
     assert ("Recurring task add/updated from " + duedt + " until " + enddt + 
             " for recurrence type D-E3") in result.output.replace("\n","")
@@ -263,19 +254,19 @@ def test_add_re_7():
     assert "due : " + nextdt in result.output
     assert "recur_mode : D" in result.output
     assert "recur_when : E3" in result.output
-    temp = result.output.replace("\n"," ")
-    create_task = temp.split(" ")[15]
     with mock.patch('builtins.input', return_value="all"):
-        create_task = runner.invoke(delete, ['id:'+str(create_task)])
+        runner.invoke(delete, ['tg:re7'])
+
 
 def test_add_re_8():
     #Every 2 weeks
-    duedt = "2020-12-30"
-    nextdt = "2021-01-13"
+    duedt = (date.today() + relativedelta(days=-30)).strftime("%Y-%m-%d")
+    nextdt = (datetime.strptime(duedt,"%Y-%m-%d") 
+                + relativedelta(days=14)).strftime("%Y-%m-%d")
     enddt = (datetime.strptime(nextdt,"%Y-%m-%d") 
                 + relativedelta(days=1)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de', 'Test task re 2', '-re', 'WE2','-du',
-                                 duedt, '-en', enddt])
+                                 duedt, '-en', enddt, '-tg', 're8'])
     assert result.exit_code == 0
     assert ("Recurring task add/updated from " + duedt + " until " + enddt + 
             " for recurrence type W-E2") in result.output.replace("\n","")
@@ -284,10 +275,8 @@ def test_add_re_8():
     assert "due : " + nextdt in result.output
     assert "recur_mode : W" in result.output
     assert "recur_when : E2" in result.output
-    temp = result.output.replace("\n"," ")
-    create_task = temp.split(" ")[15]
     with mock.patch('builtins.input', return_value="all"):
-        create_task = runner.invoke(delete, ['id:'+str(create_task)])
+        runner.invoke(delete, ['tg:re8'])
 
 def test_add_re_9():
     #Every 2 months
@@ -296,7 +285,7 @@ def test_add_re_9():
     enddt = (datetime.strptime(nextdt,"%Y-%m-%d") 
                 + relativedelta(days=1)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de', 'Test task re 2', '-re', 'ME2','-du',
-                                 duedt, '-en', enddt])
+                                 duedt, '-en', enddt, '-tg', 're9'])
     assert result.exit_code == 0
     assert ("Recurring task add/updated from " + duedt + " until " + enddt + 
             " for recurrence type M-E2") in result.output.replace("\n","")
@@ -305,10 +294,8 @@ def test_add_re_9():
     assert "due : " + nextdt in result.output
     assert "recur_mode : M" in result.output
     assert "recur_when : E2" in result.output
-    temp = result.output.replace("\n"," ")
-    create_task = temp.split(" ")[15]
     with mock.patch('builtins.input', return_value="all"):
-        create_task = runner.invoke(delete, ['id:'+str(create_task)])
+        runner.invoke(delete, ['tg:re9'])
 
 def test_add_re_10():
     #Every 2 years
@@ -317,7 +304,7 @@ def test_add_re_10():
     enddt = (datetime.strptime(nextdt,"%Y-%m-%d") 
                 + relativedelta(days=1)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de', 'Test task re 2', '-re', 'YE2','-du',
-                                 duedt, '-en', enddt])
+                                 duedt, '-en', enddt, '-tg', 're10'])
     assert result.exit_code == 0
     assert ("Recurring task add/updated from " + duedt + " until " + enddt + 
             " for recurrence type Y-E2") in result.output.replace("\n","")
@@ -326,10 +313,8 @@ def test_add_re_10():
     assert "due : " + nextdt in result.output
     assert "recur_mode : Y" in result.output
     assert "recur_when : E2" in result.output
-    temp = result.output.replace("\n"," ")
-    create_task = temp.split(" ")[15]
     with mock.patch('builtins.input', return_value="all"):
-        create_task = runner.invoke(delete, ['id:'+str(create_task)])
+        runner.invoke(delete, ['tg:re10'])
 
 def test_add_re_11():
     #Every Monday and Wednesday
@@ -338,7 +323,7 @@ def test_add_re_11():
     enddt = (datetime.strptime(nextdt,"%Y-%m-%d") 
                 + relativedelta(days=1)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de', 'Test task re 2', '-re', 'WD1,3','-du',
-                                 duedt, '-en', enddt])
+                                 duedt, '-en', enddt, '-tg', 're11'])
     assert result.exit_code == 0
     assert ("Recurring task add/updated from " + duedt + " until " + enddt + 
             " for recurrence type WD-1,3") in result.output.replace("\n","")
@@ -347,31 +332,8 @@ def test_add_re_11():
     assert "due : " + nextdt in result.output
     assert "recur_mode : WD" in result.output
     assert "recur_when : 1,3" in result.output
-    temp = result.output.replace("\n"," ")
-    create_task = temp.split(" ")[15]
     with mock.patch('builtins.input', return_value="all"):
-        create_task = runner.invoke(delete, ['id:'+str(create_task)])
-
-def test_add_re_11():
-    #Every Monday and Wednesday
-    duedt = "2021-01-04"
-    nextdt = "2021-01-06"
-    enddt = (datetime.strptime(nextdt,"%Y-%m-%d") 
-                + relativedelta(days=1)).strftime("%Y-%m-%d")
-    result = runner.invoke(add, ['-de', 'Test task re 2', '-re', 'WD1,3','-du',
-                                 duedt, '-en', enddt])
-    assert result.exit_code == 0
-    assert ("Recurring task add/updated from " + duedt + " until " + enddt + 
-            " for recurrence type WD-1,3") in result.output.replace("\n","")
-    assert "Added/Updated Task ID:" in result.output
-    assert "due : " + duedt in result.output
-    assert "due : " + nextdt in result.output
-    assert "recur_mode : WD" in result.output
-    assert "recur_when : 1,3" in result.output
-    temp = result.output.replace("\n"," ")
-    create_task = temp.split(" ")[15]
-    with mock.patch('builtins.input', return_value="all"):
-        create_task = runner.invoke(delete, ['id:'+str(create_task)])
+        runner.invoke(delete, ['tg:re11'])
 
 def test_add_re_12():
     #Every 3rd and 5th of month
@@ -380,7 +342,7 @@ def test_add_re_12():
     enddt = (datetime.strptime(nextdt,"%Y-%m-%d") 
                 + relativedelta(days=1)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de', 'Test task re 2', '-re', 'MD3,5','-du',
-                                 duedt, '-en', enddt])
+                                 duedt, '-en', enddt, '-tg', 're12'])
     assert result.exit_code == 0
     assert ("Recurring task add/updated from " + duedt + " until " + enddt + 
             " for recurrence type MD-3,5") in result.output.replace("\n","")
@@ -389,10 +351,8 @@ def test_add_re_12():
     assert "due : " + nextdt in result.output
     assert "recur_mode : MD" in result.output
     assert "recur_when : 3,5" in result.output
-    temp = result.output.replace("\n"," ")
-    create_task = temp.split(" ")[15]
     with mock.patch('builtins.input', return_value="all"):
-        create_task = runner.invoke(delete, ['id:'+str(create_task)])
+        runner.invoke(delete, ['tg:re12'])
 
 def test_add_re_13():
     #Every October and December
@@ -401,7 +361,7 @@ def test_add_re_13():
     enddt = (datetime.strptime(nextdt,"%Y-%m-%d") 
                 + relativedelta(days=1)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de', 'Test task re 2', '-re', 'MO10,12',
-                                 '-du', duedt, '-en', enddt])
+                                 '-du', duedt, '-en', enddt, '-tg', 're13'])
     assert result.exit_code == 0
     assert ("Recurring task add/updated from " + duedt + " until " + enddt + 
             " for recurrence type MO-10,12") in result.output.replace("\n","")
@@ -410,10 +370,9 @@ def test_add_re_13():
     assert "due : " + nextdt in result.output
     assert "recur_mode : MO" in result.output
     assert "recur_when : 10,12" in result.output
-    temp = result.output.replace("\n"," ")
-    create_task = temp.split(" ")[15]
     with mock.patch('builtins.input', return_value="all"):
-        create_task = runner.invoke(delete, ['id:'+str(create_task)])
+        runner.invoke(delete, ['tg:re13'])
+
 
 @pytest.fixture
 def create_task():
@@ -627,8 +586,9 @@ def test_now_3(create_task2):
 @pytest.fixture
 def create_task3():
     with mock.patch('builtins.input', return_value="yes"):
-        runner.invoke(delete)
-        runner.invoke(delete, ['hidden'])
+        result = runner.invoke(delete)
+    with mock.patch('builtins.input', return_value="yes"):
+        result = runner.invoke(delete, ['hidden'])        
     duedt = (date.today() + relativedelta(days=+5)).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de','Test task9','-du',duedt, '-gr',
                                  'GRPL1AB.GRPL2CD', '-tg', 
