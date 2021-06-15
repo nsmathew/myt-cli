@@ -539,18 +539,18 @@ def test_done_1(create_task2):
     assert result.exit_code == 0
     assert "Updated Task UUID:" in result.output
     assert "status : DONE" in result.output
-    runner.invoke(delete, ['DONE','tg:'+'tag1'])
+    runner.invoke(delete, ['complete','tg:'+'tag1'])
 
 def test_delete_1(create_task2):
     runner.invoke(done, ['id:'+str(create_task2)])
     result = runner.invoke(delete, ['id:99999'])
     assert result.exit_code == 0
     assert "No applicable tasks to delete" in result.output
-    runner.invoke(delete, ['DONE','tg:'+'tag1'])
+    runner.invoke(delete, ['complete','tg:'+'tag1'])
 
 def test_delete_2(create_task2):
     runner.invoke(done, ['id:'+str(create_task2)])
-    result = runner.invoke(delete, ['DONE', 'tg:'+'tag1'])
+    result = runner.invoke(delete, ['complete', 'tg:'+'tag1'])
     assert result.exit_code == 0
     assert "Updated Task UUID:" in result.output
 
@@ -559,7 +559,7 @@ def test_now_1(create_task2):
     result = runner.invoke(now, ['id:'+str(create_task2)])
     assert result.exit_code == 0
     assert "now_flag : True" in result.output
-    runner.invoke(delete, ['DONE','tg:'+'tag1'])
+    runner.invoke(delete, ['tg:'+'tag1'])
 
 def test_now_2(create_task2):
     #Now as False
@@ -567,7 +567,7 @@ def test_now_2(create_task2):
     result = runner.invoke(now, ['id:'+str(create_task2)])
     assert result.exit_code == 0
     assert "now_flag : ..." in result.output
-    runner.invoke(delete, ['DONE','tg:'+'tag1'])
+    runner.invoke(delete, ['tg:'+'tag1'])
 
 def test_now_3(create_task2):
     #Set another task as Now when a task is already set as Now
@@ -581,7 +581,7 @@ def test_now_3(create_task2):
     assert result.exit_code == 0
     assert "now_flag : True" in result.output
     assert "now_flag : ..." in result.output
-    runner.invoke(delete, ['DONE','tg:'+'tag1'])
+    runner.invoke(delete, ['tg:'+'tag1'])
 
 @pytest.fixture
 def create_task3():

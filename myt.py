@@ -2741,7 +2741,7 @@ def get_task_uuid_n_ver(potential_filters):
             """
             tag_list = tag.split(",")
             LOGGER.debug("Inside tag filter with below params")
-            LOGGER.debug(tag_list)
+            LOGGER.debug(tag_list)   
             if tag:
                 #If tag is provided search by tag
                 innrqr_tags = (SESSION.query(WorkspaceTags.uuid,
@@ -2751,8 +2751,12 @@ def get_task_uuid_n_ver(potential_filters):
                                         max_ver_sqr.c.maxver,
                                         WorkspaceTags.uuid ==
                                         max_ver_sqr.c.uuid))
+                            .join(Workspace, and_(Workspace.uuid ==
+                                                    WorkspaceTags.uuid,
+                                                  Workspace.version ==
+                                                    WorkspaceTags.version))
                             .filter(and_(WorkspaceTags.tags.in_(tag_list),
-                                            Workspace.area == drvd_area)))
+                                         Workspace.area == drvd_area)))
             else:
                 #No tag provided, so any task that has a tag
                 innrqr_tags = (SESSION.query(WorkspaceTags.uuid,
@@ -2762,6 +2766,10 @@ def get_task_uuid_n_ver(potential_filters):
                                         max_ver_sqr.c.maxver,
                                         WorkspaceTags.uuid ==
                                         max_ver_sqr.c.uuid))
+                            .join(Workspace, and_(Workspace.uuid ==
+                                                    WorkspaceTags.uuid,
+                                                  Workspace.version ==
+                                                    WorkspaceTags.version))                                        
                             .filter(Workspace.area == drvd_area))
             innrqr_list.append(innrqr_tags)
         if notes is not None:
