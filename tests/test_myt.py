@@ -134,6 +134,16 @@ def test_add_5_7():
     create_task = temp.split(" ")[3]
     create_task = runner.invoke(delete, ['id:'+str(create_task)])
 
+def test_add_5_8():
+    result = runner.invoke(add, ['-de','Test task5_8', '-tg', 
+                                 ',abc,ghj,abc,'])
+    assert result.exit_code == 0
+    assert "Added/Updated Task ID:" in result.output
+    assert "tags : abc,ghj" in result.output
+    temp = result.output.replace("\n"," ")
+    create_task = temp.split(" ")[3]
+    create_task = runner.invoke(delete, ['id:'+str(create_task)])
+
 def test_add_re_1():
     #With no due date
     result = runner.invoke(add, ['-de', 'Test task re 1', '-re', 'D'])
@@ -487,6 +497,14 @@ def test_modify_11_3(create_task):
     assert result.exit_code == 0
     assert "Added/Updated Task ID:" in result.output
     assert "priority : N" in result.output
+    runner.invoke(delete, ['id:'+str(create_task)])
+
+def test_modify_11_3(create_task):
+    result = runner.invoke(modify, ['id:'+str(create_task),
+                                    '-tg',',-tag1,-tag1,tag4,xyz,tag4,'])
+    assert result.exit_code == 0
+    assert "Added/Updated Task ID:" in result.output
+    assert "tags : tag2,tag3,tag4,xyz" in result.output
     runner.invoke(delete, ['id:'+str(create_task)])
 
 @pytest.fixture

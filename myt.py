@@ -480,7 +480,17 @@ def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose):
                             due=due, hide=hide, groups=group, now_flag=False,
                             notes=notes)
         if tag is not None:
-            ws_tags_list = generate_tags((tag.lstrip(",")).rstrip(","))
+            """
+            bug-17 to handle duplicate tags on input.
+            Below logic removes a preceeding and succeeding ','
+            Dict used to removes any duplicates. Examples:
+            ab,nh : ab,nh
+            ab,ab,nh : ab,nh
+            ,-ab,nh,-ab, : -ab,nh
+            """
+            tags_list_text = ",".join(dict.fromkeys(filter(None,tag.split(","))))
+            LOGGER.debug("After cleaning tags are: {}".format(tags_list_text))
+            ws_tags_list = generate_tags(tags_list_text)
         else:
             ws_tags_list = None
         due = convert_date(due)
@@ -742,7 +752,16 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
         when = None
         mode = None
     if tag is not None:
-        tag = (tag.lstrip(",")).rstrip(",")
+        """
+        bug-17 to handle duplicate tags on input.
+        Below logic removes a preceeding and succeeding ','
+        Dict used to removes any duplicates. Examples:
+        ab,nh : ab,nh
+        ab,ab,nh : ab,nh
+        ,-ab,nh,-ab, : -ab,nh
+        """
+        tag = ",".join(dict.fromkeys(filter(None,tag.split(","))))
+        LOGGER.debug("After cleaning tags are: {}".format(tag))     
     else:
         tag = None
     if end is not None:
@@ -1245,7 +1264,7 @@ def delete(filters, verbose):
               is_flag=True,
               help=("View all groups available across pending and completed "
                     "tasks."),
-              )              
+              )
 @click.option("--verbose",
               "-v",
               is_flag=True,
