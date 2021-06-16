@@ -813,6 +813,33 @@ def now(filters, verbose):
         SESSION.commit()
         get_and_print_task_count({WS_AREA_PENDING: "yes",
                                  PRNT_TASK_DTLS: task_tags_print})
+        """
+        fet-16 When toggling now flag, ask user if they want to start
+        the task as well if it is in TO DO status and it is being
+        set to now.
+        """
+        if task_tags_print is not None:
+            LOGGER.debug("Checking if we need to ask user to start task")
+            for item in task_tags_print:
+                #1st item is the task object
+                ws_task = item[0]
+                """
+                There could be 2 tasks in the list when running now
+                in a sceanrio where there is a task that is already 'now'
+                Hence checking for the task id.
+                """
+                task_id = str(ws_task.id)
+                if (task_id == potential_filters.get("id") and
+                    ws_task.status == TASK_STATUS_TODO and
+                    ws_task.now_flag == True):
+                    if not confirm_prompt("Do you want to start task with "
+                                          "id {}".format(ws_task.id)):
+                        LOGGER.debug("User did not request to start task")
+                        exit_app(SUCCESS)
+                    else:
+                        LOGGER.debug("User requested to start task")
+                        start(("".join(["id:",task_id]),), verbose)
+                    break
     exit_app(ret)
 
 

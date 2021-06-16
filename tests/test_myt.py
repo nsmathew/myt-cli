@@ -574,14 +574,16 @@ def test_delete_2(create_task2):
 
 def test_now_1(create_task2):
     #Now as True
-    result = runner.invoke(now, ['id:'+str(create_task2)])
+    with mock.patch('builtins.input', return_value="no"):
+        result = runner.invoke(now, ['id:'+str(create_task2)])
     assert result.exit_code == 0
     assert "now_flag : True" in result.output
     runner.invoke(delete, ['tg:'+'tag1'])
 
 def test_now_2(create_task2):
     #Now as False
-    result = runner.invoke(now, ['id:'+str(create_task2)])
+    with mock.patch('builtins.input', return_value="yes"):
+        result = runner.invoke(now, ['id:'+str(create_task2)])
     result = runner.invoke(now, ['id:'+str(create_task2)])
     assert result.exit_code == 0
     assert "now_flag : ..." in result.output
@@ -589,17 +591,45 @@ def test_now_2(create_task2):
 
 def test_now_3(create_task2):
     #Set another task as Now when a task is already set as Now
-    runner.invoke(now, ['id:'+str(create_task2)])
+    with mock.patch('builtins.input', return_value="no"):
+        runner.invoke(now, ['id:'+str(create_task2)])
     result = runner.invoke(add, ['-de','Test task8','-du','2020-12-25', '-gr',
                            'GRPL1.GRPL2', '-tg', 'tag1,tag2,tag3'])
     temp = result.output.replace("\n"," ")
     idn = temp.split(" ")[3]
-    result = runner.invoke(now, ['id:'+str(idn)])
-
+    with mock.patch('builtins.input', return_value="no"):
+        result = runner.invoke(now, ['id:'+str(idn)])
     assert result.exit_code == 0
     assert "now_flag : True" in result.output
     assert "now_flag : ..." in result.output
     runner.invoke(delete, ['tg:'+'tag1'])
+
+def test_now_4(create_task2):
+    #set as now and start task
+    with mock.patch('builtins.input', return_value="yes"):
+        result = runner.invoke(now, ['id:'+str(create_task2)])
+    assert result.exit_code == 0
+    assert "now_flag : True" in result.output
+    assert "status : STARTED" in result.output
+    runner.invoke(delete, ['id:'+str(create_task2)])
+
+def test_now_5(create_task2):
+    #set as now and do not start task
+    with mock.patch('builtins.input', return_value="no"):
+        result = runner.invoke(now, ['id:'+str(create_task2)])
+    assert result.exit_code == 0
+    assert "now_flag : True" in result.output
+    assert "status : TO_DO" in result.output
+    runner.invoke(delete, ['id:'+str(create_task2)])
+
+def test_now_6(create_task2):
+    #Set as now and for started task it should remain started
+    runner.invoke(start, ['id:'+str(create_task2)])
+    result = runner.invoke(now, ['id:'+str(create_task2)])
+    assert result.exit_code == 0
+    assert "now_flag : True" in result.output
+    assert "status : STARTED" in result.output
+    runner.invoke(delete, ['id:'+str(create_task2)])
 
 @pytest.fixture
 def create_task3():
