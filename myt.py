@@ -157,6 +157,8 @@ OPS_UNLINK = "unlink"
 OPS_DONE = "done"
 # ORM Definition
 Base = declarative_base()
+# Changelog URL
+CHANGELOG = "https://github.com/nsmathew/myt-cli/blob/master/CHANGELOG.md"
 
 
 class Workspace(Base):
@@ -335,7 +337,10 @@ def version():
     """
     Prints the application version number
     """
+    global CHANGELOG
     CONSOLE.print(metadata.version('myt-cli'))
+    CONSOLE.print("Visit {} for the change log.".format(CHANGELOG))
+    CONSOLE.print()
     exit_app(SUCCESS)
 
 # Add
