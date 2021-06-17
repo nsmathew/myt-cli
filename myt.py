@@ -735,6 +735,11 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
                  " tag - {}"
                  .format(desc, due, hide, group, tag))
     # Perform validations
+    if (potential_filters.get(TASK_COMPLETE) == "yes" or 
+            potential_filters.get(TASK_BIN) == "yes"):
+        CONSOLE.print("Modify can be run only on 'pending' tasks.",
+                      style="default")
+        exit_app(SUCCESS)
     if (desc is None and priority is None and due is None and hide is None
             and group is None and tag is None and recur is None 
             and notes is None and end is None):
@@ -829,6 +834,11 @@ def now(filters, verbose):
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
+    if (potential_filters.get(TASK_COMPLETE) == "yes" or 
+            potential_filters.get(TASK_BIN) == "yes"):
+        CONSOLE.print("Now can be run only on 'pending' tasks.",
+                      style="default")
+        exit_app(SUCCESS)
     if potential_filters.get("id") is None:
         CONSOLE.print("NOW flag can be modified only with a task ID filter",
                       style="default")
@@ -839,9 +849,6 @@ def now(filters, verbose):
         exit_app(SUCCESS)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if potential_filters.get(TASK_BIN) == "yes":
-        CONSOLE.print("Cannot apply operation to deleted tasks")
-        exit_app(SUCCESS)
     event_id = get_event_id()
     ret, task_tags_print = toggle_now(potential_filters, event_id)
     if ret == SUCCESS:
@@ -912,8 +919,10 @@ def start(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if potential_filters.get(TASK_BIN) == "yes":
-        CONSOLE.print("Cannot apply operation to deleted tasks")
+    if (potential_filters.get(TASK_COMPLETE) == "yes" or 
+            potential_filters.get(TASK_BIN) == "yes"):
+        CONSOLE.print("Start can be run only on 'pending' tasks.",
+                      style="default")
         exit_app(SUCCESS)
     if potential_filters.get(TASK_ALL) == "yes":
         if not confirm_prompt("No filters given for starting tasks,"
@@ -964,8 +973,10 @@ def done(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if potential_filters.get(TASK_BIN) == "yes":
-        CONSOLE.print("Cannot apply operation to deleted tasks")
+    if (potential_filters.get(TASK_COMPLETE) == "yes" or 
+            potential_filters.get(TASK_BIN) == "yes"):
+        CONSOLE.print("Done can be run only on 'pending' tasks.",
+                      style="default")
         exit_app(SUCCESS)
     if potential_filters.get(TASK_ALL) == "yes":
         if not confirm_prompt("No filters given for marking tasks as done,"
@@ -1076,11 +1087,10 @@ def reset(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if potential_filters.get(TASK_BIN) == "yes":
-        CONSOLE.print("Cannot apply operation to deleted tasks")
-        exit_app(SUCCESS)
-    if potential_filters.get(TASK_COMPLETE) == "yes":
-        CONSOLE.print("Cannot apply operation to completed tasks")
+    if (potential_filters.get(TASK_COMPLETE) == "yes" or 
+            potential_filters.get(TASK_BIN) == "yes"):
+        CONSOLE.print("Reset can be run only on 'pending' tasks.",
+                      style="default")
         exit_app(SUCCESS)
     if potential_filters.get(HL_FILTERS_ONLY) == "yes":
         if not confirm_prompt("No detailed filters given for reset of tasks "
@@ -1131,8 +1141,10 @@ def stop(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if potential_filters.get(TASK_BIN) == "yes":
-        CONSOLE.print("Cannot apply operation to deleted tasks")
+    if (potential_filters.get(TASK_COMPLETE) == "yes" or 
+            potential_filters.get(TASK_BIN) == "yes"):
+        CONSOLE.print("Stop can be run only on 'pending' tasks.",
+                      style="default")
         exit_app(SUCCESS)
     if potential_filters.get(TASK_ALL) == "yes":
         if not confirm_prompt("No filters given for stopping tasks, "
@@ -1291,6 +1303,10 @@ def delete(filters, verbose):
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
+    if (potential_filters.get(TASK_BIN) == "yes"):
+        CONSOLE.print("Delete cannot be run on deleted tasks.",
+                      style="default")    
+        exit_app(SUCCESS)
     if potential_filters.get(HL_FILTERS_ONLY) == "yes":
         if not confirm_prompt("No detailed filters given for deleting tasks, "
                               "are you sure?"):
@@ -1569,7 +1585,7 @@ def reinitialize_db(verbose):
     with CONSOLE.capture() as capture:
         CONSOLE.print("Database removed...", style="info")
     click.echo(capture.get(), nl=False)
-    ret = connect_to_tasksdb(verbose=verbose, legacy=False)
+    ret = connect_to_tasksdb(verbose=verbose)
     return ret
 
 

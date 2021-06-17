@@ -507,6 +507,16 @@ def test_modify_11_3(create_task):
     assert "tags : tag2,tag3,tag4,xyz" in result.output
     runner.invoke(delete, ['id:'+str(create_task)])
 
+def test_modify_12_1():
+    result = runner.invoke(modify, ['complete'])
+    assert result.exit_code == 0
+    assert "Modify can be run only on 'pending' tasks." in result.output
+
+def test_modify_12_2():
+    result = runner.invoke(modify, ['bin'])
+    assert result.exit_code == 0
+    assert "Modify can be run only on 'pending' tasks." in result.output
+
 @pytest.fixture
 def create_task2():
     result = runner.invoke(add, ['-de','Test task8','-du','2020-12-25', '-gr',
@@ -521,6 +531,16 @@ def test_start_1(create_task2):
     assert "status : STARTED" in result.output
     runner.invoke(delete, ['id:'+str(create_task2)])
 
+def test_start_2_1():
+    result = runner.invoke(start, ['complete'])
+    assert result.exit_code == 0
+    assert "Start can be run only on 'pending' tasks." in result.output
+
+def test_start_2_2():
+    result = runner.invoke(start, ['bin'])
+    assert result.exit_code == 0
+    assert "Start can be run only on 'pending' tasks." in result.output 
+
 def test_stop_1(create_task2):
     result = runner.invoke(start, ['id:'+str(create_task2)])
     result = runner.invoke(stop, ['id:'+str(create_task2)])
@@ -528,6 +548,16 @@ def test_stop_1(create_task2):
     assert "Added/Updated Task ID:" in result.output
     assert "status : TO_DO" in result.output
     runner.invoke(delete, ['id:'+str(create_task2)])
+
+def test_stop_2_1():
+    result = runner.invoke(stop, ['complete'])
+    assert result.exit_code == 0
+    assert "Stop can be run only on 'pending' tasks." in result.output
+
+def test_stop_2_2():
+    result = runner.invoke(stop, ['bin'])
+    assert result.exit_code == 0
+    assert "Stop can be run only on 'pending' tasks." in result.output 
 
 def test_reset_1(create_task2):
     result = runner.invoke(start, ['id:'+str(create_task2)])
@@ -538,6 +568,16 @@ def test_reset_1(create_task2):
     assert "Added/Updated Task ID:" in result.output
     assert "status : TO_DO" in result.output
     runner.invoke(delete, ['id:'+str(new_id)])
+
+def test_reset_2_1():
+    result = runner.invoke(reset, ['complete'])
+    assert result.exit_code == 0
+    assert "Reset can be run only on 'pending' tasks." in result.output
+
+def test_reset_2_2():
+    result = runner.invoke(reset, ['bin'])
+    assert result.exit_code == 0
+    assert "Reset can be run only on 'pending' tasks." in result.output 
 
 def test_revert_1(create_task2):
     result = runner.invoke(start, ['id:'+str(create_task2)])
@@ -552,12 +592,28 @@ def test_revert_1(create_task2):
     assert "status : TO_DO" in result.output
     runner.invoke(delete, ['id:'+str(new_id)])
 
+def test_revert_2_1():
+    result = runner.invoke(revert, ['bin'])
+    assert result.exit_code == 0
+    assert ("Revert is applicable only to completed tasks. Use 'complete' "
+           "filter in command") in result.output    
+
 def test_done_1(create_task2):
     result = runner.invoke(done, ['id:'+str(create_task2)])
     assert result.exit_code == 0
     assert "Updated Task UUID:" in result.output
     assert "status : DONE" in result.output
     runner.invoke(delete, ['complete','tg:'+'tag1'])
+
+def test_done_2_1():
+    result = runner.invoke(done, ['complete'])
+    assert result.exit_code == 0
+    assert "Done can be run only on 'pending' tasks." in result.output
+
+def test_done_2_2():
+    result = runner.invoke(done, ['bin'])
+    assert result.exit_code == 0
+    assert "Done can be run only on 'pending' tasks." in result.output 
 
 def test_delete_1(create_task2):
     runner.invoke(done, ['id:'+str(create_task2)])
@@ -571,6 +627,11 @@ def test_delete_2(create_task2):
     result = runner.invoke(delete, ['complete', 'tg:'+'tag1'])
     assert result.exit_code == 0
     assert "Updated Task UUID:" in result.output
+
+def test_delete_3():
+    result = runner.invoke(delete, ['bin'])
+    assert result.exit_code == 0
+    assert "Delete cannot be run on deleted tasks." in result.output 
 
 def test_now_1(create_task2):
     #Now as True
@@ -630,6 +691,16 @@ def test_now_6(create_task2):
     assert "now_flag : True" in result.output
     assert "status : STARTED" in result.output
     runner.invoke(delete, ['id:'+str(create_task2)])
+
+def test_now_7_1():
+    result = runner.invoke(now, ['complete'])
+    assert result.exit_code == 0
+    assert "Now can be run only on 'pending' tasks." in result.output
+
+def test_now_7_2():
+    result = runner.invoke(now, ['bin'])
+    assert result.exit_code == 0
+    assert "Now can be run only on 'pending' tasks." in result.output 
 
 @pytest.fixture
 def create_task3():
