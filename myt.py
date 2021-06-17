@@ -383,7 +383,8 @@ def version():
 @click.option("--notes",
               "-no",
               type=str,
-              help="Add some notes",
+              help="Add some notes. You can also add URLs with a description "
+              "for them using the format 'https://abc.com [ABC's website]'.",
               )
 @click.option("--verbose",
               "-v",
@@ -608,7 +609,9 @@ def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose):
 @click.option("--notes",
               "-no",
               type=str,
-              help="Add some notes. Use 'clr' to clear notes.",
+              help="Add some notes. You can also add URLs with a description "
+              "for them using the format 'https://abc.com [ABC's website]'. "
+              "Use 'clr' to clear notes.",
               )
 @click.option("--verbose",
               "-v",
@@ -791,6 +794,38 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
               help="Enable verbose Logging.",
               )
 def now(filters, verbose):
+    """
+    Toggles the 'now' status of the task
+
+    For tasks you would like to give the highest priority to indicate
+    you are working on now you can use the 'now' command. This will ensure
+    the task is given a signifcantly higher score, therby pushing it to the
+    top of the task's view.
+    
+    At any point only 1 task can be set as 'now'. 'now' tasks are shown in a 
+    different colour. The behaviour otherwise remains the same as any other 
+    task. If you are setting a task to 'now' and if it is not started you will
+    be asked if you would like to start it.
+
+    As this is a toggle type command you use the same command to set and remove
+    the 'now' status for a task.
+
+    --- FILTERS ---
+    
+    Now tasks accept only the 'id:' filter and only 1 task id in the filter
+
+    --- EXAMPLES ---
+
+    Scenario - 2 tasks are available with ids 1 and 2, neither are set as 'now'
+
+    myt now id:2 - This will set task 2 as 'now'
+
+    myt now id:1 - This will set task 1 as 'now' while removing the 'now' 
+    status for task 2
+
+    myt now id:1 - This will remove 'now' for task 1. At this point there will be 
+    no tasks set as 'now'
+    """
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
@@ -853,6 +888,25 @@ def now(filters, verbose):
               help="Enable verbose Logging.",
               )
 def start(filters, verbose):
+    """
+    Set a task as started or in progress
+
+    Allows to track tasks that are in progress. When a task is started
+    the task status changes to 'STARTED' and duration is kept track off 
+    against when the task was started. 
+
+    You can stop tasks at which point they go into 'TO_DO' status and 
+    the duration tracking is paued. They can be started again and the
+    duration tracking will continue.
+
+    The task remains in the 'pending' area. This command is only applicable
+    for tasks in the 'pending' area.    
+
+    --- FILTERS ---
+
+    Please refer the help for the 'modify' command for information on
+    available filters
+    """
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
@@ -884,6 +938,27 @@ def start(filters, verbose):
               help="Enable verbose Logging.",
               )
 def done(filters, verbose):
+    """
+    Set a task as completed.
+
+    To be used when a task is completed. This will set the task's status as 
+    'DONE' and move the task into the 'completed' area. Tasks in the 
+    'completed' area are not shown in the default 'view' command but
+    can be viewed when using the 'complete' filter. Refer the help for the
+    'view' command for more details.
+
+    If the task was in 'STARTED' state the duractionm tracking is stopped
+    and overall task duration is recorded. Tasks can be moved back to the
+    'TO_DO' status by using the 'revert' command.
+
+    The task remains in the 'pending' area. This command is only applicable
+    for tasks in the 'pending' area.    
+
+    --- FILTERS ---
+
+    Please refer the help for the 'modify' command for information on
+    available filters
+    """
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
@@ -916,82 +991,32 @@ def done(filters, verbose):
               )
 def revert(filters, verbose):
     """
-    Revert a completed task to pending area and from DONE to TO_DO status.
-    Ensure the high level modifier 'COMPLETE' is used.
-    Does not work for DELETED tasks and TO_DO tasks.
+    Reverts a completed task as pending
 
-    --- FILTERS --- 
-    
-    Filters can take various forms, refer below. Format is 'field:value'.
+    This command is used to change a task's status from 'DONE' to
+    'TO_DO'. This will move the task from the 'completed' area to the 
+    'pending' area. Once done operations applicable to a 'TO_DO' task
+    can be performed on it. This can also be used on recurring tasks.
 
-    id - Filter on tasks by id. This filters works by itself and cannot be
-    combined as this is most specific. Works on tasks which are in status 
-    'TO_DO', 'STARTED'. Ex - id:4,10
+    The duration of the tasks is retained upon revert. If you 'start' the
+    task then the duration tracking continues. Additionally the revert
+    command only work in the 'completed' area hence you need to use the
+    'complete' filter when running the command, refer the examples.
 
-    uuid - Filter on tasks by uuid. This works by itself and cannot be 
-    combined with other filters. Works on tasks with status 'DONE' or 
-    'DELETED'. Ex - uuid:31726cd2-2db3-4ae4-97ae-b2b7b29a7307
-    
-    desc - Filter on tasks by description. The filter searches within task
-    descriptions. Can be combined with other filters. Ex - de:fitness or
-    desc:fitness
-    
-    groups - Filter on tasks by the group name. Can be combined with other
-    filters. Ex - gr:HOME.BILLS or group:HOME.BILLS
-    
-    tags - Filter tasks on tags, can be provided as comman separated. Can be
-    combined with other filters. Ex - tg:bills,finance or tag:bills,finance
-    
-    priority - Filter tasks on the priority. Can be combined with other 
-    filters. Ex - pr:M or priority:Medium
+    --- FILTERS ---
 
-    notes - Filter tasks on the notes. Can be combined with other filters. 
-    Ex - no:"avenue 6" or notes:"avenue 6"
-
-    due, hide, end - Filter tasks on dates. It is possible to filter based on
-    various conditions as explained below with examples using due/du
-    
-        Equal To - du:eq:+1 Tasks due tomorrow\n
-        Less Than - du:lt:+0 Tasks with due dates earlier than today\n
-        Less Than or Equal To - due:le:+0 Tasks due today or earlier\n
-        Greater Than - du:gt:2020-12-10 Tasks with due date after 10th Dec '20
-        \n
-        Greater Than or Equal To - du:ge:+7 Tasks due in 7 days or beyond\n
-        Between - du:bt:2020-12-01:2020-12-07 Tasks due in the first 7 days of
-        Dec '20. Both dates are inclusive\n
-        The same works for hide/hi and end/en as well. For hide when using the 
-        short form of the date as '-X' this is relative to today and noty due 
-        date. When providing an input value for hide with this format '-X' is
-        relative to the due date.\n
-    
-    'started' - Filter all tasks that are in 'STARTED' status. Can be combined 
-    with other filters.
-    
-    'now' - Filter on the task marked as 'NOW'.
-    
-    The next section documents High Level Filters and should be used with 
-    caution as they could modify large number of tasks.
-    
-    'complete' - Filters all tasks that are in 'DONE' status. Mandatory filter  
-    when operating on tasks in the 'completed' are or tasks which are 'DONE'.
-    
-    'bin' - Filters all tasks that are in the DELETED status or in the bin and 
-    mandatory when operating on such tasks.
-    
-    'hidden' - Filters all tasks that are currently hidden from the normal
-    view command but are still pending, 'TO_DO' or 'STARTED'. Mandatory filter
-    when operating on tasks that are currently hidden.
-    
-    'today' - Filters all tasks that are due today. Works on pending tasks only
-    
-    'overdue' - Filters all tasks that are overdue. Works on pending tasks only
+    Please refer the help for the 'modify' command for information on
+    available filters
 
     --- EXAMPLES ---
-    myt revert complete uuid:45da6633-d335-4a00-99f2-3678e132a85e - Revert a 
-    done task with a particular uuid
+    
+    myt revert complete tg:bills - This will revert all completed tasks
+    which have the tag 'bills'.
 
-    myt revert complete tg:planning - Revert all tasks in DONE status with a 
-    tag as 'planning'
+    myt revert complete uuid:7b97aa5f-4d09-43fb-810a-09023f7d2e88 - This will
+    revert the task with the stated uuid. As tasks in the 'completed' area do
+    not have a task ID you will need to use the uuid instead. This can be 
+    viewed using the 'myt view complete' command
     """
     if verbose:
         set_versbose_logging()
@@ -1031,73 +1056,14 @@ def reset(filters, verbose):
     """
     Reset a task's duration to 0 and the status to TO_DO status.
     This works on tasks in STARTED status. 
-    Does not work for COMPLETED and DELETED tasks.
+    
+    The task remains in the 'pending' area. This command is only applicable
+    for tasks in the 'pending' area.
 
-    --- FILTERS --- 
-    
-    Filters can take various forms, refer below. Format is 'field:value'.
+    --- FILTERS ---
 
-    id - Filter on tasks by id. This filters works by itself and cannot be
-    combined as this is most specific. Works on tasks which are in status 
-    'TO_DO', 'STARTED'. Ex - id:4,10
-
-    uuid - Filter on tasks by uuid. This works by itself and cannot be 
-    combined with other filters. Works on tasks with status 'DONE' or 
-    'DELETED'. Ex - uuid:31726cd2-2db3-4ae4-97ae-b2b7b29a7307
-    
-    desc - Filter on tasks by description. The filter searches within task
-    descriptions. Can be combined with other filters. Ex - de:fitness or
-    desc:fitness
-    
-    groups - Filter on tasks by the group name. Can be combined with other
-    filters. Ex - gr:HOME.BILLS or group:HOME.BILLS
-    
-    tags - Filter tasks on tags, can be provided as comman separated. Can be
-    combined with other filters. Ex - tg:bills,finance or tag:bills,finance
-    
-    priority - Filter tasks on the priority. Can be combined with other 
-    filters. Ex - pr:M or priority:Medium
-
-    notes - Filter tasks on the notes. Can be combined with other filters. 
-    Ex - no:"avenue 6" or notes:"avenue 6"
-
-    due, hide, end - Filter tasks on dates. It is possible to filter based on
-    various conditions as explained below with examples using due/du
-    
-        Equal To - du:eq:+1 Tasks due tomorrow\n
-        Less Than - du:lt:+0 Tasks with due dates earlier than today\n
-        Less Than or Equal To - due:le:+0 Tasks due today or earlier\n
-        Greater Than - du:gt:2020-12-10 Tasks with due date after 10th Dec '20
-        \n
-        Greater Than or Equal To - du:ge:+7 Tasks due in 7 days or beyond\n
-        Between - du:bt:2020-12-01:2020-12-07 Tasks due in the first 7 days of
-        Dec '20. Both dates are inclusive\n
-        The same works for hide/hi and end/en as well. For hide when using the 
-        short form of the date as '-X' this is relative to today and noty due 
-        date. When providing an input value for hide with this format '-X' is
-        relative to the due date.\n
-    
-    'started' - Filter all tasks that are in 'STARTED' status. Can be combined 
-    with other filters.
-    
-    'now' - Filter on the task marked as 'NOW'.
-    
-    The next section documents High Level Filters and should be used with 
-    caution as they could modify large number of tasks.
-    
-    'complete' - Filters all tasks that are in 'DONE' status. Mandatory filter  
-    when operating on tasks in the 'completed' are or tasks which are 'DONE'.
-    
-    'bin' - Filters all tasks that are in the DELETED status or in the bin and 
-    mandatory when operating on such tasks.
-    
-    'hidden' - Filters all tasks that are currently hidden from the normal
-    view command but are still pending, 'TO_DO' or 'STARTED'. Mandatory filter
-    when operating on tasks that are currently hidden.
-    
-    'today' - Filters all tasks that are due today. Works on pending tasks only
-    
-    'overdue' - Filters all tasks that are overdue. Works on pending tasks only
+    Please refer the help for the 'modify' command for information on
+    available filters
 
     --- EXAMPLES ---
     myt reset id:1 - Reset a task with ID = 1
@@ -1139,6 +1105,27 @@ def reset(filters, verbose):
               help="Enable verbose Logging.",
               )
 def stop(filters, verbose):
+    """
+    Stop a started task and stop duration tracking
+
+    When you stop working on a task but it is yet to be completed you can 
+    you can use this command. It will set the task's status as 'TO_DO' and 
+    will stop tracking the task's duration. 
+
+    If you need to start the task again then just use the 'start' command.
+    The task remains in the 'pending' area. This command is only applicable
+    for tasks in the 'pending' area. 
+
+    --- FILTERS ---
+
+    Please refer the help for the 'modify' command for information on
+    available filters
+
+    --- EXAMPLES ---
+
+    myt stop id:12 - Stops a task with task id as 12
+
+    """
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
@@ -1219,7 +1206,30 @@ def view(filters, verbose, pager, top, viewmode):
     """
     Display tasks using various views and filters.
 
+    The views by default apply on the 'pending' area and for tasks that are 
+    not, ie any task that is in 'TO_DO' or 'STARTED' status and has no hide 
+    date or the hide date > today. If you need tasks from other areas you need
+    to use the 'completed' or 'bin' filter.
 
+    All tasks in 'pending' area hidden or not are shown with a numeric task 
+    id. Tasks in 'completed' or 'bin' area are always shown with their uuid or
+    the unqiue identifier from the backend.
+
+    --- FILTERS ---
+
+    Please refer the help for the 'modify' command for information on
+    available filters
+
+    --- EXAMPLES ---
+
+    myt view - The default view command on tasks in 'pending' area, without
+    any filters and shows non hidden tasks
+
+    myt view hidden gr:FINANCES - The default view command but on hidden tasks
+    in 'pending' area and filtered by group as FINANCES
+
+    myt view --top 10 - If you have a lot of tasks captured and would like to
+    see the top 10 tasks only.
     """
     ret = SUCCESS
     if verbose:
@@ -1254,6 +1264,30 @@ def view(filters, verbose, pager, top, viewmode):
               help="Enable verbose Logging.",
               )
 def delete(filters, verbose):
+    """
+    Delete a task
+
+    You cna use this option to delete a task that is no longer required.
+    Upon deletion the task moves into the 'bin' area and cannot be
+    operated upon anymore.
+
+    You can view tasks in the bin using 'myt view bin'. To empty the bin
+    you can use 'myt admin --empty'. As of now there is no option to 
+    restore tasks from the bin.
+
+    This command works for tasks in the 'pending' and 'completed' areas.
+    While deleting tasks which are recurring you will be asked if you would
+    like to delete just the one instance or all of them.
+
+    --- FILTERS ---
+
+    Please refer the help for the 'modify' command for information on
+    available filters
+
+    --- EXAMPLES ---
+
+    myt delete id:12 - Stops a task with task id as 12
+    """
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
@@ -1280,7 +1314,7 @@ def delete(filters, verbose):
 @click.option("--reinit",
               is_flag=True,
               help=("Reinitialize the database. Recreates the database, hence "
-                    "all data will be removed."),
+                    "all data will be removed. USE WITH CAUTION!"),
               )
 @click.option("--tags",
               is_flag=True,
@@ -1332,9 +1366,11 @@ def admin(verbose, empty, reinit, tags, groups):
 def undo(verbose):
     """
     Performs an undo operation.
+
     The last operation requested by the user and any associated internal 
     events are removed. The state of the tasks are restored to what the state
     was prior to the last operation.
+    
     A point to note, the task IDs could be different from what was assigned
     to a task prior to running of the undo.
     """
@@ -1367,17 +1403,26 @@ def undo(verbose):
 def urlopen(filters, urlno, verbose):
     """
     Parses task notes for URLs which can then be opened.
-    The task notes are parsed to identify valid URLs. This is then listed out
-    for the users with a number against each URL. The user chooses one URL to 
-    be opened by indicating the number.
-    If there is only 1 URL in the notes then it is opened by default when the
-    command is run for a task ID/UUID.
+    
+    The task notes are parsed to identify valid URLs. Notes can be added to
+    tasks using '-no' option for the 'add' and 'modify' commands. URLS
+    You can also add URLs with a description for them using the format 
+    'https://abc.com [ABC's website]'.    
+    
+    All URLs in the notes are listed along with their description with a 
+    number against each URL. The user chooses one URL to be opened by 
+    indicating the number. If there is only 1 URL in the notes then it is 
+    opened by default when the command is run for a task ID/UUID.
+    
+    The user can use the --urlno or -ur option to provide a number as part of 
+    the command to open that particular URL without having to choose from the
+    menu.
+
+    --- FILTERS ---
+
     This command works only with the ID or UUID filters and with just 1 task. 
     If more than 1 task ID or UUID is provided the command just processes the 
     first valid task for URLs.
-    The user can use the --urlno or -no option to provide a number as part of 
-    the command to open that particular URL without having to choose from the
-    menu.
 
     --- EXAMPLES ---
     
@@ -1402,7 +1447,24 @@ def urlopen(filters, urlno, verbose):
     
 
 #App startup and exit functions
-def connect_to_tasksdb(verbose=False, legacy=True):
+def connect_to_tasksdb(verbose=False):
+    """
+    Connect to the tasks database and performs some startup functions
+
+    Reads the global parameters on database location and creates a global 
+    Session object which is used by the functions to access the database.
+    In case the database does not exist the function will create one,
+    create the tables and then create a Session object.
+
+    Post this it also check if any recurring instances of tasks have to be 
+    created and calls the create_recur_inst() to do so.
+
+    Parameters:
+        verbose(bool): Indicates if logging should be verbose(debug mode)
+
+    Returns:
+        int: SUCCESS(0) or FAILURE(1)
+    """
     global Session, SESSION, ENGINE
     full_db_path = os.path.join(DEFAULT_FOLDER, DEFAULT_DB_NAME)
     ENGINE = create_engine("sqlite:///"+full_db_path, echo=verbose)

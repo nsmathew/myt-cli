@@ -26,6 +26,14 @@ This task is scheduled for the 25th of every month. Using the 'hide' option tt w
 This adds a recurring task for every Monday, Tuesday and Friday and ending in 30 days from today
 
 Other functionality in the app can be explored using the app's help content
+###Installation
+* Download the latest release from https://github.com/nsmathew/myt-cli/releases
+* Install using pip `pip install myt-cli`
+
 ###Technology
 * Python 3
 * Sqlite3
+
+###Contact
+>Nitin Mathew
+>nitn_mathew2000@hotmail.com
