@@ -17,6 +17,7 @@ from myt import done
 from myt import admin
 from myt import view
 from myt import now
+from myt import urlopen
 
 runner = CliRunner()
 def test_add_1():
@@ -804,3 +805,56 @@ def test_admin_groups_2():
     assert "Total number of groups: 5" in result.output
     runner.invoke(delete, ['gr:OTH'])
     runner.invoke(delete, ['gr:PERS'])
+
+def test_urlopen_1():
+    result = runner.invoke(add, ['-de', 'Test task 13.1', '-du', '+0', '-no',
+                            'Test https://abc.com [ABC] https://xy.com [ XY]', 
+                            '-tg', 'tag13'])
+    temp = result.output.replace("\n"," ")
+    idn = temp.split(" ")[3]
+    runner.invoke(modify, ['id:' + idn, '-no', 'http://bb.com bb'])
+    with mock.patch('builtins.input', return_value="none"):
+        result = runner.invoke(urlopen, ['id:' + idn])
+    assert result.exit_code == 0
+    assert "1 - https://abc.com [ABC]" in result.output
+    assert "2 - https://xy.com [ XY]" in result.output
+    assert "3 - http://bb.com" in result.output
+    runner.invoke(delete, ['id:' + idn])
+
+def test_urlopen_2():
+    result = runner.invoke(add, ['-de', 'Test task 13.2', '-du', '+0', '-no',
+                            'Test https://abc.com [ABC] https://xy.com [ XY]', 
+                            '-tg', 'tag13'])
+    temp = result.output.replace("\n"," ")
+    idn = temp.split(" ")[3]
+    with mock.patch('builtins.input', return_value="none"):
+        result = runner.invoke(urlopen, ['id:' + idn, '-ur', str(4)])
+    assert result.exit_code == 0
+    assert "No URL found at the position provided" in result.output
+    with mock.patch('builtins.input', return_value="none"):
+        result = runner.invoke(urlopen, ['id:' + idn, '-ur', str(-2)])
+    assert result.exit_code == 0
+    assert "No URL found at the position provided" in result.output
+    runner.invoke(delete, ['id:' + idn])
+
+def test_urlopen_3():
+    result = runner.invoke(add, ['-de', 'Test task 13.3', '-du', '+0', '-no',
+                            'Test Notes', '-tg', 'tag13'])
+    temp = result.output.replace("\n"," ")
+    idn = temp.split(" ")[3]
+    with mock.patch('builtins.input', return_value="none"):
+        result = runner.invoke(urlopen, ['id:' + idn, '-ur', str(4)])
+    assert result.exit_code == 0
+    assert "No URLS found in notes for this task" in result.output
+    runner.invoke(delete, ['id:' + idn])
+
+def test_urlopen_4():
+    result = runner.invoke(add, ['-de', 'Test task 13.3', '-du', '+0', '-no',
+                            'Test Notes', '-tg', 'tag13'])
+    temp = result.output.replace("\n"," ")
+    idn = temp.split(" ")[3]
+    with mock.patch('builtins.input', return_value="none"):
+        result = runner.invoke(urlopen, ['id:' + idn])
+    assert result.exit_code == 0
+    assert "No URLS found in notes for this task" in result.output
+    runner.invoke(delete, ['id:' + idn])

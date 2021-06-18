@@ -3393,6 +3393,11 @@ def process_url(potential_filters, urlno=None):
         (int): 0 is successful else returns 1
     """
     ret = SUCCESS
+    #URL + description, ex: 'https://www.abc.com [ABC's website]'
+    regex_1 = r"(https?://\S+\s+\[.*?\]|http?:\S+|https?://\S+\s+\[.*?\]\
+                |https?://\S+)"
+    #URL only
+    regex_2 = r"(http?:\S+|https?://\S+)"
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         with CONSOLE.capture() as capture:
@@ -3407,31 +3412,41 @@ def process_url(potential_filters, urlno=None):
     if ws_task.notes is None:
         CONSOLE.print("No notes for this task")
         return SUCCESS
-    regex_ = r"(onenote?:\S+|outlook?:\S+|https?://\S+)"
-    url_list = re.findall(regex_, ws_task.notes)
+    #Get all URLs along with their descriptions
+    #ex: 'https://www.abc.com [ABC's website]'
+    url_list = re.findall(regex_1, ws_task.notes)
     LOGGER.debug("Identified URLs:")
     LOGGER.debug(url_list)
-    if url_list is not None:
+    if url_list and url_list is not None:
         if urlno is not None:
-            #Attempt to open a URL at position given by user
-            try:
-                ret = open_url(url_list[urlno])
-                return ret
-            except IndexError as e:
-                #No URL exists in this position, print message and move 
-                #to default behaviour
-                CONSOLE.print("No URL found at the position provided {}. "
-                              "Attempting to identify URLs..."
-                              .format(urlno))
+            if urlno < 1 or urlno > len(url_list)-1:
+                click.echo("No URL found at the position provided {}. "
+                "Attempting to identify URLs..."
+                .format(urlno))
+            else:
+                #Attempt to open a URL at position given by user
+                try:
+                    #Extract just the URL
+                    #ex: 'https://www.abc.com'
+                    url_ = re.findall(regex_2, url_list[urlno-1])
+                    ret = open_url(url_[0])
+                    return ret
+                except IndexError as e:
+                    #No URL exists in this position, print message and move 
+                    #to default behaviour
+                    click.echo("No URL found at the position provided {}. "
+                                "Attempting to identify URLs..."
+                                .format(urlno))
         if len(url_list) == 1:
             #Only 1 link so just open that
             CONSOLE.print("Only 1 URL found")
-            ret = open_url(url_list[0])
+            url_ = re.findall(regex_2, url_list[0])
+            ret = open_url(url_[0])
         else:
             #More than 1 URLavailable so ask user to choose
             cnt = 1
-            for cnt, url_ in enumerate(url_list, start=1):
-                CONSOLE.print("{} - {}".format(str(cnt), url_))      
+            for cnt, u in enumerate(url_list, start=1):
+                click.echo("{} - {}".format(str(cnt), u))      
             choice_rng = [str(x) for x in list(range(1,cnt+1))]
             res = Prompt.ask("Choose the URL to be openned:",
                                 choices=[*choice_rng,"none"], 
@@ -3439,10 +3454,11 @@ def process_url(potential_filters, urlno=None):
             if res == "none":
                 ret = SUCCESS
             else:
-                ret = open_url(url_list[int(res)-1])
+                url_ = re.findall(regex_2, url_list[int(res)-1])
+                ret = open_url(url_[0])
         return ret
     else:
-        CONSOLE.print("No URLS found in notes for this task")
+        click.echo("No URLS found in notes for this task")
     return ret
 
 
