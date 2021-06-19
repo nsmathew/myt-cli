@@ -5933,19 +5933,19 @@ def display_all_groups():
     try:
         max_ver_sqr = (SESSION.query(Workspace.uuid,
                                 func.max(Workspace.version)
-                                .label("maxver"))
-                               .filter(and_(Workspace.area.in_(
+                                        .label("maxver"))
+                               .group_by(Workspace.uuid).subquery())
+        groups_list = (SESSION.query(distinct(Workspace.groups)
+                                        .label("groups"))
+                              .join(max_ver_sqr, and_(max_ver_sqr.c.uuid
+                                                            == Workspace.uuid,
+                                                            max_ver_sqr.c.maxver
+                                                            == Workspace.version))
+                              .filter(and_(Workspace.area.in_(
                                                             [WS_AREA_PENDING,
                                                             WS_AREA_COMPLETED]
                                                             )))
-                               .group_by(Workspace.uuid).subquery())
-        groups_list = (SESSION.query(distinct(Workspace.groups)
-                                .label("groups"))
-                              .filter(and_(Workspace.uuid
-                                                      == max_ver_sqr.c.uuid,
-                                                Workspace.version
-                                                    == max_ver_sqr.c.maxver))
-                            .order_by(Workspace.groups).all())
+                              .order_by(Workspace.groups).all())
     except SQLAlchemyError as e:
         CONSOLE.print("Error while trying to display all groups")
         LOGGER.error(str(e))

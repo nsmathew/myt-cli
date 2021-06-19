@@ -793,7 +793,11 @@ def test_admin_tags_2():
 
 def test_admin_groups_1():
     with mock.patch('builtins.input', return_value="yes"):
-        runner.invoke(admin, ['--reinit'])    
+        runner.invoke(admin, ['--reinit'])
+    result = runner.invoke(add, ['-de', 'Test task 9.1', '-gr', 'PERS.ABC'])
+    temp = result.output.replace("\n"," ")
+    idn = temp.split(" ")[3]
+    runner.invoke(delete, ['id:' + idn])
     result = runner.invoke(admin, ['--groups'])
     assert "No groups added to tasks." in result.output
 
