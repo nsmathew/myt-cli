@@ -1,12 +1,20 @@
 CHANGELOG
 ----------------------------------------------------------------
-v0.1.3 - Released on TBC
+v0.1.3 - Released on 20-Jun-2021
 
 -- Bug Fixes --
-* 
+* Age for new recurring task instances has been corrected
+* Fixed an issue where commands were running in incorrect areas resulting in unexpected results
+  Fixed commands include modify, start, done, reset, stop, now, revert & delete
+* Fixed where admin --groups was looking at deleted tasks
 
 -- Features --
-*
+* Read a descriptor for URL from notes as part or 'urlopen' command
+  Ex: a url can be added as https://abc.com [abc web]
+* Added a link to github changelog when running 'version' command
+
+-- Others --
+* Completed help documentation for all commands
 
 ----------------------------------------------------------------
 v0.1.2 - Released on 16-Jun-2021
