@@ -5754,6 +5754,10 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
         ws_task_drvd.version = None
         ws_task_drvd.id = None
         ws_task_drvd.created = None
+        if add_recur_inst:
+            #If we are adding a recurring instance then do not take the 
+            #inception from base task, instead it should be current time
+            ws_task_drvd.inception = None
         ws_rec_dt = WorkspaceRecurDates(uuid=base_uuid, version=base_ver,
                                         due=ws_task_drvd.due)
         ret, ws_task_drvd, r_tags_str = add_task_and_tags(ws_task_drvd,
