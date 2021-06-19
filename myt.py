@@ -506,9 +506,7 @@ def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose):
         if recur is not None:
             LOGGER.debug("Recur: {}".format(recur))
             if due is None or due == CLR_STR:
-                with CONSOLE.capture() as capture:
-                    CONSOLE.print("Need a due date for recurring tasks")
-                click.echo(capture.get(), nl=False)
+                CONSOLE.print("Need a due date for recurring tasks")
                 exit_app(SUCCESS)
             if (end is not None and end != CLR_STR and
                     (datetime.strptime(end, "%Y-%m-%d") <
@@ -1505,9 +1503,7 @@ def connect_to_tasksdb(verbose=False):
             LOGGER.error("Error in creating tables")
             LOGGER.error(str(e))
             return FAILURE
-        with CONSOLE.capture() as capture:
-            CONSOLE.print("Tasks database initialized...", style="info")
-        click.echo(capture.get(), nl=False)
+        CONSOLE.print("Tasks database initialized...", style="info")
         db_init = True
     LOGGER.debug("Now using tasks database at {}".format(full_db_path))
 
@@ -1587,9 +1583,7 @@ def reinitialize_db(verbose):
         LOGGER.error("Unable to remove database.")
         LOGGER.error(str(e))
         return FAILURE
-    with CONSOLE.capture() as capture:
-        CONSOLE.print("Database removed...", style="info")
-    click.echo(capture.get(), nl=False)
+    CONSOLE.print("Database removed...", style="info")
     ret = connect_to_tasksdb(verbose=verbose)
     return ret
 
@@ -2109,52 +2103,48 @@ def get_and_print_task_count(print_dict):
         for item in task_tags_list:
             ws_task = item[0]
             tags_str = item[1]
-            with CONSOLE.capture() as capture:
-                if ws_task.task_type != TASK_TYPE_BASE:
-                    if ws_task.id == '-':
-                        """
-                        Using a context manager to capture output from print 
-                        and pass it onto click's echo for the pytests to 
-                        receive the input. This is done only where the output 
-                        is required for pytest. CONSOLE.print gives a simpler 
-                        management of coloured printing compared to click's 
-                        echo. Suppress the newline for echo to ensure double 
-                        line breaks are not printed, 1 from print and another 
-                        from echo.
-                        """
-                        CONSOLE.print("Updated Task UUID: "
-                                      "[magenta]{}[/magenta]"
-                                      .format(ws_task.uuid), style="info")
-                    else:
-                        CONSOLE.print("Added/Updated Task ID: "
-                                      "[magenta]{}[/magenta]"
-                                      .format(ws_task.id), style="info")
-                    if not tags_str:
-                        tags_str = "-..."
-                    reflect_object_n_print(ws_task, to_print=True, 
-                                           print_all=False)
-                    CONSOLE.print("tags : [magenta]{}[/magenta]"
-                                  .format(tags_str[1:]), style="info")
+            if ws_task.task_type != TASK_TYPE_BASE:
+                if ws_task.id == '-':
+                    """
+                    Using a context manager to capture output from print 
+                    and pass it onto click's echo for the pytests to 
+                    receive the input. This is done only where the output 
+                    is required for pytest. CONSOLE.print gives a simpler 
+                    management of coloured printing compared to click's 
+                    echo. Suppress the newline for echo to ensure double 
+                    line breaks are not printed, 1 from print and another 
+                    from echo.
+                    """
+                    CONSOLE.print("Updated Task UUID: "
+                                    "[magenta]{}[/magenta]"
+                                    .format(ws_task.uuid), style="info")
                 else:
-                    CONSOLE.print("Recurring task add/updated from "
-                                  "[magenta]{}[/magenta] "
-                                  "until [magenta]{}[/magenta] for "
-                                  "recurrence type [magenta]{}-{}[/magenta]"
-                                  .format(ws_task.due, ws_task.recur_end,
-                                          ws_task.recur_mode, 
-                                          ws_task.recur_when),
-                                  style="info")
-            click.echo(capture.get(), nl=False)
+                    CONSOLE.print("Added/Updated Task ID: "
+                                    "[magenta]{}[/magenta]"
+                                    .format(ws_task.id), style="info")
+                if not tags_str:
+                    tags_str = "-..."
+                reflect_object_n_print(ws_task, to_print=True, 
+                                        print_all=False)
+                CONSOLE.print("tags : [magenta]{}[/magenta]"
+                                .format(tags_str[1:]), style="info")
+            else:
+                CONSOLE.print("Recurring task add/updated from "
+                                "[magenta]{}[/magenta] "
+                                "until [magenta]{}[/magenta] for "
+                                "recurrence type [magenta]{}-{}[/magenta]"
+                                .format(ws_task.due, ws_task.recur_end,
+                                        ws_task.recur_mode, 
+                                        ws_task.recur_when),
+                                style="info")
             CONSOLE.print("--")
             LOGGER.debug("Added/Updated Task UUID: {} and Area: {}"
                          .format(ws_task.uuid, ws_task.area))
     # Print No. of Tasks Displayed in the view
     if print_dict.get(PRNT_CURR_VW_CNT):
-        with CONSOLE.capture() as capture:
-            CONSOLE.print(("Displayed Tasks: [magenta]{}[/magenta]"
-                           .format(print_dict.get(PRNT_CURR_VW_CNT))),
-                          style="info")
-        click.echo(capture.get(), nl=False)
+        CONSOLE.print(("Displayed Tasks: [magenta]{}[/magenta]"
+                        .format(print_dict.get(PRNT_CURR_VW_CNT))),
+                        style="info")
 
     # Print Pending, Complted and Bin Tasks
     curr_day = datetime.now()
@@ -2204,14 +2194,12 @@ def get_and_print_task_count(print_dict):
                     elif r[0] == "VISIBLE":
                         vis = r[1]
                 total = vis + hid
-            with CONSOLE.capture() as capture:
-                if print_dict.get(WS_AREA_PENDING) == "yes":
-                    CONSOLE.print("Total Pending Tasks: "
-                                  "[magenta]{}[/magenta], "
-                                  "of which Hidden: "
-                                  "[magenta]{}[/magenta]"
-                                  .format(total, hid), style="info")
-            click.echo(capture.get(), nl=False)
+            if print_dict.get(WS_AREA_PENDING) == "yes":
+                CONSOLE.print("Total Pending Tasks: "
+                                "[magenta]{}[/magenta], "
+                                "of which Hidden: "
+                                "[magenta]{}[/magenta]"
+                                .format(total, hid), style="info")
         # Completed Tasks
         if print_dict.get(WS_AREA_COMPLETED) == "yes":
             # Get count of completed tasks
@@ -2233,10 +2221,8 @@ def get_and_print_task_count(print_dict):
                                     .all())
             LOGGER.debug("Completed: {}".format(results_compl))
             compl = (results_compl[0])[0]
-            with CONSOLE.capture() as capture:
-                CONSOLE.print("Total Completed tasks: [magenta]{}[/magenta]"
-                              .format(compl), style="info")
-            click.echo(capture.get(), nl=False)
+            CONSOLE.print("Total Completed tasks: [magenta]{}[/magenta]"
+                            .format(compl), style="info")
         # Bin Tasks
         if print_dict.get(WS_AREA_BIN) == "yes":
             # Get count of tasks in bin
@@ -2257,10 +2243,8 @@ def get_and_print_task_count(print_dict):
                            .all())
             LOGGER.debug("Bin: {}".format(results_bin))
             binn = (results_bin[0])[0]
-            with CONSOLE.capture() as capture:
-                CONSOLE.print("Total tasks in Bin: [magenta]{}[/magenta]"
-                              .format(binn), style="info")
-            click.echo(capture.get(), nl=False)
+            CONSOLE.print("Total tasks in Bin: [magenta]{}[/magenta]"
+                            .format(binn), style="info")
 
     except SQLAlchemyError as e:
         LOGGER.error(str(e))
@@ -2337,7 +2321,7 @@ def reflect_object_n_print(src_object, to_print=False, print_all=False):
                               style="info")
             out_str = out_str + capture.get()
     if to_print:
-        click.echo(out_str, nl=False)
+        CONSOLE.print(out_str, end=None)
         return
     else:
         return out_str
@@ -3400,10 +3384,8 @@ def process_url(potential_filters, urlno=None):
     regex_2 = r"(http?:\S+|https?://\S+)"
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
-        with CONSOLE.capture() as capture:
-            CONSOLE.print("No applicable tasks with this ID/UUID", 
-                            style="default")
-        click.echo(capture.get(), nl=False)
+        CONSOLE.print("No applicable tasks with this ID/UUID", 
+                        style="default")
         return SUCCESS
     task_list = get_tasks(uuid_version_results)
     ws_task = task_list[0]
@@ -3420,7 +3402,7 @@ def process_url(potential_filters, urlno=None):
     if url_list and url_list is not None:
         if urlno is not None:
             if urlno < 1 or urlno > len(url_list)-1:
-                click.echo("No URL found at the position provided {}. "
+                CONSOLE.print("No URL found at the position provided {}. "
                 "Attempting to identify URLs..."
                 .format(urlno))
             else:
@@ -3434,7 +3416,7 @@ def process_url(potential_filters, urlno=None):
                 except IndexError as e:
                     #No URL exists in this position, print message and move 
                     #to default behaviour
-                    click.echo("No URL found at the position provided {}. "
+                    CONSOLE.print("No URL found at the position provided {}. "
                                 "Attempting to identify URLs..."
                                 .format(urlno))
         if len(url_list) == 1:
@@ -3446,7 +3428,7 @@ def process_url(potential_filters, urlno=None):
             #More than 1 URLavailable so ask user to choose
             cnt = 1
             for cnt, u in enumerate(url_list, start=1):
-                click.echo("{} - {}".format(str(cnt), u))      
+                CONSOLE.print("{} - {}".format(str(cnt), u))      
             choice_rng = [str(x) for x in list(range(1,cnt+1))]
             res = Prompt.ask("Choose the URL to be openned:",
                                 choices=[*choice_rng,"none"], 
@@ -3458,7 +3440,7 @@ def process_url(potential_filters, urlno=None):
                 ret = open_url(url_[0])
         return ret
     else:
-        click.echo("No URLS found in notes for this task")
+        CONSOLE.print("No URLS found in notes for this task")
     return ret
 
 
@@ -3499,9 +3481,7 @@ def empty_bin():
             LOGGER.error(str(e))
             return FAILURE
         SESSION.commit()
-        with CONSOLE.capture() as capture:
-            CONSOLE.print("Bin emptied!", style="info")
-        click.echo(capture.get(), nl=False)
+        CONSOLE.print("Bin emptied!", style="info")
         return SUCCESS
     else:
         CONSOLE.print("Bin is already empty, nothing to do", style="default")
@@ -3602,9 +3582,7 @@ def prep_delete(potential_filters, event_id, delete_all=False):
     modified_base_uuids = set()
     task_tags_print = []
     if not uuid_version_results:
-        with CONSOLE.capture() as capture:
-            CONSOLE.print("No applicable tasks to delete", style="default")
-        click.echo(capture.get(), nl=False)
+        CONSOLE.print("No applicable tasks to delete", style="default")
         return SUCCESS, None
     task_list = get_tasks(uuid_version_results)
     for task in task_list:
@@ -4669,7 +4647,7 @@ def display_full(potential_filters, pager=False, top=None):
         with CONSOLE.pager(styles=True):
             CONSOLE.print(out_str)
     else:
-        click.echo(out_str)
+        CONSOLE.print(out_str)
     return SUCCESS
 
 
@@ -5924,7 +5902,7 @@ def display_all_tags():
         return FAILURE
     if not tags_list:
         LOGGER.debug("No tags found")
-        click.echo("No tags added to tasks.")
+        CONSOLE.print("No tags added to tasks.")
         return SUCCESS
     LOGGER.debug("Total tags to print {}".format(len(tags_list)))
     table = RichTable(box=box.HORIZONTALS, show_header=True,
@@ -5935,7 +5913,7 @@ def display_all_tags():
         LOGGER.debug("Tag: " + tag.tags)
         trow.append(tag.tags)
         table.add_row(*trow, style="default")
-    click.echo("Total number of tags: {}".format(len(tags_list)))        
+    CONSOLE.print("Total number of tags: {}".format(len(tags_list)))        
     CONSOLE.print(table, soft_wrap=True)   
     return SUCCESS
 
@@ -5974,7 +5952,7 @@ def display_all_groups():
         return FAILURE
     if not groups_list:
         LOGGER.debug("No groups found")
-        click.echo("No groups added to tasks.")
+        CONSOLE.print("No groups added to tasks.")
         return SUCCESS
     LOGGER.debug("Total groups to print before breaking "
                  " into hierarchy {}".format(len(groups_list)))
@@ -5995,7 +5973,7 @@ def display_all_groups():
                     trow.append(grp)
                     table.add_row(*trow, style="default")                    
                     all_groups.add(grp)
-    click.echo("Total number of groups: {}".format(len(all_groups)))
+    CONSOLE.print("Total number of groups: {}".format(len(all_groups)))
     LOGGER.debug("Total grps to print {}".format(len(all_groups)))
     CONSOLE.print(table, soft_wrap=True)
     return SUCCESS
