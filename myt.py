@@ -24,7 +24,7 @@ from rich.theme import Theme
 from rich.prompt import Prompt
 from rich.columns import Columns
 from sqlalchemy import (create_engine, Column, Integer, String, Index,
-                        ForeignKeyConstraint, tuple_, and_, case, func, 
+                        ForeignKeyConstraint, tuple_, and_, case, func,
                         BOOLEAN, distinct, inspect, or_)
 from sqlalchemy.orm import sessionmaker, make_transient
 from sqlalchemy.ext.declarative import declarative_base
@@ -119,15 +119,15 @@ myt_theme = Theme({
 }, inherit=False)
 CONSOLE = Console(theme=myt_theme, )
 # Printable attributes
-PRINT_ATTR = ["description", "priority", "due", "hide", "groups", "tags", 
-              "status", "now_flag", "recur_mode", "recur_when", "uuid", 
+PRINT_ATTR = ["description", "priority", "due", "hide", "groups", "tags",
+              "status", "now_flag", "recur_mode", "recur_when", "uuid",
               "task_type", "area"]
 # Modes
 VALID_MODES = [MODE_DAILY, MODE_WEEKLY, MODE_WKDAY, MODE_MONTHLY,
                MODE_MTHDYS, MODE_MONTHS, MODE_YEARLY]
 
 # Until When config - Aligned to Recurring Task Mode Domains
-UNTIL_WHEN = {MODE_DAILY: 2, MODE_WEEKLY: 8, MODE_MONTHLY: 32, 
+UNTIL_WHEN = {MODE_DAILY: 2, MODE_WEEKLY: 8, MODE_MONTHLY: 32,
               MODE_YEARLY: 367, MODE_WKDAY: 2, MODE_MTHDYS: 5, MODE_MONTHS: 90}
 # Future date for date and None comparisons
 FUTDT = datetime.strptime("2300-01-01", "%Y-%m-%d").date()
@@ -165,7 +165,7 @@ class Workspace(Base):
     """
     ORM for the 'workspace' table which holds all primary information
     for the tasks.
-        
+
         Primary Key: uuid, version
         Indexes: idx_ws_due(due)
     """
@@ -197,7 +197,7 @@ class Workspace(Base):
     @hybrid_property
     def due_diff_today(self):
         curr_date = datetime.now().date()
-        return (datetime.strptime(self.due, FMT_DATEONLY).date() 
+        return (datetime.strptime(self.due, FMT_DATEONLY).date()
                     - curr_date).days
 
     @due_diff_today.expression
@@ -208,16 +208,16 @@ class Workspace(Base):
         """
         For some reason cast as Integer forces an addition in the sql
         when trying to concatenate with a string. Forcing as string causes
-        the expression to be returned as a literal string rather than the 
+        the expression to be returned as a literal string rather than the
         result. Hence using substr and instr instead.
         """
         return func.substr(date_diff, 1, func.instr(date_diff, ".")-1)
-    
+
     # To get time difference of inception to now in seconds
     @hybrid_property
     def incep_diff_now(self):
         curr_date = datetime.now()
-        return round((curr_date - 
+        return round((curr_date -
                       datetime.strptime(self.inception, FMT_DATETIME)).seconds)
 
     @incep_diff_now.expression
@@ -225,7 +225,7 @@ class Workspace(Base):
         #curr_date = datetime.now().date().strftime(FMT_DATEONLY)
         curr_date = datetime.now()
         # julianday is an sqlite function
-        date_diff = func.round(((func.julianday(curr_date) 
+        date_diff = func.round(((func.julianday(curr_date)
                         - func.julianday(cls.inception)) * 24 * 60 * 60))
         return date_diff
 
@@ -240,7 +240,7 @@ class Workspace(Base):
     def dur_ev_diff_now(cls):
         curr_time = datetime.now()
         # julianday is an sqlite function
-        date_diff = func.round(((func.julianday(curr_time) 
+        date_diff = func.round(((func.julianday(curr_time)
                         - func.julianday(cls.dur_event)) * 24 * 60 * 60))
         return date_diff
 
@@ -251,7 +251,7 @@ class WorkspaceTags(Base):
     """
     ORM for the 'workspace_tags' table which holds all the tags for each task.
     Every tags is stored as a row.
-        
+
         Primary Key: uuid, version, tag
         Foreign Key: uuid->workspace.uuid, version->workspace.version
         Indexes: idx_ws_tg_uuid_ver(uuid, version)
@@ -270,10 +270,10 @@ Index("idx_ws_tg_uuid_ver", WorkspaceTags.uuid, WorkspaceTags.version)
 """
 Additional note on WorkspaceRecurDates. The rows for this table are created in
 two scenarios:
-1. At a derived task level - For each derived task a record is created in the 
+1. At a derived task level - For each derived task a record is created in the
 table using the base uuid and version with due = derived task's due.
-This is what happens when 
-    - a new recurring task is added or 
+This is what happens when
+    - a new recurring task is added or
     - an indivdual recurring task instance is added or
     - when the entire recurring task gets modified due to changes in recurrence
       properties
@@ -281,17 +281,17 @@ This is what happens when
 this case the due dates of the base task from previous version are just copied
 over as new records but with the new base taks version.
 This is used when
-    - the recurring task and its instances are modified with no changes in 
+    - the recurring task and its instances are modified with no changes in
       recurrence properties
-    - when a base task is reverted from completed to pending area as part of 
+    - when a base task is reverted from completed to pending area as part of
       the revert task option
 """
 class WorkspaceRecurDates(Base):
     """
-    ORM for the table 'workspace_recur_dates' which holds all due dates for 
+    ORM for the table 'workspace_recur_dates' which holds all due dates for
     which a task has been created.
     Every due date is stored as a row.
-        
+
         Primary Key: uuid, version, due
         Foreign Key: uuid->workspace.uuid, version->workspace.version
     """
@@ -311,7 +311,7 @@ Index("idx_ws_recr_uuid_ver", WorkspaceRecurDates.uuid,
 class AppMetadata(Base):
     """
     ORM for the table 'app_metadata' which holds application metadata.
-        
+
         Primary Key: key
     """
     __tablename__ = "app_metadata"
@@ -400,75 +400,75 @@ def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose):
     """
     Add a task. Provide details of task using the various options available.
     Task gets added with a TO_DO status and as a 'pending' task.
-    
+
     Ex: myt add -de "Pay the bills" -du +2 -gr HOME -tg bills,expenses
-    
-    This adds a task with description 'Pay the bills', due in 2 days and 
+
+    This adds a task with description 'Pay the bills', due in 2 days and
     grouped under 'HOME' with tags of 'bills' and 'expenses'.
     Use the 'myt view' command to view tasks.
-    
-    Ex: myt add -de "Complete the timesheet" -du 2020-11-29 -hi -2 
+
+    Ex: myt add -de "Complete the timesheet" -du 2020-11-29 -hi -2
     -gr WORK.PROJA -tg timesheets
-    
+
     Adds a task to 'Complete the timesheets' due on 29th Nov 2020 under the
     group 'WORK' and sub group 'PROJA' with a tag 'timesheets'. This task will
     be hidden until 2 days before the due date in the 'myt view' command.
     Use 'myt view HIDDEN' to view such hidden tasks.
-    
+
     --- DATE FORMAT ---
-    
+
     The standard date format is YYYY-MM-DD
     There are shorter formats available to provide the date in a relative
     manner. This differs on if the format is used for due/end or hide dates
-    
-    For due/end: +X or -X where X is no. of days, set the due or end date as 
-    today + X or today - X(past) 
-    
+
+    For due/end: +X or -X where X is no. of days, set the due or end date as
+    today + X or today - X(past)
+
     For hide: +X where X is no. of days, set hide date as today + X
-    
+
     For hide: -X where X is no. of days, set the hide date as due date - X
-    
+
     --- PRIORITY ---
-    
-    Priority can take input in various forms. If not set it defaults to 
+
+    Priority can take input in various forms. If not set it defaults to
     NORMAL priority which is higher than LOW priority in the task scoring.
-    
+
     HIGH - HIGH/high/H/h
-    
+
     MEDIUM - MEDIUM/medium/M/m
-    
+
     NORMAL - NORMAL/normal/N/n
-    
+
     LOW - LOW/low/L/l
-    
+
     --- RECURRENCE ---
-    
-    Recurring tasks can be created by using BASIC or EXTENDED mode using the 
+
+    Recurring tasks can be created by using BASIC or EXTENDED mode using the
     '-re' option along with an optional 'end' date using '-en'
-    
+
     BASIC Mode:
     DAILY - D, WEEKLY - W, MONTHLY - M and YEARLY - Y
-    
+
     Ex: myt add -de "Pay the rent" -du 2020-11-01 -re M
-    
-    Here we add a task that will recur on the 1st of every month starting from 
+
+    Here we add a task that will recur on the 1st of every month starting from
     1st Nov 2020.
-    
+
     EXTENDED Mode:
-    Every x DAYS - DEx, Every x WEEKS - WEx, Every x MONTHS - MEx, 
-    Every x YEARS - YEx 
+    Every x DAYS - DEx, Every x WEEKS - WEx, Every x MONTHS - MEx,
+    Every x YEARS - YEx
     WEEKDAYS - WD[1-7], MONTHDAYS - MD[1-31], MONTHS - MO[1-12]
-    
+
     Ex: myt add -de 'Buy groceries online' -du 2020-12-03 -re MD3,13,24,30
     -en +182
-    
-    Here we add a task starting from 3rd Dec 2020 and recurring on 
-    the 3rd, 13th, 24th and 30th of every month for upto half a year. 
-    If the day is not valid for a month then it will be skipped. If the 
-    due date provided does not match the days provided then the first 
+
+    Here we add a task starting from 3rd Dec 2020 and recurring on
+    the 3rd, 13th, 24th and 30th of every month for upto half a year.
+    If the day is not valid for a month then it will be skipped. If the
+    due date provided does not match the days provided then the first
     occurence will be on the next valid date.
-    
-    If a hide date is provided with -hi option then for every task the hide 
+
+    If a hide date is provided with -hi option then for every task the hide
     value will be calculated based on the date difference between provided hide
     and the original due date.
     """
@@ -529,13 +529,13 @@ def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose):
             if ret == SUCCESS:
                 SESSION.commit()
                 """
-                Compared to other operations, adding recurring tasks requires  
-                adding multiple tasks by copying the 'same' base tasks. In  
-                otheroperations although there are multiple tasks added each  
-                is using 'different' task extracted from the database. So this 
-                requires converting the object to tranisent state. Due to 
-                this we are returning only the keys from the add recurring 
-                tasks function and then querying the database to fetch the  
+                Compared to other operations, adding recurring tasks requires
+                adding multiple tasks by copying the 'same' base tasks. In
+                otheroperations although there are multiple tasks added each
+                is using 'different' task extracted from the database. So this
+                requires converting the object to tranisent state. Due to
+                this we are returning only the keys from the add recurring
+                tasks function and then querying the database to fetch the
                 task attributes to pass onto the print function
                 """
                 task_tags_print = []
@@ -550,14 +550,14 @@ def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose):
         else:
             ws_task.task_type = TASK_TYPE_NRML
             ws_task.event_id = event_id
-            ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+            ret, ws_task, tags_str = add_task_and_tags(ws_task,
                                                        ws_tags_list,
                                                        None,
                                                        OPS_ADD)
             if ret == SUCCESS:
                 SESSION.commit()
                 get_and_print_task_count({WS_AREA_PENDING: "yes",
-                                          PRNT_TASK_DTLS: [(ws_task, 
+                                          PRNT_TASK_DTLS: [(ws_task,
                                                                 tags_str)]})
         exit_app(ret)
 
@@ -624,40 +624,40 @@ def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose):
 def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
            verbose):
     """
-    Modify task details. Specify 1 or more filters and provide the new values 
+    Modify task details. Specify 1 or more filters and provide the new values
     for attributes which need modification using the options available.
-    
-    --- FILTERS --- 
-    
+
+    --- FILTERS ---
+
     Filters can take various forms, refer below. Format is 'field:value'.
 
     id - Filter on tasks by id. This filters works by itself and cannot be
-    combined as this is most specific. Works on tasks which are in status 
+    combined as this is most specific. Works on tasks which are in status
     'TO_DO', 'STARTED'. Ex - id:4,10
 
-    uuid - Filter on tasks by uuid. This works by itself and cannot be 
-    combined with other filters. Works on tasks with status 'DONE' or 
+    uuid - Filter on tasks by uuid. This works by itself and cannot be
+    combined with other filters. Works on tasks with status 'DONE' or
     'DELETED'. Ex - uuid:31726cd2-2db3-4ae4-97ae-b2b7b29a7307
-    
+
     desc - Filter on tasks by description. The filter searches within task
     descriptions. Can be combined with other filters. Ex - de:fitness or
     desc:fitness
-    
+
     groups - Filter on tasks by the group name. Can be combined with other
     filters. Ex - gr:HOME.BILLS or group:HOME.BILLS
-    
+
     tags - Filter tasks on tags, can be provided as comman separated. Can be
     combined with other filters. Ex - tg:bills,finance or tag:bills,finance
-    
-    priority - Filter tasks on the priority. Can be combined with other 
+
+    priority - Filter tasks on the priority. Can be combined with other
     filters. Ex - pr:M or priority:Medium
 
-    notes - Filter tasks on the notes. Can be combined with other filters. 
+    notes - Filter tasks on the notes. Can be combined with other filters.
     Ex - no:"avenue 6" or notes:"avenue 6"
 
     due, hide, end - Filter tasks on dates. It is possible to filter based on
     various conditions as explained below with examples using due/du
-    
+
         Equal To - du:eq:+1 Tasks due tomorrow\n
         Less Than - du:lt:+0 Tasks with due dates earlier than today\n
         Less Than or Equal To - due:le:+0 Tasks due today or earlier\n
@@ -666,70 +666,70 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
         Greater Than or Equal To - du:ge:+7 Tasks due in 7 days or beyond\n
         Between - du:bt:2020-12-01:2020-12-07 Tasks due in the first 7 days of
         Dec '20. Both dates are inclusive\n
-        The same works for hide/hi and end/en as well. For hide when using the 
-        short form of the date as '-X' this is relative to today and noty due 
+        The same works for hide/hi and end/en as well. For hide when using the
+        short form of the date as '-X' this is relative to today and noty due
         date. When providing an input value for hide with this format '-X' is
         relative to the due date.\n
-    
-    'started' - Filter all tasks that are in 'STARTED' status. Can be combined 
+
+    'started' - Filter all tasks that are in 'STARTED' status. Can be combined
     with other filters.
-    
+
     'now' - Filter on the task marked as 'NOW'.
-    
-    The next section documents High Level Filters and should be used with 
+
+    The next section documents High Level Filters and should be used with
     caution as they could modify large number of tasks.
-    
-    'complete' - Filters all tasks that are in 'DONE' status. Mandatory filter  
+
+    'complete' - Filters all tasks that are in 'DONE' status. Mandatory filter
     when operating on tasks in the 'completed' are or tasks which are 'DONE'.
-    
-    'bin' - Filters all tasks that are in the DELETED status or in the bin and 
+
+    'bin' - Filters all tasks that are in the DELETED status or in the bin and
     mandatory when operating on such tasks.
-    
+
     'hidden' - Filters all tasks that are currently hidden from the normal
     view command but are still pending, 'TO_DO' or 'STARTED'. Mandatory filter
     when operating on tasks that are currently hidden.
-    
+
     'today' - Filters all tasks that are due today. Works on pending tasks only
-    
+
     'overdue' - Filters all tasks that are overdue. Works on pending tasks only
-    
+
     --- CLEARING PROPERTIES ---
-    
+
     The property values can be cleared or set to empty using the keyword 'clr'.
-    This works on due, hide, priority, groups, tags, end and notes. For the  
-    respective option you can provide 'clr' as the value. Ex: -pr clr or -gr 
+    This works on due, hide, priority, groups, tags, end and notes. For the
+    respective option you can provide 'clr' as the value. Ex: -pr clr or -gr
     clr
-    
+
     --- RECURRENCE ---
-    
-    If based on the filters any of the tasks are of recurring nature then a 
+
+    If based on the filters any of the tasks are of recurring nature then a
     prompt will be displayed asking if the change needs to be applied to just
     this instance of the task or all recurring instances.
-    
-    Changes on individual instances are allowed only for description, groups, 
-    tags, priority, due and hide date. Changes on recurrence, that is the type 
-    of recurrence or the end date, are applicable only to all instances of the 
+
+    Changes on individual instances are allowed only for description, groups,
+    tags, priority, due and hide date. Changes on recurrence, that is the type
+    of recurrence or the end date, are applicable only to all instances of the
     task.
-    
-    If the recurrence changes then a new tasks are created as per the new 
+
+    If the recurrence changes then a new tasks are created as per the new
     recurrence properties. Any pending instances of the old recurring task are
     deleted. Any 'DONE' instance are unlinked and will behance as normal tasks
     if reverted.
-    
+
     --- EXAMPLES ---
-    
+
     myt modify id:7,8 -de "Go to the gym" - Change the description for 2 tasks
     with ID as 7 and 8
-    
+
     myt modify today -tg -relaxed,urgent - For all tasks that are due today,
     add a tag 'urgent' and remove a tag 'relaxed'
-    
-    myt modify overdue du:eq:-1 -pr HIGH - For all tasks that are overdue and 
+
+    myt modify overdue du:eq:-1 -pr HIGH - For all tasks that are overdue and
     were due as of yesterday set their priority to High
-    
+
     myt modify hidden gr:HOME -hi clr - For all hidden tasks which have group
     as 'HOME' clear the hide date.
-    
+
     """
     if verbose:
         set_versbose_logging()
@@ -738,13 +738,13 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
                  " tag - {}"
                  .format(desc, due, hide, group, tag))
     # Perform validations
-    if (potential_filters.get(TASK_COMPLETE) == "yes" or 
+    if (potential_filters.get(TASK_COMPLETE) == "yes" or
             potential_filters.get(TASK_BIN) == "yes"):
         CONSOLE.print("Modify can be run only on 'pending' tasks.",
                       style="default")
         exit_app(SUCCESS)
     if (desc is None and priority is None and due is None and hide is None
-            and group is None and tag is None and recur is None 
+            and group is None and tag is None and recur is None
             and notes is None and end is None):
         CONSOLE.print("No modification values provided. Nothing to do...",
                       style="default")
@@ -772,7 +772,7 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
         ,-ab,nh,-ab, : -ab,nh
         """
         tag = ",".join(dict.fromkeys(filter(None,tag.split(","))))
-        LOGGER.debug("After cleaning tags are: {}".format(tag))     
+        LOGGER.debug("After cleaning tags are: {}".format(tag))
     else:
         tag = None
     if end is not None:
@@ -780,10 +780,10 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
     event_id = get_event_id()
     ws_task = Workspace(description=desc, priority=priority,
                         due=due, hide=hide, groups=group, recur_end=end,
-                        notes=notes, recur_when=when, recur_mode=mode, 
+                        notes=notes, recur_when=when, recur_mode=mode,
                         event_id=event_id)
-    ret, task_tags_print = prep_modify(potential_filters, 
-                                       ws_task, 
+    ret, task_tags_print = prep_modify(potential_filters,
+                                       ws_task,
                                        tag)
     if ret == SUCCESS:
         SESSION.commit()
@@ -809,9 +809,9 @@ def now(filters, verbose):
     you are working on now you can use the 'now' command. This will ensure
     the task is given a signifcantly higher score, therby pushing it to the
     top of the task's view.
-    
-    At any point only 1 task can be set as 'now'. 'now' tasks are shown in a 
-    different colour. The behaviour otherwise remains the same as any other 
+
+    At any point only 1 task can be set as 'now'. 'now' tasks are shown in a
+    different colour. The behaviour otherwise remains the same as any other
     task. If you are setting a task to 'now' and if it is not started you will
     be asked if you would like to start it.
 
@@ -819,7 +819,7 @@ def now(filters, verbose):
     the 'now' status for a task.
 
     --- FILTERS ---
-    
+
     Now tasks accept only the 'id:' filter and only 1 task id in the filter
 
     --- EXAMPLES ---
@@ -828,16 +828,16 @@ def now(filters, verbose):
 
     myt now id:2 - This will set task 2 as 'now'
 
-    myt now id:1 - This will set task 1 as 'now' while removing the 'now' 
+    myt now id:1 - This will set task 1 as 'now' while removing the 'now'
     status for task 2
 
-    myt now id:1 - This will remove 'now' for task 1. At this point there will be 
+    myt now id:1 - This will remove 'now' for task 1. At this point there will be
     no tasks set as 'now'
     """
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
-    if (potential_filters.get(TASK_COMPLETE) == "yes" or 
+    if (potential_filters.get(TASK_COMPLETE) == "yes" or
             potential_filters.get(TASK_BIN) == "yes"):
         CONSOLE.print("Now can be run only on 'pending' tasks.",
                       style="default")
@@ -902,15 +902,15 @@ def start(filters, verbose):
     Set a task as started or in progress
 
     Allows to track tasks that are in progress. When a task is started
-    the task status changes to 'STARTED' and duration is kept track off 
-    against when the task was started. 
+    the task status changes to 'STARTED' and duration is kept track off
+    against when the task was started.
 
-    You can stop tasks at which point they go into 'TO_DO' status and 
+    You can stop tasks at which point they go into 'TO_DO' status and
     the duration tracking is paued. They can be started again and the
     duration tracking will continue.
 
     The task remains in the 'pending' area. This command is only applicable
-    for tasks in the 'pending' area.    
+    for tasks in the 'pending' area.
 
     --- FILTERS ---
 
@@ -922,7 +922,7 @@ def start(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if (potential_filters.get(TASK_COMPLETE) == "yes" or 
+    if (potential_filters.get(TASK_COMPLETE) == "yes" or
             potential_filters.get(TASK_BIN) == "yes"):
         CONSOLE.print("Start can be run only on 'pending' tasks.",
                       style="default")
@@ -953,8 +953,8 @@ def done(filters, verbose):
     """
     Set a task as completed.
 
-    To be used when a task is completed. This will set the task's status as 
-    'DONE' and move the task into the 'completed' area. Tasks in the 
+    To be used when a task is completed. This will set the task's status as
+    'DONE' and move the task into the 'completed' area. Tasks in the
     'completed' area are not shown in the default 'view' command but
     can be viewed when using the 'complete' filter. Refer the help for the
     'view' command for more details.
@@ -964,7 +964,7 @@ def done(filters, verbose):
     'TO_DO' status by using the 'revert' command.
 
     The task remains in the 'pending' area. This command is only applicable
-    for tasks in the 'pending' area.    
+    for tasks in the 'pending' area.
 
     --- FILTERS ---
 
@@ -976,7 +976,7 @@ def done(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if (potential_filters.get(TASK_COMPLETE) == "yes" or 
+    if (potential_filters.get(TASK_COMPLETE) == "yes" or
             potential_filters.get(TASK_BIN) == "yes"):
         CONSOLE.print("Done can be run only on 'pending' tasks.",
                       style="default")
@@ -1008,7 +1008,7 @@ def revert(filters, verbose):
     Reverts a completed task as pending
 
     This command is used to change a task's status from 'DONE' to
-    'TO_DO'. This will move the task from the 'completed' area to the 
+    'TO_DO'. This will move the task from the 'completed' area to the
     'pending' area. Once done operations applicable to a 'TO_DO' task
     can be performed on it. This can also be used on recurring tasks.
 
@@ -1023,13 +1023,13 @@ def revert(filters, verbose):
     available filters
 
     --- EXAMPLES ---
-    
+
     myt revert complete tg:bills - This will revert all completed tasks
     which have the tag 'bills'.
 
     myt revert complete uuid:7b97aa5f-4d09-43fb-810a-09023f7d2e88 - This will
     revert the task with the stated uuid. As tasks in the 'completed' area do
-    not have a task ID you will need to use the uuid instead. This can be 
+    not have a task ID you will need to use the uuid instead. This can be
     viewed using the 'myt view complete' command
     """
     if verbose:
@@ -1069,8 +1069,8 @@ def revert(filters, verbose):
 def reset(filters, verbose):
     """
     Reset a task's duration to 0 and the status to TO_DO status.
-    This works on tasks in STARTED status. 
-    
+    This works on tasks in STARTED status.
+
     The task remains in the 'pending' area. This command is only applicable
     for tasks in the 'pending' area.
 
@@ -1082,7 +1082,7 @@ def reset(filters, verbose):
     --- EXAMPLES ---
     myt reset id:1 - Reset a task with ID = 1
 
-    myt reset tg:planning - Reset all tasks in STARTED status with a tag as 
+    myt reset tg:planning - Reset all tasks in STARTED status with a tag as
     'planning'
     """
     if verbose:
@@ -1090,7 +1090,7 @@ def reset(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if (potential_filters.get(TASK_COMPLETE) == "yes" or 
+    if (potential_filters.get(TASK_COMPLETE) == "yes" or
             potential_filters.get(TASK_BIN) == "yes"):
         CONSOLE.print("Reset can be run only on 'pending' tasks.",
                       style="default")
@@ -1121,13 +1121,13 @@ def stop(filters, verbose):
     """
     Stop a started task and stop duration tracking
 
-    When you stop working on a task but it is yet to be completed you can 
-    you can use this command. It will set the task's status as 'TO_DO' and 
-    will stop tracking the task's duration. 
+    When you stop working on a task but it is yet to be completed you can
+    you can use this command. It will set the task's status as 'TO_DO' and
+    will stop tracking the task's duration.
 
     If you need to start the task again then just use the 'start' command.
     The task remains in the 'pending' area. This command is only applicable
-    for tasks in the 'pending' area. 
+    for tasks in the 'pending' area.
 
     --- FILTERS ---
 
@@ -1144,7 +1144,7 @@ def stop(filters, verbose):
     potential_filters = parse_filters(filters)
     if connect_to_tasksdb(verbose=verbose) == FAILURE:
         exit_app(FAILURE)
-    if (potential_filters.get(TASK_COMPLETE) == "yes" or 
+    if (potential_filters.get(TASK_COMPLETE) == "yes" or
             potential_filters.get(TASK_BIN) == "yes"):
         CONSOLE.print("Stop can be run only on 'pending' tasks.",
                       style="default")
@@ -1221,12 +1221,12 @@ def view(filters, verbose, pager, top, viewmode):
     """
     Display tasks using various views and filters.
 
-    The views by default apply on the 'pending' area and for tasks that are 
-    not, ie any task that is in 'TO_DO' or 'STARTED' status and has no hide 
+    The views by default apply on the 'pending' area and for tasks that are
+    not, ie any task that is in 'TO_DO' or 'STARTED' status and has no hide
     date or the hide date > today. If you need tasks from other areas you need
     to use the 'completed' or 'bin' filter.
 
-    All tasks in 'pending' area hidden or not are shown with a numeric task 
+    All tasks in 'pending' area hidden or not are shown with a numeric task
     id. Tasks in 'completed' or 'bin' area are always shown with their uuid or
     the unqiue identifier from the backend.
 
@@ -1265,7 +1265,7 @@ def view(filters, verbose, pager, top, viewmode):
     elif viewmode == "dates":
         ret = display_dates(potential_filters, pager, top)
     elif viewmode == "notes":
-        ret = display_notes(potential_filters, pager, top)        
+        ret = display_notes(potential_filters, pager, top)
     exit_app(ret)
 
 
@@ -1287,7 +1287,7 @@ def delete(filters, verbose):
     operated upon anymore.
 
     You can view tasks in the bin using 'myt view bin'. To empty the bin
-    you can use 'myt admin --empty'. As of now there is no option to 
+    you can use 'myt admin --empty'. As of now there is no option to
     restore tasks from the bin.
 
     This command works for tasks in the 'pending' and 'completed' areas.
@@ -1308,7 +1308,7 @@ def delete(filters, verbose):
     potential_filters = parse_filters(filters)
     if (potential_filters.get(TASK_BIN) == "yes"):
         CONSOLE.print("Delete cannot be run on deleted tasks.",
-                      style="default")    
+                      style="default")
         exit_app(SUCCESS)
     if potential_filters.get(HL_FILTERS_ONLY) == "yes":
         if not confirm_prompt("No detailed filters given for deleting tasks, "
@@ -1353,7 +1353,7 @@ def delete(filters, verbose):
 def admin(verbose, empty, reinit, tags, groups):
     """
     Allows to run admin related operations on the tasks database. This includes
-    reinitialization of database and emptying the bin area. Refer to the 
+    reinitialization of database and emptying the bin area. Refer to the
     options for more information.
     """
     ret = SUCCESS
@@ -1386,10 +1386,10 @@ def undo(verbose):
     """
     Performs an undo operation.
 
-    The last operation requested by the user and any associated internal 
+    The last operation requested by the user and any associated internal
     events are removed. The state of the tasks are restored to what the state
     was prior to the last operation.
-    
+
     A point to note, the task IDs could be different from what was assigned
     to a task prior to running of the undo.
     """
@@ -1413,7 +1413,7 @@ def undo(verbose):
               "-ur",
               type=int,
               help="Which link to open based on order of links in the notes",
-              )                
+              )
 @click.option("--verbose",
               "-v",
               is_flag=True,
@@ -1422,31 +1422,31 @@ def undo(verbose):
 def urlopen(filters, urlno, verbose):
     """
     Parses task notes for URLs which can then be opened.
-    
+
     The task notes are parsed to identify valid URLs. Notes can be added to
     tasks using '-no' option for the 'add' and 'modify' commands. URLS
-    You can also add URLs with a description for them using the format 
-    'https://abc.com [ABC's website]'.    
-    
-    All URLs in the notes are listed along with their description with a 
-    number against each URL. The user chooses one URL to be opened by 
-    indicating the number. If there is only 1 URL in the notes then it is 
+    You can also add URLs with a description for them using the format
+    'https://abc.com [ABC's website]'.
+
+    All URLs in the notes are listed along with their description with a
+    number against each URL. The user chooses one URL to be opened by
+    indicating the number. If there is only 1 URL in the notes then it is
     opened by default when the command is run for a task ID/UUID.
-    
-    The user can use the --urlno or -ur option to provide a number as part of 
+
+    The user can use the --urlno or -ur option to provide a number as part of
     the command to open that particular URL without having to choose from the
     menu.
 
     --- FILTERS ---
 
-    This command works only with the ID or UUID filters and with just 1 task. 
-    If more than 1 task ID or UUID is provided the command just processes the 
+    This command works only with the ID or UUID filters and with just 1 task.
+    If more than 1 task ID or UUID is provided the command just processes the
     first valid task for URLs.
 
     --- EXAMPLES ---
-    
-    myt urlopen id:3 - Displays all URLS from the notes for task 3 post which 
-    the user can choose which one they want to open. If there is only 1 URL 
+
+    myt urlopen id:3 - Displays all URLS from the notes for task 3 post which
+    the user can choose which one they want to open. If there is only 1 URL
     then it will be opened without requiring a user prompt.
 
     myt urlopen uuid:65138024-31ec-4ddc-9706-26adc1bfac40 -ur 3 - This will
@@ -1463,19 +1463,19 @@ def urlopen(filters, urlno, verbose):
         exit_app(SUCCESS)
     ret = process_url(potential_filters, urlno)
     exit_app(ret)
-    
+
 
 #App startup and exit functions
 def connect_to_tasksdb(verbose=False):
     """
     Connect to the tasks database and performs some startup functions
 
-    Reads the global parameters on database location and creates a global 
+    Reads the global parameters on database location and creates a global
     Session object which is used by the functions to access the database.
     In case the database does not exist the function will create one,
     create the tables and then create a Session object.
 
-    Post this it also check if any recurring instances of tasks have to be 
+    Post this it also check if any recurring instances of tasks have to be
     created and calls the create_recur_inst() to do so.
 
     Parameters:
@@ -1599,7 +1599,7 @@ def open_url(url_):
 
     Parameters:
         url_(string): The URL which needs to be openned
-    
+
     Returns:
         int: 0 if successful, 1 if error encountered
     """
@@ -1669,18 +1669,18 @@ def adjust_date(refdate, num, timeunit="days"):
     """
     Return a date post a relative adjustment to a reference date
 
-    An adjustment of say +10 days or -2 Months is applied to a 
+    An adjustment of say +10 days or -2 Months is applied to a
     reference date. The adjusted date is then returned
 
     Parameters:
-        refdate(date): Date to apply relative adjustment 
+        refdate(date): Date to apply relative adjustment
 
-        num(str): The adjustment value as +x or -x 
+        num(str): The adjustment value as +x or -x
 
         timeunit(str): The unit for the adjustments, days, months, etc.
         The default is 'days'
 
-    Returns: 
+    Returns:
         date: The adjusted date
     """
     dd = relativedelta(**{timeunit: int(num)})
@@ -1722,11 +1722,11 @@ def convert_time_unit(in_time):
     Converts a duration provided in minutes to time as below:
     [xD] [yh] zm or <1m
     If the duration is over a day the xD will be returned indicating x Day(s)
-    If the duration is over an hour then yh will be returned indicating 
+    If the duration is over an hour then yh will be returned indicating
     y hour(s)
-    If the duration is over a minute then zm will be returned indicating z 
-    minutes 
-    If duration is less than a minutes then a fixed string of <1m will be 
+    If the duration is over a minute then zm will be returned indicating z
+    minutes
+    If duration is less than a minutes then a fixed string of <1m will be
     returned.
     If duration is 0 then an empty string is returned.
     The functiona internally use datetime.timedelta.
@@ -1741,7 +1741,7 @@ def convert_time_unit(in_time):
         return ""
     out_str = ""
     td = timedelta(seconds=in_time)
-    #When the days is not 0 the it returns 'x days, h/hh:mm:ss' else 
+    #When the days is not 0 the it returns 'x days, h/hh:mm:ss' else
     #it returns 'h/hh:mm:ss'
     if td.days != 0:
         #If there is non zero days then include it
@@ -1810,8 +1810,8 @@ def create_recur_inst():
         LOGGER.debug("Trying to add recurring tasks as part of startup for "
                      " UUID {} and version {}".format(task.uuid, task.version))
         ws_tags_list = get_tags(task.uuid, task.version)
-        ret, return_list = prep_recurring_tasks(task, 
-                                                ws_tags_list, 
+        ret, return_list = prep_recurring_tasks(task,
+                                                ws_tags_list,
                                                 True)
         if ret == FAILURE:
             return ret
@@ -1820,18 +1820,18 @@ def create_recur_inst():
 
 def parse_filters(filters):
     """
-    Converts the user provided filters into a dictionary of 'potential' 
-    filters that can be run on the tasks database. It is 'potential' as the 
+    Converts the user provided filters into a dictionary of 'potential'
+    filters that can be run on the tasks database. It is 'potential' as the
     filters are not validated at this point. If the filter is meant to have
     values like 1 or more ids then the dictionary will be for ex: "id":"1,3,4".
     For filters which are not value based, for example a filter for 'hidden'
     tasks the dictionary will be populated as "HIDDEN":"yes".
-    
+
     Parameters:
         filters(str): Filters provided by the user as arguments in the CLI
-    
+
     Returns:
-        dictionary: Dictionary with keys indicating type of filters and value 
+        dictionary: Dictionary with keys indicating type of filters and value
         will the filter value
     """
     potential_filters = {}
@@ -1860,7 +1860,7 @@ def parse_filters(filters):
             if str(fl).startswith("gr:") or str(fl).startswith("group:"):
                 potential_filters["group"] = (str(fl).split(":"))[1]
             if str(fl).startswith("no:") or str(fl).startswith("notes:"):
-                potential_filters["notes"] = (str(fl).split(":"))[1]                
+                potential_filters["notes"] = (str(fl).split(":"))[1]
             if str(fl).startswith("tg:") or str(fl).startswith("tag:"):
                 potential_filters["tag"] = (((str(fl).split(":"))[1])
                                             .rstrip(","))
@@ -1880,14 +1880,14 @@ def parse_filters(filters):
             if str(fl).startswith("en:") or str(fl).startswith("end:"):
                 potential_filters["end"] = parse_date_filters(str(fl)
                                                               .split(":"))
-                              
+
     if not potential_filters:
         potential_filters = {TASK_ALL: "yes"}
     """
     If only High Level Filters provided then set a key to use to warn users
     as such actions could change properties for a large number of tasks
     """
-    if ("id" not in potential_filters 
+    if ("id" not in potential_filters
             and "priority" not in potential_filters
             and "group" not in potential_filters
             and "notes" not in potential_filters
@@ -1907,8 +1907,8 @@ def parse_filters(filters):
 
 def parse_date_filters(comp_list):
     """
-    Parses and validates the filters provided for date fields. Based on the 
-    operator the input is parsed, converted to a date from the short format 
+    Parses and validates the filters provided for date fields. Based on the
+    operator the input is parsed, converted to a date from the short format
     where applicable. Where validation fails the operator is set to None to
     allow the calling functions to print back appropriate responses.
     Supported operations include below:
@@ -1918,7 +1918,7 @@ def parse_date_filters(comp_list):
         ge - greater than or equal to
         bt - between date1 and date2
         eq - equal to
-    
+
     Paramerters:
         comp_list(list): List made up of operator, date1 and date2
 
@@ -1955,7 +1955,7 @@ def carryover_recur_dates(base_task):
     try:
         res = (SESSION.query(WorkspaceRecurDates)
                     .filter(and_(WorkspaceRecurDates.uuid == base_uuid,
-                                WorkspaceRecurDates.version 
+                                WorkspaceRecurDates.version
                                     == base_version - 1))
                     .all())
         for rec_dt in res:
@@ -1988,7 +1988,7 @@ def calc_task_scores(task_list):
     Assigns a score for tasks based on the below task properties. Each property
     has a weight assigned to it. The final score for the task is then written
     back to the Workspace object.
-    
+
     Initial Scoring:
         Now - Yes then 100 else 0. Weight of 15
         Priority - High, Medium, Normal, Low - 100, 95, 85, 70
@@ -1997,7 +1997,7 @@ def calc_task_scores(task_list):
         Tags - If any then 50 else 0
         Notes - If any then 50 else 0
         Inception - Older tasks score higher
-        Due - Tasks closer to due date score higher with bias towards tasks 
+        Due - Tasks closer to due date score higher with bias towards tasks
         in the future compared to overdue tasks
 
     Weights assigned are as below totalling to 100:
@@ -2011,7 +2011,7 @@ def calc_task_scores(task_list):
         Due - 50
 
     Parameters:
-        task_list(list): List of Workspace objects for which the tasks are 
+        task_list(list): List of Workspace objects for which the tasks are
         scored
 
     Returns:
@@ -2019,7 +2019,7 @@ def calc_task_scores(task_list):
         score written to the score property
     """
     sc_now = {1:100}
-    sc_priority = {PRIORITY_HIGH[0]:100, PRIORITY_MEDIUM[0]:95, 
+    sc_priority = {PRIORITY_HIGH[0]:100, PRIORITY_MEDIUM[0]:95,
                    PRIORITY_NORMAL[0]:85, PRIORITY_LOW[0]:70}
     sc_status = {TASK_STATUS_STARTED:100, TASK_STATUS_TODO:75}
     sc_groups = {"yes":50}
@@ -2033,7 +2033,7 @@ def calc_task_scores(task_list):
     for task in task_list:
         if task.due is not None:
             #For Due scoring
-            due_sum = (due_sum + abs(task.due_diff_today))  
+            due_sum = (due_sum + abs(task.due_diff_today))
         #For inception scoring
         incep_sum = (incep_sum + task.incep_diff_now)
     if due_sum == 0:
@@ -2042,15 +2042,15 @@ def calc_task_scores(task_list):
     for task in task_list:
         tags = get_tags(task.uuid, task.version, expunge=False)
         score = {}
-        try:    
+        try:
             #Now
-            score["now"] = ((sc_now.get(task.now_flag) or 0) 
+            score["now"] = ((sc_now.get(task.now_flag) or 0)
                                 * weights.get("now"))
             #Priority
             score["pri"] = ((sc_priority.get(task.priority) or 0)
                                     * weights.get("priority"))
             #Status
-            score["sts"] = ((sc_status.get(task.status) or 0) 
+            score["sts"] = ((sc_status.get(task.status) or 0)
                                     * weights.get("status"))
             #Groups
             if task.groups:
@@ -2060,7 +2060,7 @@ def calc_task_scores(task_list):
                 score["tag"] =  (sc_tags.get("yes")) * weights.get("tags")
             #Notes
             if task.notes:
-                score["notes"] =  (sc_notes.get("yes")) * weights.get("tags")        
+                score["notes"] =  (sc_notes.get("yes")) * weights.get("tags")
             #Inception
             score["incp"] = ((sc_due.get("today") * int(task.incep_diff_now)
                                 /incep_sum) * weights.get("inception"))
@@ -2069,12 +2069,12 @@ def calc_task_scores(task_list):
                 if int(task.due_diff_today) == 0:
                     score["due"] =  (sc_due.get("today")) * weights.get("due")
                 elif int(task.due_diff_today) < 0:
-                    score["due"] =  ((sc_due.get("past") 
+                    score["due"] =  ((sc_due.get("past")
                                         - abs(int(pow(task.due_diff_today, 2))
                                             /due_sum))
                                     * weights.get("due"))
                 else:
-                    score["due"] = ((sc_due.get("fut") 
+                    score["due"] = ((sc_due.get("fut")
                                         - (int(pow(task.due_diff_today, 2))
                                             /due_sum))
                                     * weights.get("due"))
@@ -2085,7 +2085,7 @@ def calc_task_scores(task_list):
         LOGGER.debug(score)
         ret_score_list[task.uuid] = round(sum(score.values())/100,2)
     return ret_score_list
-    
+
 
 def get_and_print_task_count(print_dict):
     """
@@ -2106,13 +2106,13 @@ def get_and_print_task_count(print_dict):
             if ws_task.task_type != TASK_TYPE_BASE:
                 if ws_task.id == '-':
                     """
-                    Using a context manager to capture output from print 
-                    and pass it onto click's echo for the pytests to 
-                    receive the input. This is done only where the output 
-                    is required for pytest. CONSOLE.print gives a simpler 
-                    management of coloured printing compared to click's 
-                    echo. Suppress the newline for echo to ensure double 
-                    line breaks are not printed, 1 from print and another 
+                    Using a context manager to capture output from print
+                    and pass it onto click's echo for the pytests to
+                    receive the input. This is done only where the output
+                    is required for pytest. CONSOLE.print gives a simpler
+                    management of coloured printing compared to click's
+                    echo. Suppress the newline for echo to ensure double
+                    line breaks are not printed, 1 from print and another
                     from echo.
                     """
                     CONSOLE.print("Updated Task UUID: "
@@ -2124,7 +2124,7 @@ def get_and_print_task_count(print_dict):
                                     .format(ws_task.id), style="info")
                 if not tags_str:
                     tags_str = "-..."
-                reflect_object_n_print(ws_task, to_print=True, 
+                reflect_object_n_print(ws_task, to_print=True,
                                         print_all=False)
                 CONSOLE.print("tags : [magenta]{}[/magenta]"
                                 .format(tags_str[1:]), style="info")
@@ -2134,7 +2134,7 @@ def get_and_print_task_count(print_dict):
                                 "until [magenta]{}[/magenta] for "
                                 "recurrence type [magenta]{}-{}[/magenta]"
                                 .format(ws_task.due, ws_task.recur_end,
-                                        ws_task.recur_mode, 
+                                        ws_task.recur_mode,
                                         ws_task.recur_when),
                                 style="info")
             CONSOLE.print("--")
@@ -2238,7 +2238,7 @@ def get_and_print_task_count(print_dict):
                            .join(max_ver3_xpr, Workspace.uuid ==
                                  max_ver3_xpr.c.uuid)
                            .filter(and_(Workspace.area == WS_AREA_BIN,
-                                        Workspace.version 
+                                        Workspace.version
                                             > max_ver3_xpr.c.maxver))
                            .all())
             LOGGER.debug("Bin: {}".format(results_bin))
@@ -2297,7 +2297,7 @@ def reflect_object_n_print(src_object, to_print=False, print_all=False):
         return "-"
     out_str = ""
     """
-    For debug(when to_print=False) retain a None value and while printing 
+    For debug(when to_print=False) retain a None value and while printing
     for user info(to_print=True) use an empty string to make it more readable.
     """
     dummy = "..."
@@ -2331,16 +2331,16 @@ def calc_duration(src_ops, ws_task_src, ws_task):
     if ws_task_src.task_type in [TASK_TYPE_NRML, TASK_TYPE_DRVD]:
         if src_ops == OPS_STOP:
             #Since the task is stopped calculate the duration
-            duration = round(ws_task_src.duration 
+            duration = round(ws_task_src.duration
                                         + (datetime.strptime(ws_task.created,
-                                                             FMT_DATETIME) 
+                                                             FMT_DATETIME)
                                             - datetime
                                                .strptime(ws_task_src.dur_event,
                                                           FMT_DATETIME))
                                            .total_seconds())
-        elif src_ops in ([OPS_START, OPS_MODIFY, OPS_DONE, OPS_DELETE, 
+        elif src_ops in ([OPS_START, OPS_MODIFY, OPS_DONE, OPS_DELETE,
                           OPS_REVERT, OPS_NOW]):
-            #For Starting or modifying, completing, deleting, reverting the 
+            #For Starting or modifying, completing, deleting, reverting the
             #task or setting now, carry forward last version's duration
             duration = ws_task_src.duration
         else:
@@ -2349,8 +2349,8 @@ def calc_duration(src_ops, ws_task_src, ws_task):
         if (src_ops in [OPS_MODIFY, OPS_NOW, OPS_UNLINK, OPS_DELETE, OPS_DONE,
                         OPS_REVERT]):
             """
-            For these Ops ensure the last started/stopped version's duration 
-            event time is carried forward. This is to ensure duration can be 
+            For these Ops ensure the last started/stopped version's duration
+            event time is carried forward. This is to ensure duration can be
             calculated accurately. Revert should retain the last duration event
             time as well
             """
@@ -2383,19 +2383,19 @@ def reset_now_flag():
 def calc_next_inst_date(recur_mode, recur_when, start_dt, end_dt, cnt=2):
     """
     Returns the next occurence date in a recurring rule.
-    
+
     Uses the datetime.rrule library. Accepts the recur mode and recur when
     and translates this into a recurring rule which rrule can intepret and
     determine the first 2 dates in the recurrence.
-    
+
     No validations are performed on the recurrence mode and when values.
-    
+
     Params:
         recur_mode(str): A valid recurrence mode
         recur_when(str): A comma separted string of valid 'when' values
                          that correspond to the recur mode
         start_dt(date): The date from which the recurrence rule should be run
-        
+
     Returns:
         (list of datetime): First 2 dates in the recurrence rule for the start
                             date
@@ -2478,7 +2478,7 @@ def parse_n_validate_recur(recur):
                 when_list = [int(i) for i in when_list]
             except ValueError as e:
                 CONSOLE.print(errmsg)
-                return FAILURE, None, None       
+                return FAILURE, None, None
         #Validate if the repeat items are valid for the respective mode
         if mode == MODE_WKDAY:
             if not set(when_list).issubset(WHEN_WEEKDAYS):
@@ -2494,8 +2494,8 @@ def parse_n_validate_recur(recur):
                 return FAILURE, None, None
     elif recur[0:1] in VALID_MODES:
         """
-        If the first 2 characters do not make up a valid mode check if the 
-        first character by itself is a valid  mode. 
+        If the first 2 characters do not make up a valid mode check if the
+        first character by itself is a valid  mode.
         """
         mode = recur[0:1]
         if len(recur) == 1:
@@ -2503,7 +2503,7 @@ def parse_n_validate_recur(recur):
             when = None
         elif recur[1:2] == "E":
             """
-            If E is the second character then user is asking for 'every' 
+            If E is the second character then user is asking for 'every'
             X days or every X months etc. This is also an EXTENDED Mode
             """
             try:
@@ -2567,7 +2567,7 @@ def get_tags(task_uuid, task_version, expunge=True):
                           retrieval
 
     Returns:
-        list: A list of WorkspaceTags objects 
+        list: A list of WorkspaceTags objects
     """
     try:
         ws_tags_list = (SESSION.query(WorkspaceTags)
@@ -2601,7 +2601,7 @@ def get_task_uuid_n_ver(potential_filters):
         - Task id based filters - Works only on pending
         - Task group based filters - Works in pending, completed or bin
         - Task tags based filters - Works in pending, completed or bin
-    No validations are performed on the filters. Using the priority set 
+    No validations are performed on the filters. Using the priority set
     in function the filters are applied onto the tasks table.
     As multiple filters can be provided, priority is followed as below.
         1. All tasks in pending area
@@ -2620,10 +2620,10 @@ def get_task_uuid_n_ver(potential_filters):
             OR
         8. By Event ID without area (Not User Callable)
             OR
-        9. All tasks(base/derived/normal) which are in Pending area but 
+        9. All tasks(base/derived/normal) which are in Pending area but
            without an ID (Not User Callable)
             OR
-        10. Groups AND Tags AND Notes AND Description AND Due AND Hide AND End 
+        10. Groups AND Tags AND Notes AND Description AND Due AND Hide AND End
             AND Overdue AND Today AND Hidden AND Started for selected area
                 OR
            Defaults to Completed / Bin Tasks, depending on select area
@@ -2636,14 +2636,14 @@ def get_task_uuid_n_ver(potential_filters):
         list: List of tuples of (task UUID,Version) or None if there
               is an exception or no results found
     """
-    
+
     """
     The filters work  by running an intersect across all applicable filters.
     For ex. if the ask is to filter where group is 'HOME' in the completed
-    area then it will run the query as 
+    area then it will run the query as
     all tasks where group like 'HOME%'
     INTERSECT
-    all tasks in the 'completed' area 
+    all tasks in the 'completed' area
     """
     LOGGER.debug("Incoming Filters: ")
     LOGGER.debug(potential_filters)
@@ -2673,9 +2673,9 @@ def get_task_uuid_n_ver(potential_filters):
     curr_date = datetime.now().date()
     """
     Inner query to match max version for a UUID. This is the default version
-    and filters on NORMAL and DERIVED tasks. Within each filter if there is a 
+    and filters on NORMAL and DERIVED tasks. Within each filter if there is a
     need to deviate from this then they will use their own max_ver sub queries.
-    
+
     """
     max_ver_sqr = (SESSION.query(Workspace.uuid,
                                  func.max(Workspace.version)
@@ -2706,7 +2706,7 @@ def get_task_uuid_n_ver(potential_filters):
         innrqr_list.append(innrqr_all)
     elif idn is not None:
         """
-        If id(s) is provided extract tasks only based on ID as it is most 
+        If id(s) is provided extract tasks only based on ID as it is most
         specific. Works only in pending area
         """
         id_list = idn.split(",")
@@ -2722,7 +2722,7 @@ def get_task_uuid_n_ver(potential_filters):
         innrqr_list.append(innrqr_idn)
     elif now_task is not None:
         """
-        If now task filter then return the task marked as now_flag = True from 
+        If now task filter then return the task marked as now_flag = True from
         pending area
         """
         LOGGER.debug("Inside now filter")
@@ -2757,7 +2757,7 @@ def get_task_uuid_n_ver(potential_filters):
         innrqr_list.append(innrqr_osrecr)
     elif uuidn is not None:
         """
-        If uuid(s) is provided extract tasks only based on UUID as 
+        If uuid(s) is provided extract tasks only based on UUID as
         it is most specific. Works only in completed or bin area.
         Preference given to UUID based filters.
         """
@@ -2854,7 +2854,7 @@ def get_task_uuid_n_ver(potential_filters):
             """
             tag_list = tag.split(",")
             LOGGER.debug("Inside tag filter with below params")
-            LOGGER.debug(tag_list)   
+            LOGGER.debug(tag_list)
             if tag:
                 #If tag is provided search by tag
                 innrqr_tags = (SESSION.query(WorkspaceTags.uuid,
@@ -2882,7 +2882,7 @@ def get_task_uuid_n_ver(potential_filters):
                             .join(Workspace, and_(Workspace.uuid ==
                                                     WorkspaceTags.uuid,
                                                   Workspace.version ==
-                                                    WorkspaceTags.version))                                        
+                                                    WorkspaceTags.version))
                             .filter(Workspace.area == drvd_area))
             innrqr_list.append(innrqr_tags)
         if notes is not None:
@@ -2987,11 +2987,11 @@ def get_task_uuid_n_ver(potential_filters):
                                             max_ver_sqr.c.maxver,
                                             Workspace.uuid ==
                                             max_ver_sqr.c.uuid))
-                                        .filter(and_(Workspace.due 
+                                        .filter(and_(Workspace.due
                                                         >= due_list[1],
-                                                    Workspace.due  
+                                                    Workspace.due
                                                         <= due_list[2],
-                                                    Workspace.area  
+                                                    Workspace.area
                                                         == drvd_area)))
             else:
                 #No valid due filter, so any task that has a due date
@@ -3004,7 +3004,7 @@ def get_task_uuid_n_ver(potential_filters):
                                             max_ver_sqr.c.uuid))
                                 .filter(and_(Workspace.due != None,
                                                 Workspace.area == drvd_area)))
-            innrqr_list.append(innrqr_due) 
+            innrqr_list.append(innrqr_due)
         if hide_list is not None and hide_list[0] is not None:
             """
             Query to get a list of uuid and version for tasks which meet
@@ -3073,9 +3073,9 @@ def get_task_uuid_n_ver(potential_filters):
                                             max_ver_sqr.c.uuid))
                                         .filter(and_(Workspace.hide
                                                         >= hide_list[1],
-                                                    Workspace.hide 
+                                                    Workspace.hide
                                                         <= hide_list[2],
-                                                    Workspace.area 
+                                                    Workspace.area
                                                         == drvd_area)))
             else:
                 #No valid hide filter, so any task that has a hide date
@@ -3093,7 +3093,7 @@ def get_task_uuid_n_ver(potential_filters):
             """
             Query to get a list of uuid and version for tasks which meet
             the recur end date filters provided
-            """                
+            """
             LOGGER.debug("Inside recur end filter with below params")
             LOGGER.debug(end_list)
             if end_list[0] == "eq":
@@ -3105,9 +3105,9 @@ def get_task_uuid_n_ver(potential_filters):
                                                     max_ver_sqr.c.maxver,
                                                 Workspace.uuid ==
                                                     max_ver_sqr.c.uuid))
-                                        .filter(and_(Workspace.recur_end 
+                                        .filter(and_(Workspace.recur_end
                                                         == end_list[1],
-                                                        Workspace.area 
+                                                        Workspace.area
                                                         == drvd_area)))
             elif end_list[0] == "gt":
                 innrqr_end = (SESSION.query(Workspace.uuid,
@@ -3117,9 +3117,9 @@ def get_task_uuid_n_ver(potential_filters):
                                                 max_ver_sqr.c.maxver,
                                                 Workspace.uuid ==
                                                 max_ver_sqr.c.uuid))
-                                    .filter(and_(and_(Workspace.recur_end  
+                                    .filter(and_(and_(Workspace.recur_end
                                                         > end_list[1],
-                                                        Workspace.area 
+                                                        Workspace.area
                                                         == drvd_area))))
             elif end_list[0] == "ge":
                 innrqr_end = (SESSION.query(Workspace.uuid,
@@ -3129,10 +3129,10 @@ def get_task_uuid_n_ver(potential_filters):
                                                 max_ver_sqr.c.maxver,
                                                 Workspace.uuid ==
                                                 max_ver_sqr.c.uuid))
-                                    .filter(and_(Workspace.recur_end 
+                                    .filter(and_(Workspace.recur_end
                                                     >= end_list[1],
-                                                    Workspace.area 
-                                                    == drvd_area)))   
+                                                    Workspace.area
+                                                    == drvd_area)))
             elif end_list[0] == "lt":
                 innrqr_end = (SESSION.query(Workspace.uuid,
                                         Workspace.version)
@@ -3141,9 +3141,9 @@ def get_task_uuid_n_ver(potential_filters):
                                                 max_ver_sqr.c.maxver,
                                                 Workspace.uuid ==
                                                 max_ver_sqr.c.uuid))
-                                    .filter(and_(Workspace.recur_end  
+                                    .filter(and_(Workspace.recur_end
                                                     < end_list[1],
-                                                    Workspace.area 
+                                                    Workspace.area
                                                     == drvd_area)))
             elif end_list[0] == "le":
                 innrqr_end = (SESSION.query(Workspace.uuid,
@@ -3155,7 +3155,7 @@ def get_task_uuid_n_ver(potential_filters):
                                                 max_ver_sqr.c.uuid))
                                     .filter(and_(Workspace.recur_end
                                                     <= end_list[1],
-                                                    Workspace.area 
+                                                    Workspace.area
                                                     == drvd_area)))
             elif end_list[0] == "bt":
                 innrqr_end = (SESSION.query(Workspace.uuid,
@@ -3165,14 +3165,14 @@ def get_task_uuid_n_ver(potential_filters):
                                             max_ver_sqr.c.maxver,
                                             Workspace.uuid ==
                                             max_ver_sqr.c.uuid))
-                                        .filter(and_(Workspace.recur_end 
+                                        .filter(and_(Workspace.recur_end
                                                     >= end_list[1],
-                                                Workspace.recur_end 
+                                                Workspace.recur_end
                                                     <= end_list[2],
-                                                Workspace.area 
+                                                Workspace.area
                                                     == drvd_area)))
             else:
-                #No valid recur end filter, so any task that has a 
+                #No valid recur end filter, so any task that has a
                 #recur end date
                 innrqr_end = (SESSION.query(Workspace.uuid,
                                             Workspace.version)
@@ -3260,8 +3260,8 @@ def get_task_uuid_n_ver(potential_filters):
             #done or bin are provided
             if done_task is not None or bin_task is not None:
                 """
-                If no modifiers provided and if done or bin filters provided  
-                then create a default query for all tasks from completed  or 
+                If no modifiers provided and if done or bin filters provided
+                then create a default query for all tasks from completed  or
                 bin area
                 """
                 LOGGER.debug("Inside default filter")
@@ -3295,7 +3295,7 @@ def perform_undo():
     Deletes all task data that have been created as part of the latest event.
     Using the latest event ID the corresponding task UUID and Version are
     identified. Then these are deleted from Workspace, WorkspaceTags and
-    WorkspaceRecurDates. 
+    WorkspaceRecurDates.
     Post deletion the latest versions of tasks in the pending area are assigned
     appropriate IDs.
 
@@ -3320,7 +3320,7 @@ def perform_undo():
     #Attempt to delete the tasks using the UUID and version
     try:
         (SESSION.query(WorkspaceRecurDates)
-            .filter(tuple_(WorkspaceRecurDates.uuid, 
+            .filter(tuple_(WorkspaceRecurDates.uuid,
                            WorkspaceRecurDates.version)
                             .in_(uuid_version_results))
             .delete(synchronize_session=False))
@@ -3337,7 +3337,7 @@ def perform_undo():
         LOGGER.error(str(e))
         LOGGER.error("Error while performing delete as part of undo")
         return FAILURE
-    #Next for the max versions of task in pending area assign a task ID. 
+    #Next for the max versions of task in pending area assign a task ID.
     potential_filters = {}
     potential_filters["missingid"] = "yes"
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
@@ -3359,13 +3359,13 @@ def perform_undo():
 def process_url(potential_filters, urlno=None):
     """
     Processes the notes for a task to identify the URLs and then list them for
-    the user to select one to be opened. The task is identified using the 
-    filters provided by users. Only the first task from the filtered tasks is 
+    the user to select one to be opened. The task is identified using the
+    filters provided by users. Only the first task from the filtered tasks is
     processed as this command is meant to work for only 1 task at a time.
     If a urlno is provided then the function attempts to open that URL in that
     position in the notes. If there is no URL in that position then it defaults
     to the behavious mentioned above.
-    If there is only 1 URL in the notes then that is opened without a user 
+    If there is only 1 URL in the notes then that is opened without a user
     prompt.
 
     Parameters:
@@ -3384,7 +3384,7 @@ def process_url(potential_filters, urlno=None):
     regex_2 = r"(http?:\S+|https?://\S+)"
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
-        CONSOLE.print("No applicable tasks with this ID/UUID", 
+        CONSOLE.print("No applicable tasks with this ID/UUID",
                         style="default")
         return SUCCESS
     task_list = get_tasks(uuid_version_results)
@@ -3414,7 +3414,7 @@ def process_url(potential_filters, urlno=None):
                     ret = open_url(url_[0])
                     return ret
                 except IndexError as e:
-                    #No URL exists in this position, print message and move 
+                    #No URL exists in this position, print message and move
                     #to default behaviour
                     CONSOLE.print("No URL found at the position provided {}. "
                                 "Attempting to identify URLs..."
@@ -3428,10 +3428,10 @@ def process_url(potential_filters, urlno=None):
             #More than 1 URLavailable so ask user to choose
             cnt = 1
             for cnt, u in enumerate(url_list, start=1):
-                CONSOLE.print("{} - {}".format(str(cnt), u))      
+                CONSOLE.print("{} - {}".format(str(cnt), u))
             choice_rng = [str(x) for x in list(range(1,cnt+1))]
             res = Prompt.ask("Choose the URL to be openned:",
-                                choices=[*choice_rng,"none"], 
+                                choices=[*choice_rng,"none"],
                                 default="none")
             if res == "none":
                 ret = SUCCESS
@@ -3449,10 +3449,10 @@ def empty_bin():
     Empty the bin area. All tasks are deleted permanently.
     Undo operation does not work here. No filters are accepted
     by this operation.
-    
+
     Parameters:
         None
-        
+
     Returns:
         None
     """
@@ -3490,7 +3490,7 @@ def empty_bin():
 
 def delete_tasks(ws_task):
     """
-    Delete the task by creating a new version for the task with status as 
+    Delete the task by creating a new version for the task with status as
     'DELETED', area as 'bin' and task ID as '-'.
 
     Parameters:
@@ -3507,8 +3507,8 @@ def delete_tasks(ws_task):
     LOGGER.debug("Working on Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
     """
-    A task in started state could be requested for deletion. In this case the 
-    task needs to be stopped first and then marked as complete. This allows 
+    A task in started state could be requested for deletion. In this case the
+    task needs to be stopped first and then marked as complete. This allows
     the task druation to be recorded before completing.
     """
     if ws_task.status == TASK_STATUS_STARTED:
@@ -3533,11 +3533,11 @@ def delete_tasks(ws_task):
     LOGGER.debug("Deleting Task UUID {} and Task ID {}"
                     .format(ws_task.uuid, ws_task.id))
     ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-    ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+    ret, ws_task, tags_str = add_task_and_tags(ws_task,
                                                ws_tags_list,
                                                None,
                                                OPS_DELETE)
-    task_tags_print.append((ws_task, tags_str))  
+    task_tags_print.append((ws_task, tags_str))
     if ret == FAILURE:
         LOGGER.error("Error encountered in adding task version, stopping")
         return ret, None
@@ -3549,28 +3549,28 @@ def prep_delete(potential_filters, event_id, delete_all=False):
     Assess the tasks requested for deletion and makes appropriate decisions
     on how to deal with deletion of recurring tasks and normal tasks. If a
     task is a recurring instance then the user is asked if just that one
-    instance needs to be deleted or all pending instances of the recurring 
-    task. 
-    
-    If just one instance of task is to be deleted then move it to the 
+    instance needs to be deleted or all pending instances of the recurring
+    task.
+
+    If just one instance of task is to be deleted then move it to the
     bin. If this was the last pending instance in the recurrence then the base
     task is also move to the bin. If all tasks in the recurrence need to be
-    moved to bin then the base task is also moved to the bin. In the above 
-    scenarios when the base task is moved to the bin any done tasks are 
-    unlinked, ie their linkage to thsi base task is removed and they are 
+    moved to bin then the base task is also moved to the bin. In the above
+    scenarios when the base task is moved to the bin any done tasks are
+    unlinked, ie their linkage to thsi base task is removed and they are
     turned into normal tasks. This allows them to be reverted and operated on
     at a lter point.
 
     For normal tasks the task just gets moved to the bin.
 
     Parameters:
-        potential_filters(dict): Filters which determine the tasks which 
+        potential_filters(dict): Filters which determine the tasks which
         require deletion
-        event_id(text, default=None): An event id if it needs to be used for 
+        event_id(text, default=None): An event id if it needs to be used for
         this operation
         delete_all(boolean, default=False): Used to force a deletion of all
         tasks requested as part of the filter rather than asking user input.
-        Not invoked directly on user operation, instead used by other 
+        Not invoked directly on user operation, instead used by other
         operations.
 
     Returns:
@@ -3597,14 +3597,14 @@ def prep_delete(potential_filters, event_id, delete_all=False):
         ws_task = task
         ws_task.uuid = uuidn
         """
-        Set the new event ID which will be used for deletions of derived and 
-        normal tasks. Also this is used in unlinking of done derived tasks 
+        Set the new event ID which will be used for deletions of derived and
+        normal tasks. Also this is used in unlinking of done derived tasks
         as well as deletion of base tasks.
         For creating new recurring instances the event ID of the exitsing
         base task is used.
         """
         ws_task.event_id = event_id
-        if (ws_task.task_type == TASK_TYPE_DRVD 
+        if (ws_task.task_type == TASK_TYPE_DRVD
                 and ws_task.area == WS_AREA_PENDING):
             """
             if the task is not in pending area then treat them as normal
@@ -3616,7 +3616,7 @@ def prep_delete(potential_filters, event_id, delete_all=False):
                                 "want to modify 'all' pending instances or "
                                 "just 'this' instance"
                                     .format(ws_task.description, ws_task.due),
-                                choices=["all", "this", "none"], 
+                                choices=["all", "this", "none"],
                                 default="none")
             else:
                 LOGGER.debug("Forced delete all")
@@ -3626,7 +3626,7 @@ def prep_delete(potential_filters, event_id, delete_all=False):
                 continue
             elif res == "all":
                 """
-                Delete all instances of the task in pending area and the base 
+                Delete all instances of the task in pending area and the base
                 task. Unlink any done tasks
                 """
                 base_uuid = ws_task.base_uuid
@@ -3664,13 +3664,13 @@ def prep_delete(potential_filters, event_id, delete_all=False):
                 if ret == FAILURE:
                     LOGGER.error("Error while trying to unlink completed "
                                  "instances for this recurring task")
-                    return ret, None                                 
+                    return ret, None
             elif res == "this":
                 """
-                Delete the requested instanc of task. After that is there are 
+                Delete the requested instanc of task. After that is there are
                 no more instances of this task in pending area then delete
                 the base task as well and unlink all done tasks
-                """ 
+                """
                 #First delete this task
                 LOGGER.debug("This task deletion selected. Attempting to "
                              "delete UUID {}".format(ws_task.uuid))
@@ -3697,10 +3697,10 @@ def prep_delete(potential_filters, event_id, delete_all=False):
                 make_transient(base_task)
                 base_task.uuid = base_uuid
                 #Creation of a new recurring instance should use the same
-                #Event ID as the existing version of base task. So deletion's 
+                #Event ID as the existing version of base task. So deletion's
                 # event ID is not used to overwrite here
-                ret, return_list = prep_recurring_tasks(base_task, 
-                                                        ws_tags_list, 
+                ret, return_list = prep_recurring_tasks(base_task,
+                                                        ws_tags_list,
                                                         True)
                 if ret == FAILURE:
                     LOGGER.error("Error encountered in adding task version, "
@@ -3718,17 +3718,17 @@ def prep_delete(potential_filters, event_id, delete_all=False):
                 max_ver_sqr = (SESSION.query(Workspace.uuid,
                                             func.max(Workspace.version)
                                                 .label("maxver"))
-                                    .filter(Workspace.task_type 
+                                    .filter(Workspace.task_type
                                                 == TASK_TYPE_DRVD)
                                     .group_by(Workspace.uuid)
                                     .subquery())
                 results = (SESSION.query(Workspace.uuid, Workspace.version)
                                 .join(max_ver_sqr,
-                                        and_(Workspace.uuid 
+                                        and_(Workspace.uuid
                                                 == max_ver_sqr.c.uuid,
-                                            Workspace.version 
+                                            Workspace.version
                                                 == max_ver_sqr.c.maxver))
-                                .filter(and_(Workspace.task_type 
+                                .filter(and_(Workspace.task_type
                                                 == TASK_TYPE_DRVD,
                                             Workspace.area == WS_AREA_PENDING,
                                             Workspace.base_uuid == base_uuid))
@@ -3777,7 +3777,7 @@ def prep_delete(potential_filters, event_id, delete_all=False):
                 LOGGER.error("Error encountered while deleting tasks")
                 return ret, None
             task_tags_print = (task_tags_print + (ret_task_tags_print
-                                                    or []))     
+                                                    or []))
     return SUCCESS, task_tags_print
 
 
@@ -3802,7 +3802,7 @@ def unlink_tasks(potential_filters, event_id):
         LOGGER.debug("Unlinking Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+        ret, ws_task, tags_str = add_task_and_tags(ws_task,
                                                    ws_tags_list,
                                                    None,
                                                    OPS_UNLINK)
@@ -3835,12 +3835,12 @@ def revert_task(potential_filters, event_id):
         if ws_task.event_id is None:
             ws_task.event_id = event_id
         LOGGER.debug("Reverting Task UUID {} and Task ID {}"
-                     .format(ws_task.uuid, ws_task.id))        
+                     .format(ws_task.uuid, ws_task.id))
         if ws_task.task_type == TASK_TYPE_DRVD:
             """
             Need additional check on if base task should also be moved back
             to pending area. This is required when all tasks for the recurring
-            task are in done state and we are reverting one or more of the 
+            task are in done state and we are reverting one or more of the
             done instances. In this case the base task which at this point is
             in the done status(completed area) should also be reverted back
             to a TO_DO status and pending area.
@@ -3865,7 +3865,7 @@ def revert_task(potential_filters, event_id):
                     if base_task.event_id is None:
                         base_task.event_id = event_id
                     ws_tags_list = get_tags(base_task.uuid, base_task.version)
-                    ret, base_task, tags_str = add_task_and_tags(base_task, 
+                    ret, base_task, tags_str = add_task_and_tags(base_task,
                                                                  ws_tags_list,
                                                                  None,
                                                                  OPS_REVERT)
@@ -3881,11 +3881,11 @@ def revert_task(potential_filters, event_id):
         Next apply the revert action for the task
         """
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+        ret, ws_task, tags_str = add_task_and_tags(ws_task,
                                                    ws_tags_list,
                                                    None,
                                                    OPS_REVERT)
-        
+
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
@@ -3913,16 +3913,16 @@ def reset_task(potential_filters, event_id):
         if ws_task.event_id is None:
             ws_task.event_id = event_id
         LOGGER.debug("Reset of Task UUID {} and Task ID {}"
-                     .format(ws_task.uuid, ws_task.id))        
+                     .format(ws_task.uuid, ws_task.id))
         """
         Next apply the reset action for the task
         """
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+        ret, ws_task, tags_str = add_task_and_tags(ws_task,
                                                    ws_tags_list,
                                                    None,
                                                    OPS_RESET)
-        
+
         task_tags_print.append((ws_task, tags_str))
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
@@ -3953,7 +3953,7 @@ def start_task(potential_filters, event_id):
         LOGGER.debug("Starting Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+        ret, ws_task, tags_str = add_task_and_tags(ws_task,
                                                    ws_tags_list,
                                                    None,
                                                    OPS_START)
@@ -3978,7 +3978,7 @@ def stop_task(potential_filters, event_id):
         if task.status == TASK_STATUS_TODO:
             CONSOLE.print("{}, {} - This task is not STARTED yet..."
                         .format(task.description, task.due))
-            continue        
+            continue
         make_transient(task)
         ws_task = task
         ws_task.status = TASK_STATUS_TODO
@@ -3987,7 +3987,7 @@ def stop_task(potential_filters, event_id):
         LOGGER.debug("Stopping Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+        ret, ws_task, tags_str = add_task_and_tags(ws_task,
                                                    ws_tags_list,
                                                    None,
                                                    OPS_STOP)
@@ -4014,9 +4014,9 @@ def complete_task(potential_filters, event_id):
         ws_task = task
         ws_task.uuid = uuidn
         """
-        A task in started state could be requested for move to completed 
-        status. In this case the task needs to be stopped first and then 
-        marked as complete. This allows the task druation to be recorded 
+        A task in started state could be requested for move to completed
+        status. In this case the task needs to be stopped first and then
+        marked as complete. This allows the task druation to be recorded
         before completing.
         """
         if ws_task.status == TASK_STATUS_STARTED:
@@ -4042,7 +4042,7 @@ def complete_task(potential_filters, event_id):
         LOGGER.debug("Completing Task UUID {} and Task ID {}"
                      .format(ws_task.uuid, ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+        ret, ws_task, tags_str = add_task_and_tags(ws_task,
                                                    ws_tags_list,
                                                    None,
                                                    OPS_DONE)
@@ -4052,15 +4052,15 @@ def complete_task(potential_filters, event_id):
         if ret == FAILURE:
             LOGGER.error("Error encountered in adding task version, stopping")
             return ret, None
-    
+
     if base_uuids:
         """
-        First, if for any of the recurring tasks all tasks in the pending 
+        First, if for any of the recurring tasks all tasks in the pending
         area are completed and the recur end date has not reached then we
         create atleast 1 instance of the next derived task. This will then
         give a task entry for the user to use to modify any properties. Else
         they do not have any way to access this recurring task.
-        If the task is well into the future they can apply a hide date to 
+        If the task is well into the future they can apply a hide date to
         prevent it from coming up in the default vuew command.
         This task creation output is silent and not printed.
         """
@@ -4082,8 +4082,8 @@ def complete_task(potential_filters, event_id):
                 task.uuid = uuidn
                 #Recurring instance to be added with original event ID
                 #So do not overwrite with new event ID
-                ret, return_list = prep_recurring_tasks(task, 
-                                                        ws_tags_list, 
+                ret, return_list = prep_recurring_tasks(task,
+                                                        ws_tags_list,
                                                         True)
                 if ret == FAILURE:
                     LOGGER.error("Error encountered in adding task version, "
@@ -4091,14 +4091,14 @@ def complete_task(potential_filters, event_id):
                     return ret, None
             """
             If any of the tasks are derived then we need to check if the base
-            task should also be moved to 'completed' area. For this we check as 
+            task should also be moved to 'completed' area. For this we check as
             below:
             1. Base task has a recur_end date
-            2. recur_end date = max of the due date in workspace_recur_dates 
-                table. That is all derived tasks have been created for this 
+            2. recur_end date = max of the due date in workspace_recur_dates
+                table. That is all derived tasks have been created for this
                 base task.
             3. No derived task exists in the 'pending' area for this base task.
-                That is all derived tasks have either been completed or have 
+                That is all derived tasks have either been completed or have
                 been deleted.
             Task creation output is not printed and is silent.
             """
@@ -4113,7 +4113,7 @@ def complete_task(potential_filters, event_id):
             results = (SESSION.query(Workspace.uuid, Workspace.version)
                             .join(max_ver_sqr,
                                     and_(Workspace.uuid == max_ver_sqr.c.uuid,
-                                        Workspace.version 
+                                        Workspace.version
                                             == max_ver_sqr.c.maxver)
                                         )
                             .filter(and_(Workspace.task_type == TASK_TYPE_DRVD,
@@ -4143,7 +4143,7 @@ def complete_task(potential_filters, event_id):
                 base_task.now_flag = None
                 LOGGER.debug("Completing Base Task UUID {} and Task ID {}"
                                 .format(base_task.uuid, base_task.id))
-                ret, base_task, tags_str = add_task_and_tags(base_task, 
+                ret, base_task, tags_str = add_task_and_tags(base_task,
                                                              ws_tags_list,
                                                              None,
                                                              OPS_DONE)
@@ -4155,7 +4155,7 @@ def complete_task(potential_filters, event_id):
                 if ret == FAILURE:
                     LOGGER.error("Error encountered while deleting tasks")
                     return ret, None
-                task_tags_print.append((base_task, tags_str))  
+                task_tags_print.append((base_task, tags_str))
     return SUCCESS, task_tags_print
 
 
@@ -4180,7 +4180,7 @@ def toggle_now(potential_filters, event_id):
         LOGGER.debug("Setting Task UUID {} and Task ID {} as NOW"
                      .format(ws_task.uuid, ws_task.id))
         ws_tags_list = get_tags(ws_task.uuid, ws_task.version)
-        ret, ws_task, tags_str = add_task_and_tags(ws_task, 
+        ret, ws_task, tags_str = add_task_and_tags(ws_task,
                                                    ws_tags_list,
                                                    None,
                                                    OPS_NOW)
@@ -4191,7 +4191,7 @@ def toggle_now(potential_filters, event_id):
         """
         Next, any other task having its NOW as True should be set to False.
         For this we will first identify the task UUID and version and then
-        create a new version. New version will have same 'event_id' and 
+        create a new version. New version will have same 'event_id' and
         'created' as the task being added and with NOW set to false
         """
         uuid_ver = (SESSION.query(Workspace.uuid,
@@ -4261,7 +4261,7 @@ def prep_modify(potential_filters, ws_task_src, tag):
                                 " to modify 'all' pending instances or "
                                 "just 'this' instance"
                                     .format(ws_task.description, ws_task.due),
-                                choices=["all", "this", "none"], 
+                                choices=["all", "this", "none"],
                                 default="none")
             if (ws_task_src.recur_end is not None
                     or ws_task_src.recur_mode is not None
@@ -4302,7 +4302,7 @@ def prep_modify(potential_filters, ws_task_src, tag):
                     potential_filters["id"] = str(ws_task.id)
                     # Delete base and derived tasks and unlink done tasks
                     ret, r_tsk_tg_prnt1 = prep_delete(potential_filters,
-                                                      ws_task_src.event_id, 
+                                                      ws_task_src.event_id,
                                                       True)
                     if ret == FAILURE:
                         LOGGER.error("Failure recived while trying to delete "
@@ -4329,7 +4329,7 @@ def prep_modify(potential_filters, ws_task_src, tag):
                     and not re-create the complete set of recurring tasks
                     """
                     """
-                    First add a new version for base task with updated 
+                    First add a new version for base task with updated
                     task properties. For this retrieve the base task
                     and send it to modify_task to merge and the add
                     """
@@ -4358,8 +4358,8 @@ def prep_modify(potential_filters, ws_task_src, tag):
                                      "tasks.")
                         return FAILURE, None
                     """
-                    Now that base task's new version is added, carry over the 
-                    WorkspaceRecurDates from previous version as no change is 
+                    Now that base task's new version is added, carry over the
+                    WorkspaceRecurDates from previous version as no change is
                     requested on the due dates.
                     """
                     base_task = (r_tsk_tg_prnt4[0])[0]
@@ -4372,7 +4372,7 @@ def prep_modify(potential_filters, ws_task_src, tag):
                                      "task.")
                         return ret, None
                     """
-                    Next step is to modify each pending instance of this 
+                    Next step is to modify each pending instance of this
                     recurring task
                     """
                     potential_filters = {}
@@ -4459,7 +4459,7 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
                 hide_chg):
     """
     Function to merge the changes provided by the user into the task
-    that already exists. 
+    that already exists.
     This function does not decide which task has to be modified, which is
     done by prep_modify. This function gets tasks from prep_modify and
     merges the changes with the version from the database and passess it
@@ -4478,7 +4478,7 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
     ws_task.uuid = uuidn
     LOGGER.debug("Modification for Task UUID {} and Task ID {}"
                  .format(ws_task.uuid, ws_task.id))
-    
+
     if ws_task_src.description is not None:
         ws_task.description = ws_task_src.description
 
@@ -4506,7 +4506,7 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
         ws_task.notes = None
     elif ws_task_src.notes is not None:
         #For notes default modify action is to append
-        ws_task.notes = "".join([(ws_task.notes or ""), " ", 
+        ws_task.notes = "".join([(ws_task.notes or ""), " ",
                                  ws_task_src.notes])
         #Remove the prefix whitespace if notes added to task without notes
         ws_task.notes = ws_task.notes.lstrip(" ")
@@ -4600,17 +4600,17 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
 
 def display_full(potential_filters, pager=False, top=None):
     """
-    Displays all attributes held in the backend for the task. This can be 
+    Displays all attributes held in the backend for the task. This can be
     used as input into other programs if required. Uses a simple structure of
     'AttributeName : Attribute Value'
-    
+
     Parameters:
         potential_filters(dict): Dictionary with the various types of
                                  filters to determine tasks for display
         pager(boolean): Default=False. Determines if a pager should be used
                         to display the task information
         top(integer): Limit the number of tasks which should be displayed
-    
+
     Returns:
         integer: Status of Success=0 or Failure=1
     """
@@ -4661,7 +4661,7 @@ def display_notes(potential_filters, pager=False, top=None):
         pager(boolean): Default=False. Determines if a pager should be used
                         to display the task information
         top(integer): Limit the number of tasks which should be displayed
-    
+
     Returns:
         integer: Status of Success=0 or Failure=1
     """
@@ -4689,7 +4689,7 @@ def display_notes(potential_filters, pager=False, top=None):
                                (Workspace.due == tommr, TASK_TOMMR),
                                (Workspace.due != None,
                                 Workspace.due_diff_today + " DAYS"), ],
-                              else_=""))      
+                              else_=""))
         # Main query
         task_list = (SESSION.query(id_xpr.label("id_or_uuid"),
                                    addl_info_xpr.label("due_in"),
@@ -4724,7 +4724,7 @@ def display_notes(potential_filters, pager=False, top=None):
     for cnt, task in enumerate(task_list, start=1):
         if cnt > top:
             break
-        trow = [str(task.id_or_uuid), task.description, task.due_in, 
+        trow = [str(task.id_or_uuid), task.description, task.due_in,
                 task.notes]
         if task.status == TASK_STATUS_DONE:
             table.add_row(*trow, style="done")
@@ -4740,7 +4740,7 @@ def display_notes(potential_filters, pager=False, top=None):
             table.add_row(*trow, style="today")
         else:
             table.add_row(*trow, style="default")
-    
+
     # Print a legend on the indicators used for priority and now
     grid = RichTable.grid(padding=3)
     grid.add_column(style="overdue", justify="center")
@@ -4771,21 +4771,21 @@ def display_notes(potential_filters, pager=False, top=None):
 
 def display_dates(potential_filters, pager=False, top=None):
     """
-    Displays a projection of upto 10 due dates for recurring tasks. 
-    
+    Displays a projection of upto 10 due dates for recurring tasks.
+
     Parameters:
         potential_filters(dict): Dictionary with the various types of
                                  filters to determine tasks for display
         pager(boolean): Default=False. Determines if a pager should be used
                         to display the task information
         top(integer): Limit the number of tasks which should be displayed
-    
+
     Returns:
         integer: Status of Success=0 or Failure=1
     """
     """
     Where the tasks have been created use them to display the due dates. For
-    the remaining, upto 10 dates use projected dates based on the base task. 
+    the remaining, upto 10 dates use projected dates based on the base task.
     This is to ensure any modifications done on individual tasks are reflected
     in the output.
     """
@@ -4828,8 +4828,8 @@ def display_dates(potential_filters, pager=False, top=None):
         task_list = get_tasks(uuid_version_results)
         innrcnt = 0
         """
-        For each derived task instance if it is today or beyond add it for 
-        display 
+        For each derived task instance if it is today or beyond add it for
+        display
         """
         for task in task_list:
             if (datetime.strptime(task.due, FMT_DATEONLY).date()
@@ -4865,10 +4865,10 @@ def display_dates(potential_filters, pager=False, top=None):
         Get the last due date for tasks that have been created. This becomes
         the start date for the projection. Relying on this over the due date
         for the last derived instance as that could have been modified by user
-        """ 
+        """
         try:
             res = (SESSION.query(func.max(WorkspaceRecurDates.due))
-                         .filter(and_(WorkspaceRecurDates.uuid 
+                         .filter(and_(WorkspaceRecurDates.uuid
                                             == base_task.uuid,
                                       WorkspaceRecurDates.version
                                             == base_task.version))
@@ -4880,20 +4880,20 @@ def display_dates(potential_filters, pager=False, top=None):
         start_dt = datetime.strptime((res[0])[0],FMT_DATEONLY).date()
         """
         Get the projection, getting 11 projections as the function will
-        return the first projected date same as the start date which we have 
+        return the first projected date same as the start date which we have
         already covered in earlier section.
         We then remove that entry from the list and rest are added for display
         """
-        due_list =  calc_next_inst_date(base_task.recur_mode, 
+        due_list =  calc_next_inst_date(base_task.recur_mode,
                                         base_task.recur_when,
                                         start_dt,
                                         end_dt,
                                         11 - innrcnt)
         if due_list is not None:
-            due_list = [day  for day in due_list if day >= curr_date and 
+            due_list = [day  for day in due_list if day >= curr_date and
                                                     day != start_dt]
         for day in due_list:
-            table.add_row(base_task.description, 
+            table.add_row(base_task.description,
                           day.strftime(FMT_DAY_DATEW),style="default")
         prcsd_baseuuid.append(task.base_uuid)
     if pager:
@@ -4914,12 +4914,12 @@ def display_history(potential_filters, pager=False, top=None):
         pager(boolean): Default=False. Determines if a pager should be used
                         to display the task information
         top(integer): Limit the number of tags which should be displayed
-    
+
     Returns:
         integer: Status of Success=0 or Failure=1
     """
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
-    uuid_list = map(lambda x: x[0], uuid_version_results) 
+    uuid_list = map(lambda x: x[0], uuid_version_results)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
         get_and_print_task_count({WS_AREA_PENDING: "yes"})
@@ -4928,9 +4928,9 @@ def display_history(potential_filters, pager=False, top=None):
     curr_day = datetime.now().date()
     tommr = curr_day + relativedelta(days=1)
     try:
-        due_xpr = (case([(Workspace.due == None, None), ], 
+        due_xpr = (case([(Workspace.due == None, None), ],
                         else_=Workspace.due))
-        hide_xpr = (case([(Workspace.hide == None, None),], 
+        hide_xpr = (case([(Workspace.hide == None, None),],
                          else_=Workspace.hide))
         groups_xpr = (case([(Workspace.groups == None, None)],
                            else_=Workspace.groups))
@@ -5014,10 +5014,10 @@ def display_history(potential_filters, pager=False, top=None):
     last_uuid = None
     cnt = 0
     for task in task_list:
-        if last_uuid != task.uuid:  
+        if last_uuid != task.uuid:
             """
-            As this can have various UUIDs and the top is applied at a UUID 
-            level, so doing the top check in a different manner to other 
+            As this can have various UUIDs and the top is applied at a UUID
+            level, so doing the top check in a different manner to other
             view functions
             """
             last_uuid = task.uuid
@@ -5057,15 +5057,15 @@ def display_history(potential_filters, pager=False, top=None):
                            int(task.created[14:16]))
                     .strftime(FMT_DATEW_TIME))
 
-        inception = (datetime(int(task.inception[0:4]), 
+        inception = (datetime(int(task.inception[0:4]),
                              int(task.inception[5:7]),
-                             int(task.inception[8:10]), 
+                             int(task.inception[8:10]),
                              int(task.inception[11:13]),
                              int(task.inception[14:16]))
                         .strftime(FMT_DATEW_TIME))
         # Create a list to print
-        trow = [task.uuid, str(task.id), task.description, due, task.recur,end, 
-                task.groups, task.tags, task.status, task.priority_flg, 
+        trow = [task.uuid, str(task.id), task.description, due, task.recur,end,
+                task.groups, task.tags, task.status, task.priority_flg,
                 task.now, hide, str(task.version), inception, created]
         table.add_row(*trow, style="default")
 
@@ -5101,15 +5101,15 @@ def display_history(potential_filters, pager=False, top=None):
 
 def display_by_tags(potential_filters, pager=False, top=None):
     """
-    Displays a the count of tasks against each tag with breakdown by status. 
-    
+    Displays a the count of tasks against each tag with breakdown by status.
+
     Parameters:
         potential_filters(dict): Dictionary with the various types of
                                  filters to determine tasks for display
         pager(boolean): Default=False. Determines if a pager should be used
                         to display the task information
         top(integer): Limit the number of tags which should be displayed
-    
+
     Returns:
         integer: Status of Success=0 or Failure=1
     """
@@ -5125,18 +5125,18 @@ def display_by_tags(potential_filters, pager=False, top=None):
         Order by is on tags without coalesce to ensure the no tag task count
         with NULL is shown on the first row.
         """
-        tags_list = (SESSION.query(coalesce(WorkspaceTags.tags,"No Tag").label("tags"), 
-                                Workspace.area.label("area"), 
+        tags_list = (SESSION.query(coalesce(WorkspaceTags.tags,"No Tag").label("tags"),
+                                Workspace.area.label("area"),
                                 Workspace.status.label("status"),
                                 func.count(Workspace.uuid).label("count"))
-                            .outerjoin(WorkspaceTags, and_(Workspace.uuid 
+                            .outerjoin(WorkspaceTags, and_(Workspace.uuid
                                                     == WorkspaceTags.uuid,
-                                                Workspace.version 
+                                                Workspace.version
                                                     == WorkspaceTags.version))
-                            .filter(tuple_(Workspace.uuid, 
+                            .filter(tuple_(Workspace.uuid,
                                            Workspace.version)
                                            .in_(uuid_version_results))
-                            .group_by(WorkspaceTags.tags, Workspace.area, 
+                            .group_by(WorkspaceTags.tags, Workspace.area,
                                     Workspace.status)
                             .order_by(WorkspaceTags.tags).all())
     except SQLAlchemyError as e:
@@ -5159,7 +5159,7 @@ def display_by_tags(potential_filters, pager=False, top=None):
         if cnt > top:
             break
         trow = []
-        LOGGER.debug(tag.tags + " " + tag.area + " " + tag.status + " " 
+        LOGGER.debug(tag.tags + " " + tag.area + " " + tag.status + " "
                      + str(tag.count))
         if tag.tags == prev_tag:
             trow.append(None)
@@ -5179,34 +5179,34 @@ def display_by_tags(potential_filters, pager=False, top=None):
         with CONSOLE.pager(styles=True):
             CONSOLE.print(table, soft_wrap=True)
     else:
-        CONSOLE.print(table, soft_wrap=True)        
+        CONSOLE.print(table, soft_wrap=True)
     return SUCCESS
 
 
 def display_by_groups(potential_filters, pager=False, top=None):
     """
-    Displays a the count tasks by the groups broken down by hierarchy and 
-    task status. 
-    
+    Displays a the count tasks by the groups broken down by hierarchy and
+    task status.
+
     Parameters:
         potential_filters(dict): Dictionary with the various types of
                                  filters to determine tasks for display
         pager(boolean): Default=False. Determines if a pager should be used
                         to display the task information
         top(integer): Limit the number of groups which should be displayed
-    
+
     Returns:
         integer: Status of Success=0 or Failure=1
     """
     """
-    The groups are not natievly split by hierarchy and stored in the Workspace 
+    The groups are not natievly split by hierarchy and stored in the Workspace
     table. This view breaks it down by hierarchy and display the count. This
     is acheived in the python code without relying on SQL.
     """
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
-        get_and_print_task_count({WS_AREA_PENDING: "yes"}) 
+        get_and_print_task_count({WS_AREA_PENDING: "yes"})
         return SUCCESS
     CONSOLE.print("Preparing view...", style="default")
     task_list = get_tasks(uuid_version_results)
@@ -5222,18 +5222,18 @@ def display_by_groups(potential_filters, pager=False, top=None):
                 status_cnt = task_cnt.get(grp.lstrip("."))
                 if status_cnt is None:
                     status_cnt = {}
-                status_cnt[task.status] = ((status_cnt.get(task.status) or 0) 
+                status_cnt[task.status] = ((status_cnt.get(task.status) or 0)
                                             + 1)
                 task_cnt[grp.lstrip(".")] = status_cnt
         else:
             """
-            Added for Bug-7. Shows additional rows for tasks which do not 
+            Added for Bug-7. Shows additional rows for tasks which do not
             have a group
             """
             status_cnt = task_cnt.get("No Group")
             if status_cnt is None:
                 status_cnt = {}
-            status_cnt[task.status] = ((status_cnt.get(task.status) or 0) 
+            status_cnt[task.status] = ((status_cnt.get(task.status) or 0)
                                         + 1)
             task_cnt["No Group"] = status_cnt
     LOGGER.debug("Total grps to print {}".format(len(task_cnt)))
@@ -5242,7 +5242,7 @@ def display_by_groups(potential_filters, pager=False, top=None):
     table.add_column("group", justify="left")
     table.add_column("area", justify="left")
     table.add_column("status", justify="left")
-    table.add_column("no. of tasks", justify="right") 
+    table.add_column("no. of tasks", justify="right")
     if top is None:
         top = len(task_cnt)
     else:
@@ -5284,20 +5284,20 @@ def display_by_groups(potential_filters, pager=False, top=None):
         CONSOLE.print(table, soft_wrap=True)
         CONSOLE.print(grid, justify="left")
     return SUCCESS
-        
-        
+
+
 def display_default(potential_filters, pager=False, top=None):
     """
-    Displays a tasks with relevant information. Tasks are sorted by their 
+    Displays a tasks with relevant information. Tasks are sorted by their
     score in this view.
-    
+
     Parameters:
         potential_filters(dict): Dictionary with the various types of
                                  filters to determine tasks for display
         pager(boolean): Default=False. Determines if a pager should be used
                         to display the task information
         top(integer): Limit the number of tasks which should be displayed
-    
+
     Returns:
         integer: Status of Success=0 or Failure=1
     """
@@ -5313,9 +5313,9 @@ def display_default(potential_filters, pager=False, top=None):
         id_xpr = (case([(Workspace.area == WS_AREA_PENDING, Workspace.id),
                         (Workspace.area.in_([WS_AREA_COMPLETED, WS_AREA_BIN]),
                             Workspace.uuid), ]))
-        due_xpr = (case([(Workspace.due == None, None), ], 
+        due_xpr = (case([(Workspace.due == None, None), ],
                         else_=Workspace.due))
-        hide_xpr = (case([(Workspace.hide == None, None),], 
+        hide_xpr = (case([(Workspace.hide == None, None),],
                          else_=Workspace.hide))
         groups_xpr = (case([(Workspace.groups == None, None)],
                            else_=Workspace.groups))
@@ -5335,7 +5335,7 @@ def display_default(potential_filters, pager=False, top=None):
                          (Workspace.priority == PRIORITY_LOW[0],
                           INDC_PR_LOW)],
                         else_=INDC_PR_NRML))
-        dur_xpr = (case ([(Workspace.status == TASK_STATUS_STARTED, 
+        dur_xpr = (case ([(Workspace.status == TASK_STATUS_STARTED,
                             Workspace.duration + Workspace.dur_ev_diff_now),],
                         else_=Workspace.duration))
 
@@ -5395,7 +5395,7 @@ def display_default(potential_filters, pager=False, top=None):
     if task_list[0].area == WS_AREA_PENDING:
         LOGGER.debug("Attempting to get scores for tasks for Pending area")
         #score_list = None
-        score_list = calc_task_scores(get_tasks(uuid_version_results, 
+        score_list = calc_task_scores(get_tasks(uuid_version_results,
                                                 expunge=False))
     else:
         LOGGER.debug("Not Pending area, so no scores to be calculated")
@@ -5470,11 +5470,11 @@ def display_default(potential_filters, pager=False, top=None):
             #Not a view on pending tasks, so do not look for a score
             score = ""
 
-        # Create a list to print. Any change in order ensure the if/else 
+        # Create a list to print. Any change in order ensure the if/else
         #in below loop is also modified
         trow = [str(task.id_or_uuid), task.description, task.due_in, due,
                 task.recur, end, task.groups, task.tags, task.status,
-                duration, hide, 
+                duration, hide,
                 "".join([task.now,task.notes, task.priority_flg]),
                 str(task.version), age, created, score]
                 #str(score_dict.get(task.uuid))]
@@ -5549,9 +5549,9 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
     tags_str = ""
     curr_date = datetime.now().date()
     """
-    The base task is there to hold a verion of the task using which the 
-    actual recurring tasks can be derived. This task is not visible to the 
-    users but get modified with any change that applies to the complete set of 
+    The base task is there to hold a verion of the task using which the
+    actual recurring tasks can be derived. This task is not visible to the
+    users but get modified with any change that applies to the complete set of
     recurring tasks
     """
     ws_task_base = ws_task_src
@@ -5574,7 +5574,7 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
                    .filter(WorkspaceRecurDates.uuid ==
                            ws_task_base.uuid)
                    .all())
-        
+
         max_ver_d_sqr = (SESSION.query(Workspace.uuid,
                                      func.max(Workspace.version)
                                         .label("maxver"))
@@ -5584,16 +5584,16 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
         #Check if there are any derived tasks in 'pending' area
         #If none then create atleast one.
         task_exists = (SESSION.query(Workspace.uuid)
-                                  .join(max_ver_d_sqr, 
+                                  .join(max_ver_d_sqr,
                                         and_(Workspace.uuid == max_ver_d_sqr
                                                                 .c.uuid,
                                              Workspace.version == max_ver_d_sqr
                                                                 .c.maxver))
-                                  .filter(and_(Workspace.task_type 
+                                  .filter(and_(Workspace.task_type
                                                 == TASK_TYPE_DRVD,
-                                               Workspace.area 
+                                               Workspace.area
                                                 == WS_AREA_PENDING,
-                                               Workspace.base_uuid 
+                                               Workspace.base_uuid
                                                 == ws_task_base.uuid))
                                   .all())
         if not task_exists:
@@ -5608,7 +5608,7 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
         ws_task_base.id = "*"
         ws_task_base.base_uuid = None
         ws_task_base.now_flag = None
-        ret, ws_task_base, tags_str = add_task_and_tags(ws_task_base, 
+        ret, ws_task_base, tags_str = add_task_and_tags(ws_task_base,
                                                         ws_tags_list,
                                                         None,
                                                         OPS_ADD)
@@ -5633,17 +5633,17 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
         end_dt = FUTDT
     if results is not None and (results[0])[0] is not None:
         """
-        Tasks exist for this recurring set, so increment due date by 
+        Tasks exist for this recurring set, so increment due date by
         appropriate factor
         """
         LOGGER.debug("Task instances exists for this recurring task, finding "
                      "next due date")
         try:
-            next_due = (calc_next_inst_date(ws_task_base.recur_mode, 
+            next_due = (calc_next_inst_date(ws_task_base.recur_mode,
                                             ws_task_base.recur_when,
-                                            datetime.strptime((results[0])[0], 
+                                            datetime.strptime((results[0])[0],
                                                                 FMT_DATEONLY)
-                                                    .date(), 
+                                                    .date(),
                                                     end_dt))[1]
         except (IndexError) as e:
             return SUCCESS, None
@@ -5652,12 +5652,12 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
         No tasks exist for this recurring set, so due date should be base
         task's due date to create the first derived task
         Or we are creating a new recurring task
-        Or due to modifying of recurrence properties we are recreating the 
+        Or due to modifying of recurrence properties we are recreating the
         recurring task
         """
         LOGGER.debug("No existing task for this recurring task, so setting "
                      "next_due as the due date requested for the new task")
-        next_due = (calc_next_inst_date(ws_task_base.recur_mode, 
+        next_due = (calc_next_inst_date(ws_task_base.recur_mode,
                                        ws_task_base.recur_when,
                                        datetime.strptime(ws_task_base.due,
                                                          FMT_DATEONLY)
@@ -5666,27 +5666,27 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
     LOGGER.debug("Next due is {} and create_one is {}"
                  .format(next_due, create_one))
     """
-    For derived tasks idea is to create tasks into the future until the 
-    difference of the task's due date to today reaches a pre-defined 
+    For derived tasks idea is to create tasks into the future until the
+    difference of the task's due date to today reaches a pre-defined
     number or until the end data is reached.
-    This pre-defined number is configured as a number of days as per the 
+    This pre-defined number is configured as a number of days as per the
     mode, ex: for Daily it could be upto 2 days from today.
     Example 1: Daily recurring with due=15-Dec and end=25-Dec with today=
     15-Dec. It will create 2 tasks, one with due=15-Dec and another with
-    due=16-Dec. Since the app is not a live system the task creation 
-    beyond due=16-Dec will be tied into any command which will access the 
-    database for the first run during a new day. 
-    So on 16-Dec if any such command is run it will create the task 
-    with due=17-Dec. 
-    The logic also works for back-dated due and end dates. 
-    If the due date is in the future then the first task will be created 
+    due=16-Dec. Since the app is not a live system the task creation
+    beyond due=16-Dec will be tied into any command which will access the
+    database for the first run during a new day.
+    So on 16-Dec if any such command is run it will create the task
+    with due=17-Dec.
+    The logic also works for back-dated due and end dates.
+    If the due date is in the future then the first task will be created
     irrespective of how far ahead if the due date.
     """
     ws_task_drvd = ws_task_base
     """
     Need new values for below for the derived tasks. Event ID remains
     same as the base task
-    Set the Base UUID as the base task's UUID for linkage 
+    Set the Base UUID as the base task's UUID for linkage
     """
     ws_task_drvd.base_uuid = base_uuid
     # As this is a derived task
@@ -5703,7 +5703,7 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
                                              FMT_DATEONLY)).days
     until_when = UNTIL_WHEN.get(ws_task_drvd.recur_mode)
     """
-    Create task(s) until below conditions are satisfied. 
+    Create task(s) until below conditions are satisfied.
     1. This is the first task being created for the recurrence
     Or
     2. Until difference from today to due reaches a pre-defined number
@@ -5725,7 +5725,7 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
                         " and hide as {}".format(ws_task_drvd.due,
                                                 ws_task_drvd.hide))
         """
-        For each derived task reset the below fields, the event ID 
+        For each derived task reset the below fields, the event ID
         continues to remain the same as the base task
         """
         ws_task_drvd.uuid = None
@@ -5733,7 +5733,7 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
         ws_task_drvd.id = None
         ws_task_drvd.created = None
         if add_recur_inst:
-            #If we are adding a recurring instance then do not take the 
+            #If we are adding a recurring instance then do not take the
             #inception from base task, instead it should be current time
             ws_task_drvd.inception = None
         ws_rec_dt = WorkspaceRecurDates(uuid=base_uuid, version=base_ver,
@@ -5750,7 +5750,7 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
         SESSION.expunge(ws_task_drvd)
         make_transient(ws_task_drvd)
         SESSION.expunge(ws_rec_dt)
-        make_transient(ws_rec_dt)        
+        make_transient(ws_rec_dt)
         try:
             next_due = (calc_next_inst_date(ws_task_base.recur_mode,
                                             ws_task_base.recur_when,
@@ -5763,7 +5763,7 @@ def prep_recurring_tasks(ws_task_src, ws_tags_list, add_recur_inst):
 def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None,
                       src_ops=None):
     """
-    Add a task version into the database. This function adds a Workspace 
+    Add a task version into the database. This function adds a Workspace
     object and optionally WorkspaceTags and WorkspaceRecurDates objects.
 
     """
@@ -5785,7 +5785,7 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None,
     if ws_task_src.hide is not None:
         if ws_task.due is not None:
             # Hide date relative to due date only if due date is available
-            ws_task.hide = convert_date_rel(ws_task_src.hide, 
+            ws_task.hide = convert_date_rel(ws_task_src.hide,
                                             parse(ws_task.due))
         else:
             ws_task.hide = convert_date_rel(ws_task_src.hide, None)
@@ -5827,10 +5827,10 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None,
     else:
         ws_task.task_type = ws_task_src.task_type
     ws_task.base_uuid = ws_task_src.base_uuid
-    
-    ws_task.duration, ws_task.dur_event = calc_duration(src_ops, ws_task_src, 
+
+    ws_task.duration, ws_task.dur_event = calc_duration(src_ops, ws_task_src,
                                                         ws_task)
-    
+
     try:
         LOGGER.debug("Adding values for task to database:")
         LOGGER.debug("\n" + reflect_object_n_print(ws_task, to_print=False,
@@ -5839,7 +5839,7 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None,
         SESSION.add(ws_task)
         if ws_rec_dt is not None:
             LOGGER.debug("Adding values for recur_dates to database:")
-            LOGGER.debug("\n" + reflect_object_n_print(ws_rec_dt, 
+            LOGGER.debug("\n" + reflect_object_n_print(ws_rec_dt,
                                                        to_print=False,
                                                        print_all=True))
             SESSION.add(ws_rec_dt)
@@ -5873,11 +5873,11 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None,
 def display_all_tags():
     """
     Displays a list of the tags used in pending and completed tasks.
-    Does not show any tags from the deleted tasks 
-    
+    Does not show any tags from the deleted tasks
+
     Parameters:
         None
-    
+
     Returns:
         integer: Status of Success=0 or Failure=1
     """
@@ -5891,9 +5891,9 @@ def display_all_tags():
                                                             )))
                                .group_by(Workspace.uuid).subquery())
         tags_list = (SESSION.query(distinct(WorkspaceTags.tags).label("tags"))
-                            .filter(and_(WorkspaceTags.uuid 
+                            .filter(and_(WorkspaceTags.uuid
                                                     == max_ver_sqr.c.uuid,
-                                                WorkspaceTags.version 
+                                                WorkspaceTags.version
                                                     == max_ver_sqr.c.maxver))
                             .order_by(WorkspaceTags.tags).all())
     except SQLAlchemyError as e:
@@ -5913,8 +5913,8 @@ def display_all_tags():
         LOGGER.debug("Tag: " + tag.tags)
         trow.append(tag.tags)
         table.add_row(*trow, style="default")
-    CONSOLE.print("Total number of tags: {}".format(len(tags_list)))        
-    CONSOLE.print(table, soft_wrap=True)   
+    CONSOLE.print("Total number of tags: {}".format(len(tags_list)))
+    CONSOLE.print(table, soft_wrap=True)
     return SUCCESS
 
 
@@ -5922,11 +5922,11 @@ def display_all_groups():
     """
     Displays a list of the groups used in pending and completed tasks.
     Shows groups broken down by hierarchy
-    Does not show any groups from the deleted tasks 
-    
+    Does not show any groups from the deleted tasks
+
     Parameters:
         None
-    
+
     Returns:
         integer: Status of Success=0 or Failure=1
     """
@@ -5941,9 +5941,9 @@ def display_all_groups():
                                .group_by(Workspace.uuid).subquery())
         groups_list = (SESSION.query(distinct(Workspace.groups)
                                 .label("groups"))
-                              .filter(and_(Workspace.uuid 
+                              .filter(and_(Workspace.uuid
                                                       == max_ver_sqr.c.uuid,
-                                                Workspace.version 
+                                                Workspace.version
                                                     == max_ver_sqr.c.maxver))
                             .order_by(Workspace.groups).all())
     except SQLAlchemyError as e:
@@ -5971,7 +5971,7 @@ def display_all_groups():
                     LOGGER.debug("Group: " + grp)
                     trow = []
                     trow.append(grp)
-                    table.add_row(*trow, style="default")                    
+                    table.add_row(*trow, style="default")
                     all_groups.add(grp)
     CONSOLE.print("Total number of groups: {}".format(len(all_groups)))
     LOGGER.debug("Total grps to print {}".format(len(all_groups)))
