@@ -158,7 +158,7 @@ OPS_DONE = "done"
 # ORM Definition
 Base = declarative_base()
 # Changelog URL
-CHANGELOG = "https://github.com/nsmathew/myt-cli/blob/master/CHANGELOG.md"
+CHANGELOG = "https://github.com/nsmathew/myt-cli/blob/master/CHANGELOG.txt"
 
 
 class Workspace(Base):
