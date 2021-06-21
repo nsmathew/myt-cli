@@ -817,12 +817,14 @@ def test_urlopen_1():
     temp = result.output.replace("\n"," ")
     idn = temp.split(" ")[3]
     runner.invoke(modify, ['id:' + idn, '-no', 'http://bb.com bb'])
+    runner.invoke(modify, ['id:' + idn, '-no', 'http://cc.com [cc]'])
     with mock.patch('builtins.input', return_value="none"):
         result = runner.invoke(urlopen, ['id:' + idn])
     assert result.exit_code == 0
     assert "1 - https://abc.com [ABC]" in result.output
     assert "2 - https://xy.com [ XY]" in result.output
     assert "3 - http://bb.com" in result.output
+    assert "4 - http://cc.com [cc]" in result.output
     runner.invoke(delete, ['id:' + idn])
 
 def test_urlopen_2():

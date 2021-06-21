@@ -3378,10 +3378,10 @@ def process_url(potential_filters, urlno=None):
     """
     ret = SUCCESS
     #URL + description, ex: 'https://www.abc.com [ABC's website]'
-    regex_1 = r"(https?://\S+\s+\[.*?\]|http?:\S+|https?://\S+\s+\[.*?\]\
-                |https?://\S+)"
+    regex_1 = r"(http?://\S+\s+\[.*?\]|http?://\S+\
+                |https?://\S+\s+\[.*?\]|https?://\S+)"
     #URL only
-    regex_2 = r"(http?:\S+|https?://\S+)"
+    regex_2 = r"(http?://\S+|https?://\S+)"
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable tasks with this ID/UUID",
@@ -3401,11 +3401,13 @@ def process_url(potential_filters, urlno=None):
     LOGGER.debug(url_list)
     if url_list and url_list is not None:
         if urlno is not None:
+            LOGGER.debug("User has provided a urlno - {}".format(urlno))
             if urlno < 1 or urlno > len(url_list)-1:
                 CONSOLE.print("No URL found at the position provided {}. "
                 "Attempting to identify URLs..."
                 .format(urlno))
             else:
+                LOGGER.debug("urlno is valid, attempting to open")
                 #Attempt to open a URL at position given by user
                 try:
                     #Extract just the URL
@@ -3425,10 +3427,15 @@ def process_url(potential_filters, urlno=None):
             url_ = re.findall(regex_2, url_list[0])
             ret = open_url(url_[0])
         else:
+            LOGGER.debug("More than 1 URL found")
             #More than 1 URLavailable so ask user to choose
             cnt = 1
             for cnt, u in enumerate(url_list, start=1):
-                CONSOLE.print("{} - {}".format(str(cnt), u))
+                LOGGER.debug("Printing URL - {}".format(u))
+                #For some reason the descriptions are not 
+                #being printed when using console's print
+                #so using click's echo instead 
+                click.echo("{} - {}".format(str(cnt), u))
             choice_rng = [str(x) for x in list(range(1,cnt+1))]
             res = Prompt.ask("Choose the URL to be openned:",
                                 choices=[*choice_rng,"none"],
