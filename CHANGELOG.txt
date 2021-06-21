@@ -1,5 +1,13 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.1.4 - Released on 21-Jun-2021
+
+-- Bug Fixes --
+* Fixed issue with reading http urls from notes for 'urlopen' command
+* Corrected the url for CHANGELOG in the 'version' command
+* Corrected the syntax errors and added installation instructions to README
+
+----------------------------------------------------------------
 v0.1.3 - Released on 20-Jun-2021
 
 -- Bug Fixes --

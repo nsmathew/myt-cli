@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='myt-cli',
-    version='0.1.3',
+    version='0.1.4',
     description='myt - My Task Manager',
     py_modules=['myt'],
     install_requires=[
