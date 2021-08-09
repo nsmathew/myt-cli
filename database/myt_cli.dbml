@@ -1,0 +1,133 @@
+Project myt_cli{
+
+database_type: 'SQLite3'
+  Note: '''
+    # myt - a simple command line based personal task manager
+    
+    **DB_SCHEMA_VERSION:** 0.1
+    
+    **Last Updated:** 21-Nov-2020
+    
+    **App Code:** https://github.com/nsmathew/myt-cli
+
+  '''
+}
+
+Table workspace {
+  uuid text [pk, note: 'Unique ID for a task']
+  version int [pk, note: 'Version number for the task']
+  id int [note: 'ID to diplay and operate on tasks in pending area only. All other tasks and prior version of pending tasks should not have an id']
+  description text [note: 'Task description']
+  priority Priority [note: 'Task priority of High, Medium, Low or Normal']
+  due date [note: 'When the task is due']
+  hide date [note: 'Until when should the task be hidden from normal view']
+  groups text [note: 'The groups(s) to which the task belongs to']
+  status Status [not null, note: 'Indicates the status of the task']
+  area Area [not null, note: 'Indicates which are the task version is in']
+  created date [not null, note: 'Indicates the date when the task version was created']
+  event_id text [not null, note: 'Unique Identifier for the event which created this task version']
+  now_flag boolean [note: 'Indicates the task being worked on currently, impacts the task\'s score significantly']
+  task_type TaskType [not null, note: 'To diffrentiate normals tasks and recurring tasks']
+  base_uuid text [note: 'If a recurring task holds the parent base task\'s uuid']
+  recur_mode RecurMode [note: 'If recurring task then holds the frequency of recurrence']
+  recur_when RecurWhen [note: 'If recurring task then additional detail on the frequency']
+  recur_end date [note: 'If recurring task then end date of recurrence']
+  inception date [not null, note: 'Date on which this task was created and is not dependent on version']
+  duration int [note: 'The duration the task has been in STARTED state until this version of the task']
+  dur_event date [note: 'Time the task was last started or stopped']
+  notes text [note: 'Notes related to the text']
+  
+  Indexes {
+    (due) [name: 'idx_ws_due']
+  }
+}
+
+Table workspace_tags {
+  uuid text [pk, note: 'Unique ID for a task']
+  version int [pk, note: 'Version number for the task']
+  tags text [pk, note: 'Tag added for the task']
+  
+  
+    Indexes {
+    (uuid, version) [name: 'idx_ws_tg_uuid_ver']
+  }Indexes {
+    (uuid, version) [name: 'idx_ws_tg_uuid_ver']
+  }
+
+}
+//Foreign Key
+Ref: workspace_tags.(uuid, version) > workspace.(uuid, version) 
+
+Table app_metadata {
+  key text [pk]
+  value text
+}
+
+Table workspace_recur_dates {
+  uuid text [pk, note: 'Unique ID for a task']
+  version int [pk, note: 'Version number for the task']
+  due date [pk, note: 'When the task is due']
+
+    Indexes {
+    (uuid, version) [name: 'idx_ws_recr_uuid_ver']
+  }
+}
+//Foreign Key
+Ref: workspace_recur_dates.(uuid, version) > workspace.(uuid, version) 
+
+
+Enum Status {
+  //Represents a Domain rather than an Enum
+  //Takes one of the below
+  TO_DO
+  STARTED
+  DONE
+}
+
+Enum Area {
+  //Represents a Domain rather than an Enum
+  //Takes one of the below
+  pending
+  completed
+  bin
+}
+
+Enum Priority {
+  //Represents a Domain rather than an Enum
+  //Takes one of the below
+  H [note: 'Or High, h']
+  M [note: 'Or Medium, m']
+  L [note: 'Or Low, l']
+  N [note: 'Or Normal, n']
+}
+
+Enum TaskType {
+  //Represents a Domain rather than an Enum
+  Normal
+  Base
+  Derived
+}
+
+Enum RecurMode {
+  //Represents a Domain rather than an Enum  
+  //Takes one of the below
+  D  [note: 'For Daily']
+  W  [note: 'For Weekly']
+  WD [note: 'For Week Days']
+  F  [note: 'For Fortnightly']
+  M  [note: 'For Monthly']
+  MD [note: 'For Month Days']
+  MO [note: 'For Months']
+  S  [note: 'For Semi-Annual']
+  A  [note: 'For Annual']
+}
+
+Enum RecurWhen {
+  //Represents a Domain rather than an Enum
+  //Takes any one from the below.
+  //String of comma separated values within the allowed range for each
+  WeekDays [note: '1 to 7']
+  MonthDays [note: '1 to 31']
+  Months [note: '1 to 12']
+  
+}
