@@ -392,7 +392,13 @@ def version():
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose):
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
+def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose, 
+        full_db_path=None):
     """
     Add a task. Provide details of task using the various options available.
     Task gets added with a TO_DO status and as a 'pending' task.
@@ -470,7 +476,7 @@ def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose):
     """
     if verbose:
         LOGGER.setLevel(level=logging.DEBUG)
-    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     if desc is None:
         CONSOLE.print("No task information provided. Nothing to do...",
@@ -617,8 +623,13 @@ def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose):
               is_flag=True,
               help="Enable verbose Logging.",
               )
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
 def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
-           verbose):
+           verbose, full_db_path=None):
     """
     Modify task details. Specify 1 or more filters and provide the new values
     for attributes which need modification using the options available.
@@ -745,7 +756,7 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
         CONSOLE.print("No modification values provided. Nothing to do...",
                       style="default")
         exit_app(SUCCESS)
-    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     if potential_filters.get(TASK_ALL) == "yes":
         if not confirm_prompt("No filters given for modifying tasks,"
@@ -797,8 +808,13 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
               is_flag=True,
               help="Enable verbose Logging.",
               )
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
 @click.pass_context
-def now(ctx, filters, verbose):
+def now(ctx, filters, verbose, full_db_path=None):
     """
     Toggles the 'now' status of the task
 
@@ -847,7 +863,7 @@ def now(ctx, filters, verbose):
         CONSOLE.print("NOW flag can be modified for only 1 task at a time",
                       style="default")
         exit_app(SUCCESS)
-    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     event_id = get_event_id()
     ret, task_tags_print = toggle_now(potential_filters, event_id)
@@ -880,7 +896,10 @@ def now(ctx, filters, verbose):
                         exit_app(SUCCESS)
                     else:
                         LOGGER.debug("User requested to start task")
-                        ctx.invoke(start, filters=("".join(["id:",task_id]),), verbose=verbose)
+                        ctx.invoke(start, 
+                                   filters=("".join(["id:",task_id]),), 
+                                   verbose=verbose,
+                                   full_db_path=full_db_path)
                     break
     exit_app(ret)
 
@@ -894,7 +913,12 @@ def now(ctx, filters, verbose):
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def start(filters, verbose):
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
+def start(filters, verbose, full_db_path=None):
     """
     Set a task as started or in progress
 
@@ -917,7 +941,7 @@ def start(filters, verbose):
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
-    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     if (potential_filters.get(TASK_COMPLETE) == "yes" or
             potential_filters.get(TASK_BIN) == "yes"):
@@ -946,7 +970,12 @@ def start(filters, verbose):
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def done(filters, verbose):
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
+def done(filters, verbose, full_db_path=None):
     """
     Set a task as completed.
 
@@ -971,7 +1000,7 @@ def done(filters, verbose):
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
-    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     if (potential_filters.get(TASK_COMPLETE) == "yes" or
             potential_filters.get(TASK_BIN) == "yes"):
@@ -1000,7 +1029,12 @@ def done(filters, verbose):
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def revert(filters, verbose):
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
+def revert(filters, verbose, full_db_path=None):
     """
     Reverts a completed task as pending
 
@@ -1032,7 +1066,7 @@ def revert(filters, verbose):
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
-    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     if potential_filters.get(TASK_COMPLETE) != "yes":
         CONSOLE.print("Revert is applicable only to completed tasks. Use "
@@ -1063,7 +1097,12 @@ def revert(filters, verbose):
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def reset(filters, verbose):
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
+def reset(filters, verbose, full_db_path=None):
     """
     Reset a task's duration to 0 and the status to TO_DO status.
     This works on tasks in STARTED status.
@@ -1085,7 +1124,7 @@ def reset(filters, verbose):
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
-    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     if (potential_filters.get(TASK_COMPLETE) == "yes" or
             potential_filters.get(TASK_BIN) == "yes"):
@@ -1114,7 +1153,12 @@ def reset(filters, verbose):
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def stop(filters, verbose):
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
+def stop(filters, verbose, full_db_path=None):
     """
     Stop a started task and stop duration tracking
 
@@ -1139,7 +1183,7 @@ def stop(filters, verbose):
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
-    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     if (potential_filters.get(TASK_COMPLETE) == "yes" or
             potential_filters.get(TASK_BIN) == "yes"):
@@ -1214,7 +1258,17 @@ def stop(filters, verbose):
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def view(filters, verbose, pager, top, viewmode):
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
+def view(filters, verbose, pager, top, viewmode, full_db_path=None):
     """
     Display tasks using various views and filters.
 
@@ -1247,7 +1301,7 @@ def view(filters, verbose, pager, top, viewmode):
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
-    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     if viewmode == "default":
         ret = display_default(potential_filters, pager, top)
@@ -1275,7 +1329,12 @@ def view(filters, verbose, pager, top, viewmode):
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def delete(filters, verbose):
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
+def delete(filters, verbose, full_db_path=None):
     """
     Delete a task
 
@@ -1311,7 +1370,7 @@ def delete(filters, verbose):
         if not confirm_prompt("No detailed filters given for deleting tasks, "
                               "are you sure?"):
             exit_app(SUCCESS)
-    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     event_id = get_event_id()
     ret, task_tags_print = prep_delete(potential_filters, event_id, False)
@@ -1347,7 +1406,12 @@ def delete(filters, verbose):
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def admin(verbose, empty, reinit, tags, groups):
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
+def admin(verbose, empty, reinit, tags, groups, full_db_path=None):
     """
     Allows to run admin related operations on the tasks database. This includes
     reinitialization of database and emptying the bin area. Refer to the
@@ -1361,8 +1425,8 @@ def admin(verbose, empty, reinit, tags, groups):
                               "tasks and create an empty database. "
                               "Are you sure?"):
             exit_app(SUCCESS)
-        ret = reinitialize_db(verbose)
-    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+        ret = reinitialize_db(verbose, full_db_path)
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     if empty:
         ret = empty_bin()
@@ -1379,7 +1443,12 @@ def admin(verbose, empty, reinit, tags, groups):
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def undo(verbose):
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
+def undo(verbose, full_db_path=None):
     """
     Performs an undo operation.
 
@@ -1392,7 +1461,7 @@ def undo(verbose):
     """
     if verbose:
         set_versbose_logging()
-    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     ret = perform_undo()
     if ret == FAILURE:
@@ -1416,7 +1485,12 @@ def undo(verbose):
               is_flag=True,
               help="Enable verbose logging.",
               )
-def urlopen(filters, urlno, verbose):
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
+def urlopen(filters, urlno, verbose, full_db_path=None):
     """
     Parses task notes for URLs which can then be opened.
 
@@ -1452,7 +1526,7 @@ def urlopen(filters, urlno, verbose):
     """
     if verbose:
         set_versbose_logging()
-    if connect_to_tasksdb(verbose=verbose) == FAILURE:
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     potential_filters = parse_filters(filters)
     if not potential_filters.get("id") and not potential_filters.get("uuid"):
@@ -1463,7 +1537,7 @@ def urlopen(filters, urlno, verbose):
 
 
 #App startup and exit functions
-def connect_to_tasksdb(verbose=False):
+def connect_to_tasksdb(verbose=False, full_db_path=None):
     """
     Connect to the tasks database and performs some startup functions
 
@@ -1482,7 +1556,8 @@ def connect_to_tasksdb(verbose=False):
         int: SUCCESS(0) or FAILURE(1)
     """
     global Session, SESSION, ENGINE
-    full_db_path = os.path.join(DEFAULT_FOLDER, DEFAULT_DB_NAME)
+    if full_db_path is None:
+        full_db_path = os.path.join(DEFAULT_FOLDER, DEFAULT_DB_NAME)
     ENGINE = create_engine("sqlite:///"+full_db_path, echo=verbose)
     db_init = False
     if not os.path.exists(full_db_path):
@@ -1570,8 +1645,9 @@ def discard_db_resources():
         return SUCCESS
 
 
-def reinitialize_db(verbose):
-    full_db_path = os.path.join(DEFAULT_FOLDER, DEFAULT_DB_NAME)
+def reinitialize_db(verbose, full_db_path=None):
+    if full_db_path is None:
+        full_db_path = os.path.join(DEFAULT_FOLDER, DEFAULT_DB_NAME)
     try:
         if os.path.exists(full_db_path):
             discard_db_resources()
