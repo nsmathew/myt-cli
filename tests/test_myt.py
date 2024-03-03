@@ -1,5 +1,5 @@
 import datetime
-import os
+import tempfile
 import pytest
 from click.testing import CliRunner
 from datetime import date, datetime
@@ -20,20 +20,22 @@ from myt import now
 from myt import urlopen
 
 runner = CliRunner()
-
 # Use db in a temp location
 @pytest.fixture(scope='session')
 def set_full_db_path():
-    return "/tmp/tasksdb.sqlite3"
+    return tempfile.mkdtemp() + "/tasksdb.sqlite3"
 
+       
 # Reinit the db when running the full suite of tests
 def test_reinit(set_full_db_path):
+    print(set_full_db_path)
     with mock.patch('builtins.input', return_value="yes"):
         result = runner.invoke(admin, ['--reinit', '-db', set_full_db_path])
         assert "Database removed..." in result.output
         assert "Tasks database initialized..." in result.output
 
 def test_add_1(set_full_db_path):
+    print(set_full_db_path)
     result = runner.invoke(add, ['-de','Test task1','-gr','ABC.XYZ','-tg',
                            'qwerty,asdfgh,zxcvb', '-db', set_full_db_path])
     assert result.exit_code == 0
