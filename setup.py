@@ -6,6 +6,7 @@ setup(
     description='myt - My Task Manager',
     author='Nitin Mathew',
     author_email='nitn_mathew2000@hotmail.com',
+    url='https://github.com/nsmathew/myt-cli'
     py_modules=['myt'],
     install_requires=[
         'Click','rich','python-dateutil','mock','sqlalchemy'
