@@ -1,5 +1,11 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.1.5 - Released on 04-Mar-2024
+
+-- Other --
+* Changes required to upgrade package dependencies for sqlalchemy, click, mock, rich and python-dateutil
+
+----------------------------------------------------------------
 v0.1.4 - Released on 21-Jun-2021
 
 -- Bug Fixes --
