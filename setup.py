@@ -4,6 +4,8 @@ setup(
     name='myt-cli',
     version='0.1.5',
     description='myt - My Task Manager',
+    long_description='myt - My Task Manager.  An application to manage your '\
+                     ' tasks through the command line using simple options.',
     author='Nitin Mathew',
     author_email='nitn_mathew2000@hotmail.com',
     url='https://github.com/nsmathew/myt-cli',
