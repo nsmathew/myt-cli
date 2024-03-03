@@ -23,7 +23,7 @@ from sqlalchemy import (create_engine, Column, Integer, String, Index,
                         ForeignKeyConstraint, tuple_, and_, case, func,
                         BOOLEAN, distinct, inspect, or_)
 from sqlalchemy.orm import sessionmaker, make_transient
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.sql.functions import coalesce
@@ -797,7 +797,8 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
               is_flag=True,
               help="Enable verbose Logging.",
               )
-def now(filters, verbose):
+@click.pass_context
+def now(ctx, filters, verbose):
     """
     Toggles the 'now' status of the task
 
@@ -879,7 +880,7 @@ def now(filters, verbose):
                         exit_app(SUCCESS)
                     else:
                         LOGGER.debug("User requested to start task")
-                        start(("".join(["id:",task_id]),), verbose)
+                        ctx.invoke(start, filters=("".join(["id:",task_id]),), verbose=verbose)
                     break
     exit_app(ret)
 
@@ -2149,9 +2150,9 @@ def get_and_print_task_count(print_dict):
         if print_dict.get(WS_AREA_PENDING) == "yes":
             # Get count of pending tasks split by HIDDEN and VISIBLE
             # Build case expression separately to simplify readability
-            visib_xpr = (case([(and_(Workspace.hide > curr_day.date(),
+            visib_xpr = (case((and_(Workspace.hide > curr_day.date(),
                                     Workspace.hide != None),
-                               "HIDDEN"), ], else_="VISIBLE")
+                               "HIDDEN"), else_="VISIBLE")
                          .label("VISIBILITY"))
             # Inner query to match max version for a UUID
             max_ver_sqr = (SESSION.query(Workspace.uuid,
@@ -4677,13 +4678,13 @@ def display_notes(potential_filters, pager=False, top=None):
         return SUCCESS
     task_list = get_tasks(uuid_version_results)
     try:
-        id_xpr = (case([(Workspace.area == WS_AREA_PENDING, Workspace.id),
+        id_xpr = (case((Workspace.area == WS_AREA_PENDING, Workspace.id),
                         (Workspace.area.in_([WS_AREA_COMPLETED, WS_AREA_BIN]),
-                            Workspace.uuid), ]))
-        now_flag_xpr = (case([(Workspace.now_flag == True, INDC_NOW), ],
+                            Workspace.uuid)))
+        now_flag_xpr = (case((Workspace.now_flag == True, INDC_NOW),
                              else_=""))
         # Additional information
-        addl_info_xpr = (case([(Workspace.area == WS_AREA_COMPLETED,
+        addl_info_xpr = (case((Workspace.area == WS_AREA_COMPLETED,
                                 'IS DONE'),
                                (Workspace.area == WS_AREA_BIN,
                                 'IS DELETED'),
@@ -4691,7 +4692,7 @@ def display_notes(potential_filters, pager=False, top=None):
                                (Workspace.due == curr_day, TASK_TODAY),
                                (Workspace.due == tommr, TASK_TOMMR),
                                (Workspace.due != None,
-                                Workspace.due_diff_today + " DAYS"), ],
+                                Workspace.due_diff_today + " DAYS"),
                               else_=""))
         # Main query
         task_list = (SESSION.query(id_xpr.label("id_or_uuid"),
@@ -4931,25 +4932,25 @@ def display_history(potential_filters, pager=False, top=None):
     curr_day = datetime.now().date()
     tommr = curr_day + relativedelta(days=1)
     try:
-        due_xpr = (case([(Workspace.due == None, None), ],
+        due_xpr = (case((Workspace.due == None, None),
                         else_=Workspace.due))
-        hide_xpr = (case([(Workspace.hide == None, None),],
+        hide_xpr = (case((Workspace.hide == None, None),
                          else_=Workspace.hide))
-        groups_xpr = (case([(Workspace.groups == None, None)],
+        groups_xpr = (case((Workspace.groups == None, None),
                            else_=Workspace.groups))
-        now_flag_xpr = (case([(Workspace.now_flag == True, INDC_NOW), ],
+        now_flag_xpr = (case((Workspace.now_flag == True, INDC_NOW),
                              else_=""))
-        recur_xpr = (case([(Workspace.recur_mode != None, Workspace.recur_mode
-                            + " " + func.ifnull(Workspace.recur_when, ""))],
+        recur_xpr = (case((Workspace.recur_mode != None, Workspace.recur_mode
+                            + " " + func.ifnull(Workspace.recur_when, "")),
                           else_=None))
-        end_xpr = (case([(Workspace.recur_end == None, None)],
+        end_xpr = (case((Workspace.recur_end == None, None),
                         else_=Workspace.recur_end))
-        pri_xpr = (case([(Workspace.priority == PRIORITY_HIGH[0],
+        pri_xpr = (case((Workspace.priority == PRIORITY_HIGH[0],
                           INDC_PR_HIGH),
                          (Workspace.priority == PRIORITY_MEDIUM[0],
                           INDC_PR_MED),
                          (Workspace.priority == PRIORITY_LOW[0],
-                          INDC_PR_LOW)],
+                          INDC_PR_LOW),
                         else_=INDC_PR_NRML))
 
         # Sub Query for Tags - START
@@ -4968,7 +4969,7 @@ def display_history(potential_filters, pager=False, top=None):
                                    recur_xpr.label("recur"),
                                    end_xpr.label("end"),
                                    groups_xpr.label("groups"),
-                                   case([(tags_subqr.c.tags == None, None), ],
+                                   case((tags_subqr.c.tags == None, None),
                                         else_=tags_subqr.c.tags).label("tags"),
                                    Workspace.status.label("status"),
                                    pri_xpr.label("priority_flg"),
@@ -5313,33 +5314,33 @@ def display_default(potential_filters, pager=False, top=None):
     curr_day = datetime.now().date()
     tommr = curr_day + relativedelta(days=1)
     try:
-        id_xpr = (case([(Workspace.area == WS_AREA_PENDING, Workspace.id),
+        id_xpr = (case((Workspace.area == WS_AREA_PENDING, Workspace.id),
                         (Workspace.area.in_([WS_AREA_COMPLETED, WS_AREA_BIN]),
-                            Workspace.uuid), ]))
-        due_xpr = (case([(Workspace.due == None, None), ],
+                            Workspace.uuid)))
+        due_xpr = (case((Workspace.due == None, None),
                         else_=Workspace.due))
-        hide_xpr = (case([(Workspace.hide == None, None),],
+        hide_xpr = (case((Workspace.hide == None, None),
                          else_=Workspace.hide))
-        groups_xpr = (case([(Workspace.groups == None, None)],
+        groups_xpr = (case((Workspace.groups == None, None),
                            else_=Workspace.groups))
-        now_flag_xpr = (case([(Workspace.now_flag == True, INDC_NOW), ],
+        now_flag_xpr = (case((Workspace.now_flag == True, INDC_NOW),
                              else_=""))
-        notes_flag_xpr = (case([(Workspace.notes != None, INDC_NOTES), ],
+        notes_flag_xpr = (case((Workspace.notes != None, INDC_NOTES),
                              else_=""))
-        recur_xpr = (case([(Workspace.recur_mode != None, Workspace.recur_mode
-                            + " " + func.ifnull(Workspace.recur_when, ""))],
+        recur_xpr = (case((Workspace.recur_mode != None, Workspace.recur_mode
+                            + " " + func.ifnull(Workspace.recur_when, "")),
                           else_=None))
-        end_xpr = (case([(Workspace.recur_end == None, None)],
+        end_xpr = (case((Workspace.recur_end == None, None),
                         else_=Workspace.recur_end))
-        pri_xpr = (case([(Workspace.priority == PRIORITY_HIGH[0],
+        pri_xpr = (case((Workspace.priority == PRIORITY_HIGH[0],
                           INDC_PR_HIGH),
                          (Workspace.priority == PRIORITY_MEDIUM[0],
                           INDC_PR_MED),
                          (Workspace.priority == PRIORITY_LOW[0],
-                          INDC_PR_LOW)],
+                          INDC_PR_LOW),
                         else_=INDC_PR_NRML))
-        dur_xpr = (case ([(Workspace.status == TASK_STATUS_STARTED,
-                            Workspace.duration + Workspace.dur_ev_diff_now),],
+        dur_xpr = (case ((Workspace.status == TASK_STATUS_STARTED,
+                            Workspace.duration + Workspace.dur_ev_diff_now),
                         else_=Workspace.duration))
 
         # Sub Query for Tags - START
@@ -5351,7 +5352,7 @@ def display_default(potential_filters, pager=False, top=None):
                       .subquery())
         # Sub Query for Tags - END
         # Additional information
-        addl_info_xpr = (case([(Workspace.area == WS_AREA_COMPLETED,
+        addl_info_xpr = (case((Workspace.area == WS_AREA_COMPLETED,
                                 'IS DONE'),
                                (Workspace.area == WS_AREA_BIN,
                                 'IS DELETED'),
@@ -5359,7 +5360,7 @@ def display_default(potential_filters, pager=False, top=None):
                                (Workspace.due == curr_day, TASK_TODAY),
                                (Workspace.due == tommr, TASK_TOMMR),
                                (Workspace.due != None,
-                                Workspace.due_diff_today + " DAYS"), ],
+                                Workspace.due_diff_today + " DAYS"),
                               else_=""))
         # Main query
         task_list = (SESSION.query(id_xpr.label("id_or_uuid"),
@@ -5369,7 +5370,7 @@ def display_default(potential_filters, pager=False, top=None):
                                    recur_xpr.label("recur"),
                                    end_xpr.label("end"),
                                    groups_xpr.label("groups"),
-                                   case([(tags_subqr.c.tags == None, None), ],
+                                   case((tags_subqr.c.tags == None, None),
                                         else_=tags_subqr.c.tags).label("tags"),
                                    Workspace.status.label("status"),
                                    pri_xpr.label("priority_flg"),
