@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='myt-cli',
-    version='0.1.5a',
+    version='0.1.5a0',
     description='myt - My Task Manager',
     long_description='myt - My Task Manager.  An application to manage your '\
                      ' tasks through the command line using simple options.',
