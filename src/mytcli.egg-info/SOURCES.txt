@@ -1,0 +1,12 @@
+LICENSE
+README.md
+pyproject.toml
+src/mytcli/__init__.py
+src/mytcli/myt.py
+src/mytcli.egg-info/PKG-INFO
+src/mytcli.egg-info/SOURCES.txt
+src/mytcli.egg-info/dependency_links.txt
+src/mytcli.egg-info/entry_points.txt
+src/mytcli.egg-info/requires.txt
+src/mytcli.egg-info/top_level.txt
+tests/test_myt.py

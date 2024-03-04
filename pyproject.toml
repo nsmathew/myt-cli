@@ -1,0 +1,35 @@
+[project]
+name = "myt-cli"
+version = "0.1.5"
+authors = [
+  { name="Nitin Mathew", email="nitn_mathew2000@hotmail.com" },
+]
+description = "myt - My Task Manager"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = ['Click','rich','python-dateutil','mock','sqlalchemy']
+classifiers = [
+    'Development Status :: 5 - Production/Stable',
+    'Environment :: Console',
+    'Intended Audience :: Science/Research',
+    'License :: OSI Approved :: MIT License',  
+    'Programming Language :: Python',
+    'Operating System :: Microsoft :: Windows',
+    'Operating System :: MacOS',
+    'Operating System :: POSIX :: Linux',
+    'Topic :: Office/Business',
+]
+
+[project.scripts]
+myt = "mytcli.myt:myt"
+
+[project.urls]
+Homepage = "https://github.com/nsmathew/myt-cli"
+Issues = "https://github.com/nsmathew/myt-cli/issues"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+exclude = [".github*"]

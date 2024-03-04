@@ -4,6 +4,7 @@ v0.1.5 - Released on 04-Mar-2024
 
 -- Other --
 * Changes required to upgrade package dependencies for sqlalchemy, click, mock, rich and python-dateutil
+* Switched to use pyproject.toml instead of setup.py for build and packaging
 
 ----------------------------------------------------------------
 v0.1.4 - Released on 21-Jun-2021

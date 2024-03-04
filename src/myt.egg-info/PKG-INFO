@@ -1,3 +1,28 @@
+Metadata-Version: 2.1
+Name: myt
+Version: 0.1.51
+Summary: myt - My Task Manager
+Author-email: Nitin Mathew <nitn_mathew2000@hotmail.com>
+Project-URL: Homepage, https://github.com/nsmathew/myt-cli
+Project-URL: Issues, https://github.com/nsmathew/myt-cli/issues
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: MacOS
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Topic :: Office/Business
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: Click
+Requires-Dist: rich
+Requires-Dist: python-dateutil
+Requires-Dist: mock
+Requires-Dist: sqlalchemy
+
 # myt-cli
 My Tasks - A personal task manager
 
@@ -25,18 +50,16 @@ This task is scheduled for the 25th of every month. Using the 'hide' option tt w
 `myt add -de "Project weekly catch ups" -re WD1,2,5 -du +0 -en +30 -gr WORK.PROJECTS`
 This adds a recurring task for every Monday, Tuesday and Friday and ending in 30 days from today
 
-Other functionality in the app can be explored using the app's help 
-
+Other functionality in the app can be explored using the app's help content
 ### Installation
-Install using pip: `pip install myt-cli`
+* Download the latest release from https://github.com/nsmathew/myt-cli/releases
+* Install using pipx from the downloaded app folder:
+`pipx install .`
 
 ### Technology
 * Python 3
 * Sqlite3
 
-### Links
-- Github - https://github.com/nsmathew/myt-cli
-- PyPi - https://test.pypi.org/project/myt-cli
-
 ### Contact
-Nitin Mathew, nitn_mathew2000@hotmail.com
+>Nitin Mathew
+>nitn_mathew2000@hotmail.com
