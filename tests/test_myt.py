@@ -6,18 +6,18 @@ from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 import mock
 
-from src.myt.myt import add
-from src.myt.myt import modify
-from src.myt.myt import delete
-from src.myt.myt import start
-from src.myt.myt import stop
-from src.myt.myt import revert
-from src.myt.myt import reset
-from src.myt.myt import done
-from src.myt.myt import admin
-from src.myt.myt import view
-from src.myt.myt import now
-from src.myt.myt import urlopen
+from src.mytcli.myt import add
+from src.mytcli.myt import modify
+from src.mytcli.myt import delete
+from src.mytcli.myt import start
+from src.mytcli.myt import stop
+from src.mytcli.myt import revert
+from src.mytcli.myt import reset
+from src.mytcli.myt import done
+from src.mytcli.myt import admin
+from src.mytcli.myt import view
+from src.mytcli.myt import now
+from src.mytcli.myt import urlopen
 
 runner = CliRunner()
 # Use db in a temp location
