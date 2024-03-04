@@ -1,6 +1,6 @@
 [project]
 name = "myt-cli"
-version = "0.1.5"
+version = "0.1.6"
 authors = [
   { name="Nitin Mathew", email="nitn_mathew2000@hotmail.com" },
 ]
@@ -21,7 +21,7 @@ classifiers = [
 ]
 
 [project.scripts]
-myt = "mytcli.myt:myt"
+myt = "src.mytcli.myt:myt"
 
 [project.urls]
 Homepage = "https://github.com/nsmathew/myt-cli"
