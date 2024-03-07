@@ -5,6 +5,7 @@ from click.testing import CliRunner
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 import mock
+import logging
 
 from src.mytcli.myt import add
 from src.mytcli.myt import modify
@@ -18,6 +19,7 @@ from src.mytcli.myt import admin
 from src.mytcli.myt import view
 from src.mytcli.myt import now
 from src.mytcli.myt import urlopen
+from src.mytcli.myt import stats
 
 runner = CliRunner()
 # Use db in a temp location
@@ -879,3 +881,65 @@ def test_urlopen_4(set_full_db_path):
     assert result.exit_code == 0
     assert "No URLS found in notes for this task" in result.output
     runner.invoke(delete, ['id:' + idn, '-db', set_full_db_path])
+
+def test_stats(set_full_db_path, caplog):
+    caplog.set_level(logging.DEBUG)
+    # TODO Tasks
+    duedt = (date.today()).strftime("%Y-%m-%d")
+    result = runner.invoke(add, ['-de','Test task','-du', duedt,  '-gr', 'STATS', '-db',set_full_db_path])
+    result = runner.invoke(add, ['-de','Test task','-du', duedt, '-hi', +10,  '-gr', 'STATS', '-db', set_full_db_path])
+    
+    duedt = (date.today() + relativedelta(days=-4)).strftime("%Y-%m-%d")
+    result = runner.invoke(add, ['-de','Test task','-du', duedt,  '-gr', 'STATS', '-db', set_full_db_path])
+    result = runner.invoke(add, ['-de','Test task','-du', duedt, '-hi', +10,  '-gr', 'STATS', '-db', set_full_db_path])
+    
+    duedt = (date.today() + relativedelta(days=+4)).strftime("%Y-%m-%d")
+    result = runner.invoke(add, ['-de','Test task','-du', duedt,  '-gr', 'STATS', '-db', set_full_db_path])
+    result = runner.invoke(add, ['-de','Test task','-du', duedt, '-hi', +10,  '-gr', 'STATS', '-db', set_full_db_path])    
+    
+    result = runner.invoke(add, ['-de','Test task',  '-gr', 'STATS', '-db', set_full_db_path])
+    result = runner.invoke(add, ['-de','Test task','-hi', +10,  '-gr', 'STATS', '-db', set_full_db_path])   
+    
+    # Started tasks 
+    duedt = (date.today()).strftime("%Y-%m-%d")
+    result = runner.invoke(add, ['-de','Test task','-du', duedt,  '-gr', 'STATS', '-db', set_full_db_path])
+    id = result.output.replace("\n"," ").split(" ")[3]
+    result = runner.invoke(start, ['id:'+str(id), '-db', set_full_db_path])    
+    
+    result = runner.invoke(add, ['-de','Test task','-du', duedt, '-hi', +10,  '-gr', 'STATS', '-db', set_full_db_path])
+    id = result.output.replace("\n"," ").split(" ")[3]    
+    result = runner.invoke(start, ['id:'+str(id), '-db', set_full_db_path])    
+    
+    
+    duedt = (date.today() + relativedelta(days=-4)).strftime("%Y-%m-%d")
+    result = runner.invoke(add, ['-de','Test task','-du', duedt,  '-gr', 'STATS', '-db', set_full_db_path])
+    id = result.output.replace("\n"," ").split(" ")[3]    
+    result = runner.invoke(start, ['id:'+str(id), '-db', set_full_db_path])        
+    
+    result = runner.invoke(add, ['-de','Test task','-du', duedt, '-hi', +10,  '-gr', 'STATS', '-db', set_full_db_path])
+    id = result.output.replace("\n"," ").split(" ")[3]    
+    result = runner.invoke(start, ['id:'+str(id), '-db', set_full_db_path])        
+    
+    
+    duedt = (date.today() + relativedelta(days=+4)).strftime("%Y-%m-%d")
+    result = runner.invoke(add, ['-de','Test task','-du', duedt,  '-gr', 'STATS', '-db', set_full_db_path])
+    id = result.output.replace("\n"," ").split(" ")[3]    
+    result = runner.invoke(start, ['id:'+str(id), '-db', set_full_db_path])        
+    
+    result = runner.invoke(add, ['-de','Test task','-du', duedt, '-hi', +10,  '-gr', 'STATS', '-db', set_full_db_path])    
+    id = result.output.replace("\n"," ").split(" ")[3]    
+    result = runner.invoke(start, ['id:'+str(id), '-db', set_full_db_path])    
+    
+    result = runner.invoke(add, ['-de','Test task',  '-gr', 'STATS', '-db', set_full_db_path])   
+    id = result.output.replace("\n"," ").split(" ")[3]    
+    result = runner.invoke(start, ['id:'+str(id), '-db', set_full_db_path])         
+    
+    result = runner.invoke(add, ['-de','Test task','-hi', +10,  '-gr', 'STATS', '-db', set_full_db_path])      
+    id = result.output.replace("\n"," ").split(" ")[3]    
+    result = runner.invoke(start, ['id:'+str(id), '-db', set_full_db_path])     
+    
+    result = runner.invoke(stats, ['--verbose', '-db', set_full_db_path])   
+    assert result.exit_code == 0
+    assert "[4, 4, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 16, 4, 4, 4, 4]" in caplog.text
+
+    runner.invoke(delete, ['gr:STATS', '-db', set_full_db_path])

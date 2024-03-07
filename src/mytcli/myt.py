@@ -23,15 +23,19 @@ from sqlalchemy import (create_engine, Column, Integer, String, Index,
                         ForeignKeyConstraint, tuple_, and_, case, func,
                         BOOLEAN, distinct, inspect, or_)
 from sqlalchemy.orm import sessionmaker, make_transient
-from sqlalchemy.orm import declarative_base
+#from sqlalchemy.orm import 
+from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.sql.functions import coalesce
+from sqlalchemy import cast, Numeric
+
+import plotext as pltxt
 
 #Global - START
 DB_SCHEMA_VER = 0.1
 # SQL Connection Related
-DEFAULT_FOLDER = os.path.join(str(Path.home()), "myt-cli")
+DEFAULT_FOLDER = os.path.join(str(Path.home()), "tmp/myt-cli")
 DEFAULT_DB_NAME = "tasksdb.sqlite3"
 ENGINE = None
 SESSION = None
@@ -152,10 +156,12 @@ OPS_NOW = "now"
 OPS_UNLINK = "unlink"
 OPS_DONE = "done"
 # ORM Definition
-Base = declarative_base()
+#Base = declarative_base()
 # Changelog URL
 CHANGELOG = "https://github.com/nsmathew/myt-cli/blob/master/CHANGELOG.txt"
 
+class Base(DeclarativeBase):
+    pass
 
 class Workspace(Base):
     """
@@ -1263,11 +1269,6 @@ def stop(filters, verbose, full_db_path=None):
               type=str,
               help="Full path to tasks database file",
               )
-@click.option("--full-db-path",
-              "-db",
-              type=str,
-              help="Full path to tasks database file",
-              )
 def view(filters, verbose, pager, top, viewmode, full_db_path=None):
     """
     Display tasks using various views and filters.
@@ -1535,6 +1536,31 @@ def urlopen(filters, urlno, verbose, full_db_path=None):
     ret = process_url(potential_filters, urlno)
     exit_app(ret)
 
+@myt.command()
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable verbose Logging.",
+              )
+@click.option("--full-db-path",
+              "-db",
+              type=str,
+              help="Full path to tasks database file",
+              )
+def stats(verbose, full_db_path=None):
+    """
+    Displays stats on the state of pending and completed tasks. Includes how 
+    many tasks are in the various state currently and how many are in the bin.
+    Additionally also shows the trend for tasks completed and tasks created 
+    over the last 7 days.
+    """
+    ret = SUCCESS
+    if verbose:
+        set_versbose_logging()
+    if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
+        exit_app(FAILURE)        
+    display_stats()
+    exit_app(ret)
 
 #App startup and exit functions
 def connect_to_tasksdb(verbose=False, full_db_path=None):
@@ -5365,6 +5391,307 @@ def display_by_groups(potential_filters, pager=False, top=None):
         CONSOLE.print(grid, justify="left")
     return SUCCESS
 
+def display_stats():
+    """
+    Displays stats on the state of pending and completed tasks. Includes how 
+    many tasks are in the various state currently and how many are in the bin.
+    Additionally also shows the trend for tasks completed and tasks created 
+    over the last 7 days.
+    
+    Parameters:
+        None
+
+    Returns:
+        integer: Status of Success=0 or Failure=1
+    """
+    CONSOLE.print("----------------------------------------------")
+    CONSOLE.print("1. Preparing stats view for all tasks by task status...", 
+                  style="default")
+    CONSOLE.print("----------------------------------------------")
+   
+    curr_day_str = datetime.now().date().strftime('%Y%m%d')
+
+    try:
+        max_ver_sqr = (SESSION.query(Workspace.uuid,
+                                func.max(Workspace.version)
+                                        .label("maxver"))
+                               .group_by(Workspace.uuid).subquery())
+        task_status_cnt = (SESSION.query(Workspace.status,
+                                    Workspace.area,
+                                    func.count(Workspace.uuid).label("count"))
+                              .join(max_ver_sqr, and_(max_ver_sqr.c.uuid
+                                                        == Workspace.uuid,
+                                                        max_ver_sqr.c.maxver
+                                                        == Workspace.version))
+                              .filter(and_(Workspace.task_type.in_(
+                                                            [TASK_TYPE_DRVD,
+                                                             TASK_TYPE_NRML]
+                                                            )))
+                              .group_by(Workspace.status,
+                                         Workspace.area)
+                              .order_by(Workspace.status.desc()).all())
+    except SQLAlchemyError as e:
+        CONSOLE.print("Error while trying to get stats for task status")
+        LOGGER.error(str(e))
+        return FAILURE
+    LOGGER.debug("Status records to print {}".format(len(task_status_cnt)))
+    table = RichTable(box=box.HORIZONTALS, show_header=True,
+                      header_style="header", expand=False)
+    table.add_column("status", justify="left")
+    table.add_column("no. of tasks", justify="left")
+    for cnt, rec in enumerate(task_status_cnt, start=1):
+        trow = []
+        trow.append(rec.status)
+        trow.append(str(rec.count))
+        if rec.area == WS_AREA_COMPLETED:
+            table.add_row(*trow, style="done")
+        elif rec.area == WS_AREA_BIN:
+            table.add_row(*trow, style="binn")
+        else:
+            table.add_row(*trow, style="default")
+    CONSOLE.print(table, soft_wrap=True)
+    CONSOLE.print()
+    CONSOLE.print()
+    
+    CONSOLE.print("----------------------------------------------")
+    CONSOLE.print("2. Preparing stats view for pending tasks by due date...", 
+                  style="default")
+    CONSOLE.print("----------------------------------------------")
+    
+    try:
+        today_cnt_xpr = func.sum(case((cast(Workspace.due_diff_today, 
+                                            Numeric(10, 0)) == 0, 1), 
+                                      else_=0))
+        overdue_cnt_xpr = func.sum(case((cast(Workspace.due_diff_today, 
+                                              Numeric(10, 0)) < 0, 1), 
+                                        else_=0))
+        future_cnt_xpr = func.sum(case((cast(Workspace.due_diff_today, 
+                                             Numeric(10, 0)) > 0, 1), 
+                                       else_=0))
+        nodue_cnt_xpr = func.sum(case((Workspace.due == None, 1), 
+                                      else_=0))
+        today_todo_cnt_xpr = func.sum(case((
+                            and_(cast(Workspace.due_diff_today, 
+                                        Numeric(10, 0)) == 0, 
+                                    Workspace.hide == None, 
+                                    Workspace.status==TASK_STATUS_TODO), 1), 
+                                        else_=0))
+        overdue_todo_cnt_xpr = func.sum(case((
+                            and_(cast(Workspace.due_diff_today, 
+                                        Numeric(10, 0)) < 0, 
+                                    Workspace.hide == None, 
+                                    Workspace.status==TASK_STATUS_TODO), 1), 
+                                        else_=0))
+        future_todo_cnt_xpr = func.sum(case((
+                            and_(cast(Workspace.due_diff_today, 
+                                        Numeric(10, 0)) > 0, 
+                                    Workspace.hide == None, 
+                                    Workspace.status==TASK_STATUS_TODO), 1), 
+                                        else_=0))
+        nodue_todo_cnt_xpr = func.sum(case((
+                            and_(Workspace.due == None, 
+                                    Workspace.hide == None, 
+                                    Workspace.status==TASK_STATUS_TODO), 1), 
+                                        else_=0))
+        today_started_cnt_xpr = func.sum(case((
+                        and_(cast(Workspace.due_diff_today, 
+                                    Numeric(10, 0)) == 0,
+                                Workspace.hide == None, 
+                                Workspace.status == TASK_STATUS_STARTED), 1), 
+                                      else_=0))
+        overdue_started_cnt_xpr = func.sum(case((
+                        and_(cast(Workspace.due_diff_today, 
+                                    Numeric(10, 0)) < 0, 
+                                Workspace.hide == None, 
+                                Workspace.status == TASK_STATUS_STARTED), 1), 
+                                        else_=0))
+        future_started_cnt_xpr = func.sum(case((
+                        and_(cast(Workspace.due_diff_today, 
+                                    Numeric(10, 0)) > 0, 
+                                Workspace.hide == None, 
+                                Workspace.status == TASK_STATUS_STARTED), 1), 
+                                       else_=0))
+        nodue_started_cnt_xpr = func.sum(case((
+                        and_(Workspace.due == None, 
+                                Workspace.hide == None, 
+                                Workspace.status == TASK_STATUS_STARTED), 1), 
+                                      else_=0))     
+        today_hid_todo_cnt_xpr = func.sum(case((
+                            and_(cast(Workspace.due_diff_today, 
+                                        Numeric(10, 0)) == 0, 
+                                    Workspace.hide != None, 
+                                    Workspace.status==TASK_STATUS_TODO), 1), 
+                                        else_=0))
+        overdue_hid_todo_cnt_xpr = func.sum(case((
+                            and_(cast(Workspace.due_diff_today, 
+                                        Numeric(10, 0)) < 0, 
+                                    Workspace.hide != None, 
+                                    Workspace.status==TASK_STATUS_TODO), 1), 
+                                        else_=0))
+        future_hid_todo_cnt_xpr = func.sum(case((
+                            and_(cast(Workspace.due_diff_today, 
+                                        Numeric(10, 0)) > 0, 
+                                    Workspace.hide != None, 
+                                    Workspace.status==TASK_STATUS_TODO), 1), 
+                                        else_=0))
+        nodue_hid_todo_cnt_xpr = func.sum(case((
+                            and_(Workspace.due == None, 
+                                    Workspace.hide != None, 
+                                    Workspace.status==TASK_STATUS_TODO), 1), 
+                                        else_=0))        
+        today_hid_str_cnt_xpr = func.sum(case((
+                        and_(cast(Workspace.due_diff_today, 
+                                    Numeric(10, 0)) == 0, 
+                                Workspace.hide != None, 
+                                Workspace.status==TASK_STATUS_STARTED), 1), 
+                                        else_=0))
+        overdue_hid_str_cnt_xpr = func.sum(case((
+                        and_(cast(Workspace.due_diff_today, 
+                                    Numeric(10, 0)) < 0, 
+                                Workspace.hide != None, 
+                                Workspace.status==TASK_STATUS_STARTED), 1), 
+                                        else_=0))
+        future_hid_str_cnt_xpr = func.sum(case((
+                        and_(cast(Workspace.due_diff_today, 
+                                    Numeric(10, 0)) > 0, 
+                                Workspace.hide != None, 
+                                Workspace.status==TASK_STATUS_STARTED), 1), 
+                                        else_=0))
+        nodue_hid_str_cnt_xpr = func.sum(case((
+                        and_(Workspace.due == None, 
+                                Workspace.hide != None, 
+                                Workspace.status==TASK_STATUS_STARTED), 1), 
+                                        else_=0))      
+        total_tasks_xpr = func.count(Workspace.uuid)
+        total_todo_xpr = func.sum(case((and_(
+                                    Workspace.status == TASK_STATUS_TODO, 
+                                    Workspace.hide == None), 1), else_=0))
+        total_started_xpr = func.sum(case((and_(
+                                    Workspace.status == TASK_STATUS_STARTED, 
+                                    Workspace.hide == None), 1), else_=0))
+        total_hidden_todo_xpr = func.sum(case((and_(
+                                    Workspace.status == TASK_STATUS_TODO, 
+                                    Workspace.hide != None), 1), else_=0))              
+        total_hidden_str_xpr = func.sum(case((and_(
+                                    Workspace.status == TASK_STATUS_TODO, 
+                                    Workspace.hide != None), 1), else_=0))
+        
+        pending_task_cnt = (SESSION.query(
+                        today_cnt_xpr.label("today_total_cnt"),
+                        overdue_cnt_xpr.label("overdue_total_cnt"),            
+                        future_cnt_xpr.label("future_total_cnt"),
+                        nodue_cnt_xpr.label("nodue_total_cnt"),
+                        today_todo_cnt_xpr.label("today_todo_cnt"),
+                        overdue_todo_cnt_xpr.label("overdue_todo_cnt"),
+                        future_todo_cnt_xpr.label("future_todo_cnt"),
+                        nodue_todo_cnt_xpr.label("nodue_todo_cnt"),
+                        today_started_cnt_xpr.label("today_str_cnt"),
+                        overdue_started_cnt_xpr.label("overdue_str_cnt"),
+                        future_started_cnt_xpr.label("future_str_cnt"),
+                        nodue_started_cnt_xpr.label("nodue_str_cnt"),                            
+                        today_hid_todo_cnt_xpr.label("today_hid_todo_cnt"),
+                        overdue_hid_todo_cnt_xpr.label("overdue_hid_todo_cnt"),
+                        future_hid_todo_cnt_xpr.label("future_hid_todo_cnt"),
+                        nodue_hid_todo_cnt_xpr.label("nodue_hid_todo_cnt"),
+                        today_hid_str_cnt_xpr.label("today_hid_str_cnt"),
+                        overdue_hid_str_cnt_xpr.label("overdue_hid_str_cnt"),
+                        future_hid_str_cnt_xpr.label("future_hid_str_cnt"),
+                        nodue_hid_str_cnt_xpr.label("nodue_hid_str_cnt"),
+                        total_tasks_xpr.label("total_tasks_cnt"),
+                        total_todo_xpr.label("total_todo_cnt"),
+                        total_started_xpr.label("total_started_cnt"),
+                        total_hidden_todo_xpr.label("total_hidden_todo_cnt"),
+                        total_hidden_str_xpr.label("total_hidden_str_cnt"))                            
+                        .join(max_ver_sqr, and_(max_ver_sqr.c.uuid
+                                                == Workspace.uuid,
+                                                max_ver_sqr.c.maxver
+                                                == Workspace.version,
+                                                Workspace.task_type.in_(
+                                                    [TASK_TYPE_DRVD,
+                                                        TASK_TYPE_NRML]
+                                                    )))
+                        .filter(and_(Workspace.area == WS_AREA_PENDING))
+                        .first())
+    except SQLAlchemyError as e:
+        CONSOLE.print("Error while trying to get stats for task status")
+        LOGGER.error(str(e))
+        return FAILURE
+    row_dict = {}
+    if pending_task_cnt:
+        row_dict = pending_task_cnt._mapping
+    LOGGER.debug("Retrieved stats is ")
+    LOGGER.debug(list(row_dict.values()))
+    
+    # Calculate the various additional stats for the breakdown. The breakdown 
+    # is based on showing pending tasks in TODO and STARTED statuses including 
+    # how many are hidden.
+     
+    # Print a simple graph of the breakdown data
+    todo_counts = [row_dict['today_todo_cnt'], row_dict['overdue_todo_cnt'], 
+                   row_dict['future_todo_cnt'], row_dict['nodue_todo_cnt']]
+    started_counts =[row_dict['today_str_cnt'], row_dict['overdue_str_cnt'], 
+                     row_dict['future_str_cnt'], row_dict['nodue_str_cnt']] 
+    hidden_todo_counts = [row_dict['today_hid_todo_cnt'], 
+                          row_dict['overdue_hid_todo_cnt'],
+                          row_dict['future_hid_todo_cnt'], 
+                          row_dict['nodue_hid_todo_cnt']]
+    hidden_started_counts = [row_dict['today_hid_str_cnt'], 
+                             row_dict['overdue_hid_str_cnt'], 
+                             row_dict['future_hid_str_cnt'], 
+                             row_dict['nodue_hid_str_cnt']]
+    pltxt.simple_stacked_bar(['today', 'overdue', 'future', 'no due date'], 
+                             [todo_counts, started_counts, hidden_todo_counts, 
+                              hidden_started_counts], 
+                             width = 70,
+                             labels=['todo', 'started', 'hidden todo', 
+                                     'hidden started'])
+    pltxt.show()
+    pltxt.clf()
+    CONSOLE.print()
+    
+    # Print a table with same data but the overall tasks counts that are due 
+    # today, in the future, overdue and that have no due dates.
+
+    table = RichTable(box=box.HORIZONTALS, show_header=True,
+                      header_style="header", expand=False)
+    table.add_column("due", justify="left")
+    table.add_column("total", justify="left")
+    table.add_column("todo", justify="left")
+    table.add_column("started", justify="left")
+    table.add_column("hidden todo", justify="left")
+    table.add_column("hidden started", justify="left")
+    trow = ['today', str(row_dict['today_total_cnt']), 
+            str(row_dict['today_todo_cnt']), str(row_dict['today_str_cnt']), 
+            str(row_dict['today_hid_todo_cnt']),
+            str(row_dict['today_hid_str_cnt'])]
+    table.add_row(*trow, style="default")
+    trow = ['overdue', str(row_dict['overdue_total_cnt']),
+            str(row_dict['overdue_todo_cnt']), 
+            str(row_dict['overdue_str_cnt']), 
+            str(row_dict['overdue_hid_todo_cnt']), 
+            str(row_dict['overdue_hid_str_cnt'])]
+    table.add_row(*trow, style="default")
+    trow = ['future', str(row_dict['future_total_cnt']), 
+            str(row_dict['future_todo_cnt']), 
+            str(row_dict['future_str_cnt']), 
+            str(row_dict['future_hid_todo_cnt']), 
+            str(row_dict['future_hid_str_cnt'])]
+    table.add_row(*trow, style="default")
+    trow = ['no due date', str(row_dict['nodue_total_cnt']),
+            str(row_dict['nodue_todo_cnt']), 
+            str(row_dict['nodue_str_cnt']), 
+            str(row_dict['nodue_hid_todo_cnt']), 
+            str(row_dict['nodue_hid_str_cnt'])]
+    table.add_row(*trow, style="default")
+    table.add_section()
+    trow = ['total', str(row_dict['total_tasks_cnt']), 
+            str(row_dict['total_todo_cnt']), 
+            str(row_dict['total_started_cnt']), 
+            str(row_dict['total_hidden_todo_cnt']), 
+            str(row_dict['total_hidden_str_cnt'])]
+    table.add_row(*trow, style="default")
+    CONSOLE.print(table, soft_wrap=True)
+    return SUCCESS
 
 def display_default(potential_filters, pager=False, top=None):
     """
