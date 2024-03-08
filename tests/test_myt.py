@@ -882,8 +882,13 @@ def test_urlopen_4(set_full_db_path):
     assert "No URLS found in notes for this task" in result.output
     runner.invoke(delete, ['id:' + idn, '-db', set_full_db_path])
 
+        
+# Tests stats view 2
 def test_stats(set_full_db_path, caplog):
     caplog.set_level(logging.DEBUG)
+    # Reinit the db to get accurate results
+    with mock.patch('builtins.input', return_value="yes"):
+        runner.invoke(admin, ['--reinit', '-db', set_full_db_path])    
     # TODO Tasks
     duedt = (date.today()).strftime("%Y-%m-%d")
     result = runner.invoke(add, ['-de','Test task','-du', duedt,  '-gr', 'STATS', '-db',set_full_db_path])
@@ -943,3 +948,69 @@ def test_stats(set_full_db_path, caplog):
     assert "[4, 4, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 16, 4, 4, 4, 4]" in caplog.text
 
     runner.invoke(delete, ['gr:STATS', '-db', set_full_db_path])
+    
+# Tests stats view 1
+def test_stats2(set_full_db_path, caplog):
+    caplog.set_level(logging.DEBUG)
+    # Reinit the db to get accurate results
+    with mock.patch('builtins.input', return_value="yes"):
+        runner.invoke(admin, ['--reinit', '-db', set_full_db_path])       
+    # TODO Tasks
+    duedt = (date.today()).strftime("%Y-%m-%d")
+    result = runner.invoke(add, ['-de','Test task1','-du', duedt,  '-gr', 'STATS', '-db',set_full_db_path])
+    result = runner.invoke(add, ['-de','Test task2','-du', duedt, '-hi', +10,  '-gr', 'STATS', '-db', set_full_db_path])
+    # STARTED Task
+    result = runner.invoke(add, ['-de','Test task3','-du', duedt, '-gr', 'STATS', '-db', set_full_db_path])
+    id = result.output.replace("\n"," ").split(" ")[3]    
+    result = runner.invoke(start, ['id:'+str(id), '-db', set_full_db_path])     
+    # DONE Task
+    result = runner.invoke(add, ['-de','Test task4','-du', duedt, '-gr', 'STATS', '-db', set_full_db_path])
+    id = result.output.replace("\n"," ").split(" ")[3]    
+    result = runner.invoke(done, ['id:'+str(id), '-db', set_full_db_path])     
+    # DELETED Task
+    result = runner.invoke(add, ['-de','Test task5','-du', duedt, '-gr', 'STATS', '-db', set_full_db_path])
+    id = result.output.replace("\n"," ").split(" ")[3]    
+    result = runner.invoke(delete, ['id:'+str(id), '-db', set_full_db_path])         
+    
+    result = runner.invoke(stats, ['--verbose', '-db', set_full_db_path])   
+    assert result.exit_code == 0
+    assert "[('TO_DO', 'pending', 2), ('STARTED', 'pending', 1), ('DONE', 'completed', 1), ('DELETED', 'bin', 1)]" in caplog.text
+
+    runner.invoke(delete, ['gr:STATS', '-db', set_full_db_path])
+    
+# Tests stats view 3
+def test_stats3(set_full_db_path, caplog):
+    caplog.set_level(logging.DEBUG)
+    # Reinit the db to get accurate results
+    with mock.patch('builtins.input', return_value="yes"):
+        runner.invoke(admin, ['--reinit', '-db', set_full_db_path])       
+    # DONE Tasks
+    duedt = (date.today()).strftime("%Y-%m-%d")
+    result = runner.invoke(add, ['-de','Test task4','-du', duedt, '-gr', 'STATS', '-db', set_full_db_path])
+    result = runner.invoke(add, ['-de','Test task4','-du', duedt, '-gr', 'STATS', '-db', set_full_db_path])
+    id = result.output.replace("\n"," ").split(" ")[3]    
+    result = runner.invoke(done, ['id:'+str(id), '-db', set_full_db_path])     
+    
+    result = runner.invoke(stats, ['--verbose', '-db', set_full_db_path])   
+    assert result.exit_code == 0
+    assert "Retrieved stats for view 3 is {-7: 0, -6: 0, -5: 0, -4: 0, -3: 0, -2: 0, -1: 0, 0: 1}" in caplog.text
+    runner.invoke(delete, ['gr:STATS', '-db', set_full_db_path])
+    
+    
+# Tests stats view 4
+def test_stats4(set_full_db_path, caplog):
+    caplog.set_level(logging.DEBUG)
+    # Reinit the db to get accurate results
+    with mock.patch('builtins.input', return_value="yes"):
+        runner.invoke(admin, ['--reinit', '-db', set_full_db_path])       
+    # New TO_DO Tasks
+    duedt = (date.today()).strftime("%Y-%m-%d")
+    result = runner.invoke(add, ['-de','Test task1','-du', duedt,  '-gr', 'STATS', '-db',set_full_db_path])
+    result = runner.invoke(add, ['-de','Test task2','-du', duedt,  '-gr', 'STATS', '-db',set_full_db_path])
+    
+    result = runner.invoke(stats, ['--verbose', '-db', set_full_db_path])   
+    assert result.exit_code == 0
+    assert "Retrieved stats for view 4 is {-7: 0, -6: 0, -5: 0, -4: 0, -3: 0, -2: 0, -1: 0, 0: 2}" in caplog.text    
+    
+    runner.invoke(delete, ['gr:STATS', '-db', set_full_db_path])
+    

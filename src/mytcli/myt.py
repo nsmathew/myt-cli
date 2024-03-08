@@ -5453,6 +5453,8 @@ def display_stats():
         LOGGER.error(str(e))
         return FAILURE
     LOGGER.debug("Status records to print {}".format(len(task_status_cnt)))
+    LOGGER.debug("Status record values are ")
+    LOGGER.debug(task_status_cnt)
     table = RichTable(box=box.HORIZONTALS, show_header=True,
                       header_style="header", expand=False)
     table.add_column("status", justify="left")
@@ -5770,8 +5772,8 @@ def display_stats():
         trend_results = {i: 0 for i in range(-7, 1, 1)}
         for cnt, rec in enumerate(compl_trend, start=1):
             trend_results[int(rec.ver_crt_diff_now)] = rec.count
-        LOGGER.debug("Retrieved stats is ")
-        LOGGER.debug(trend_results)
+        LOGGER.debug("Retrieved stats for view 3 is " + str(trend_results))
+        
         # Display a bar grpah showing the trend for task completion over the 
         # last 1 week and today
         pltxt.simple_bar(["Day " + str(k) for k in trend_results.keys()], 
@@ -5814,8 +5816,7 @@ def display_stats():
         trend_results = {i: 0 for i in range(-7, 1, 1)}
         for cnt, rec in enumerate(new_trend, start=1):
             trend_results[int(rec.ver_crt_diff_now)] = rec.count
-        LOGGER.debug("Retrieved stats is ")
-        LOGGER.debug(trend_results)
+        LOGGER.debug("Retrieved stats for view 4 is " + str(trend_results))
         # Display a bar grpah showing the trend for task completion over the 
         # last 1 week and today
         pltxt.simple_bar(["Day " + str(k) for k in trend_results.keys()], 
