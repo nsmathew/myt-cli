@@ -1296,7 +1296,7 @@ def view(filters, verbose, pager, top, viewmode, full_db_path=None):
     The views by default apply on the 'pending' area and for tasks that are
     not, ie any task that is in 'TO_DO' or 'STARTED' status and has no hide
     date or the hide date > today. If you need tasks from other areas you need
-    to use the 'completed' or 'bin' filter.
+    to use the 'complete' or 'bin' filter.
 
     All tasks in 'pending' area hidden or not are shown with a numeric task
     id. Tasks in 'completed' or 'bin' area are always shown with their uuid or
