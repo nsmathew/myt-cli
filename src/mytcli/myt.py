@@ -5458,13 +5458,21 @@ def display_stats():
     table.add_column("status", justify="left")
     table.add_column("no. of tasks", justify="left")
     if len(task_status_cnt) > 0: # Prepare table only if data exists
+        # Counts as str since that is what rich table requires
+        status_cnt_dict = {'TO_DO': ['0', 'pending'], 
+                           'STARTED': ['0', 'pending'], 
+                           'DONE': ['0', 'completed'], 
+                           'DELETED': ['0', 'bin']}
         for cnt, rec in enumerate(task_status_cnt, start=1):
+            status_cnt_dict[rec.status] = [str(rec.count), rec.area]
+        for k in status_cnt_dict:
+            v = status_cnt_dict.get(k) # [count, area]
             trow = []
-            trow.append(rec.status)
-            trow.append(str(rec.count))
-            if rec.area == WS_AREA_COMPLETED:
+            trow.append(k) # status
+            trow.append(v[0]) # count
+            if v[1] == WS_AREA_COMPLETED: # display style based on area
                 table.add_row(*trow, style="done")
-            elif rec.area == WS_AREA_BIN:
+            elif v[1] == WS_AREA_BIN:
                 table.add_row(*trow, style="binn")
             else:
                 table.add_row(*trow, style="default")
