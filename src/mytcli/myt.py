@@ -231,6 +231,26 @@ class Workspace(Base):
                         - func.julianday(cls.inception)) * 24 * 60 * 60))
         return date_diff
 
+    # To get time difference of version created to now in days
+    @hybrid_property
+    def ver_crt_diff_now(self):
+        curr_date = datetime.now().date()
+        return (datetime.strptime(self.created, FMT_DATETIME).date()
+                    - curr_date).days        
+
+    @ver_crt_diff_now.expression
+    def ver_crt_diff_now(cls):
+        curr_date = datetime.now().date().strftime(FMT_DATEONLY)
+        # julianday is an sqlite function
+        date_diff = func.julianday(func.substr(cls.created, 0, 11)) - func.julianday(curr_date)
+        """
+        For some reason cast as Integer forces an addition in the sql
+        when trying to concatenate with a string. Forcing as string causes
+        the expression to be returned as a literal string rather than the
+        result. Hence using substr and instr instead.
+        """
+        return func.substr(date_diff, 1, func.instr(date_diff, ".")-1)    
+    
     # To get time difference of duration event to now in seconds
     @hybrid_property
     def dur_ev_diff_now(self):
@@ -5409,8 +5429,6 @@ def display_stats():
                   style="default")
     CONSOLE.print("----------------------------------------------")
    
-    curr_day_str = datetime.now().date().strftime('%Y%m%d')
-
     try:
         max_ver_sqr = (SESSION.query(Workspace.uuid,
                                 func.max(Workspace.version)
@@ -5439,17 +5457,20 @@ def display_stats():
                       header_style="header", expand=False)
     table.add_column("status", justify="left")
     table.add_column("no. of tasks", justify="left")
-    for cnt, rec in enumerate(task_status_cnt, start=1):
-        trow = []
-        trow.append(rec.status)
-        trow.append(str(rec.count))
-        if rec.area == WS_AREA_COMPLETED:
-            table.add_row(*trow, style="done")
-        elif rec.area == WS_AREA_BIN:
-            table.add_row(*trow, style="binn")
-        else:
-            table.add_row(*trow, style="default")
-    CONSOLE.print(table, soft_wrap=True)
+    if len(task_status_cnt) > 0: # Prepare table only if data exists
+        for cnt, rec in enumerate(task_status_cnt, start=1):
+            trow = []
+            trow.append(rec.status)
+            trow.append(str(rec.count))
+            if rec.area == WS_AREA_COMPLETED:
+                table.add_row(*trow, style="done")
+            elif rec.area == WS_AREA_BIN:
+                table.add_row(*trow, style="binn")
+            else:
+                table.add_row(*trow, style="default")
+        CONSOLE.print(table, soft_wrap=True)
+    else:
+        CONSOLE.print("No matching tasks in database.")
     CONSOLE.print()
     CONSOLE.print()
     
@@ -5616,81 +5637,187 @@ def display_stats():
         CONSOLE.print("Error while trying to get stats for task status")
         LOGGER.error(str(e))
         return FAILURE
-    row_dict = {}
-    if pending_task_cnt:
-        row_dict = pending_task_cnt._mapping
-    LOGGER.debug("Retrieved stats is ")
-    LOGGER.debug(list(row_dict.values()))
-    
-    # Calculate the various additional stats for the breakdown. The breakdown 
-    # is based on showing pending tasks in TODO and STARTED statuses including 
-    # how many are hidden.
-     
-    # Print a simple graph of the breakdown data
-    todo_counts = [row_dict['today_todo_cnt'], row_dict['overdue_todo_cnt'], 
-                   row_dict['future_todo_cnt'], row_dict['nodue_todo_cnt']]
-    started_counts =[row_dict['today_str_cnt'], row_dict['overdue_str_cnt'], 
-                     row_dict['future_str_cnt'], row_dict['nodue_str_cnt']] 
-    hidden_todo_counts = [row_dict['today_hid_todo_cnt'], 
-                          row_dict['overdue_hid_todo_cnt'],
-                          row_dict['future_hid_todo_cnt'], 
-                          row_dict['nodue_hid_todo_cnt']]
-    hidden_started_counts = [row_dict['today_hid_str_cnt'], 
-                             row_dict['overdue_hid_str_cnt'], 
-                             row_dict['future_hid_str_cnt'], 
-                             row_dict['nodue_hid_str_cnt']]
-    pltxt.simple_stacked_bar(['today', 'overdue', 'future', 'no due date'], 
-                             [todo_counts, started_counts, hidden_todo_counts, 
-                              hidden_started_counts], 
-                             width = 70,
-                             labels=['todo', 'started', 'hidden todo', 
-                                     'hidden started'])
-    pltxt.show()
-    pltxt.clf()
+    if pending_task_cnt.total_tasks_cnt > 0:
+        row_dict = {}
+        if pending_task_cnt:
+            row_dict = pending_task_cnt._mapping
+        LOGGER.debug("Retrieved stats is ")
+        LOGGER.debug(list(row_dict.values()))
+
+        # Calculate the various additional stats for the breakdown. The 
+        # breakdown is based on showing pending tasks in TODO and STARTED 
+        # statuses including how many are hidden.
+        
+        # Print a simple graph of the breakdown data
+        todo_counts = [row_dict['today_todo_cnt'], 
+                       row_dict['overdue_todo_cnt'], 
+                       row_dict['future_todo_cnt'], 
+                       row_dict['nodue_todo_cnt']]
+        started_counts =[row_dict['today_str_cnt'], 
+                         row_dict['overdue_str_cnt'], 
+                         row_dict['future_str_cnt'], 
+                         row_dict['nodue_str_cnt']] 
+        hidden_todo_counts = [row_dict['today_hid_todo_cnt'], 
+                            row_dict['overdue_hid_todo_cnt'],
+                            row_dict['future_hid_todo_cnt'], 
+                            row_dict['nodue_hid_todo_cnt']]
+        hidden_started_counts = [row_dict['today_hid_str_cnt'], 
+                                row_dict['overdue_hid_str_cnt'], 
+                                row_dict['future_hid_str_cnt'], 
+                                row_dict['nodue_hid_str_cnt']]
+        
+        # Colours are from
+        # https://github.com/piccolomo/plotext/blob/master/readme/aspect.md#colors
+        pltxt.simple_stacked_bar(['today', 'overdue', 'future', 'no due date'], 
+                                [todo_counts, started_counts, 
+                                 hidden_todo_counts, 
+                                 hidden_started_counts], 
+                                width = 50,
+                                labels=['todo', 'started', 'hidden todo', 
+                                        'hidden started'],
+                                colors=[32, 47, 104, 226])
+
+        pltxt.show()
+        pltxt.clf()
+        CONSOLE.print()
+        
+        # Print a table with same data but the overall tasks counts that are  
+        # due today, in the future, overdue and that have no due dates.
+
+        table = RichTable(box=box.HORIZONTALS, show_header=True,
+                        header_style="header", expand=False)
+        table.add_column("due", justify="left")
+        table.add_column("total", justify="left")
+        table.add_column("todo", justify="left")
+        table.add_column("started", justify="left")
+        table.add_column("hidden todo", justify="left")
+        table.add_column("hidden started", justify="left")
+        trow = ['today', str(row_dict['today_total_cnt']), 
+                str(row_dict['today_todo_cnt']), 
+                str(row_dict['today_str_cnt']), 
+                str(row_dict['today_hid_todo_cnt']),
+                str(row_dict['today_hid_str_cnt'])]
+        table.add_row(*trow, style="default")
+        trow = ['overdue', str(row_dict['overdue_total_cnt']),
+                str(row_dict['overdue_todo_cnt']), 
+                str(row_dict['overdue_str_cnt']), 
+                str(row_dict['overdue_hid_todo_cnt']), 
+                str(row_dict['overdue_hid_str_cnt'])]
+        table.add_row(*trow, style="default")
+        trow = ['future', str(row_dict['future_total_cnt']), 
+                str(row_dict['future_todo_cnt']), 
+                str(row_dict['future_str_cnt']), 
+                str(row_dict['future_hid_todo_cnt']), 
+                str(row_dict['future_hid_str_cnt'])]
+        table.add_row(*trow, style="default")
+        trow = ['no due date', str(row_dict['nodue_total_cnt']),
+                str(row_dict['nodue_todo_cnt']), 
+                str(row_dict['nodue_str_cnt']), 
+                str(row_dict['nodue_hid_todo_cnt']), 
+                str(row_dict['nodue_hid_str_cnt'])]
+        table.add_row(*trow, style="default")
+        table.add_section()
+        trow = ['total', str(row_dict['total_tasks_cnt']), 
+                str(row_dict['total_todo_cnt']), 
+                str(row_dict['total_started_cnt']), 
+                str(row_dict['total_hidden_todo_cnt']), 
+                str(row_dict['total_hidden_str_cnt'])]
+        table.add_row(*trow, style="default")
+        CONSOLE.print(table, soft_wrap=True)
+    else:
+        CONSOLE.print("No matching tasks in database.")
+    CONSOLE.print()
     CONSOLE.print()
     
-    # Print a table with same data but the overall tasks counts that are due 
-    # today, in the future, overdue and that have no due dates.
-
-    table = RichTable(box=box.HORIZONTALS, show_header=True,
-                      header_style="header", expand=False)
-    table.add_column("due", justify="left")
-    table.add_column("total", justify="left")
-    table.add_column("todo", justify="left")
-    table.add_column("started", justify="left")
-    table.add_column("hidden todo", justify="left")
-    table.add_column("hidden started", justify="left")
-    trow = ['today', str(row_dict['today_total_cnt']), 
-            str(row_dict['today_todo_cnt']), str(row_dict['today_str_cnt']), 
-            str(row_dict['today_hid_todo_cnt']),
-            str(row_dict['today_hid_str_cnt'])]
-    table.add_row(*trow, style="default")
-    trow = ['overdue', str(row_dict['overdue_total_cnt']),
-            str(row_dict['overdue_todo_cnt']), 
-            str(row_dict['overdue_str_cnt']), 
-            str(row_dict['overdue_hid_todo_cnt']), 
-            str(row_dict['overdue_hid_str_cnt'])]
-    table.add_row(*trow, style="default")
-    trow = ['future', str(row_dict['future_total_cnt']), 
-            str(row_dict['future_todo_cnt']), 
-            str(row_dict['future_str_cnt']), 
-            str(row_dict['future_hid_todo_cnt']), 
-            str(row_dict['future_hid_str_cnt'])]
-    table.add_row(*trow, style="default")
-    trow = ['no due date', str(row_dict['nodue_total_cnt']),
-            str(row_dict['nodue_todo_cnt']), 
-            str(row_dict['nodue_str_cnt']), 
-            str(row_dict['nodue_hid_todo_cnt']), 
-            str(row_dict['nodue_hid_str_cnt'])]
-    table.add_row(*trow, style="default")
-    table.add_section()
-    trow = ['total', str(row_dict['total_tasks_cnt']), 
-            str(row_dict['total_todo_cnt']), 
-            str(row_dict['total_started_cnt']), 
-            str(row_dict['total_hidden_todo_cnt']), 
-            str(row_dict['total_hidden_str_cnt'])]
-    table.add_row(*trow, style="default")
-    CONSOLE.print(table, soft_wrap=True)
+    CONSOLE.print("----------------------------------------------")
+    CONSOLE.print("3. Preparing completion trend...", 
+                  style="default")
+    CONSOLE.print("----------------------------------------------")
+    back_lmt_day = int(datetime.now().date().strftime('%Y%m%d')) - 7
+    
+    try:
+        
+        compl_trend = (SESSION.query(Workspace.ver_crt_diff_now,
+                                    func.count(Workspace.uuid).label('count'))
+                            .join(max_ver_sqr, and_(max_ver_sqr.c.uuid
+                                                == Workspace.uuid,
+                                                max_ver_sqr.c.maxver
+                                                == Workspace.version,
+                                                Workspace.task_type.in_(
+                                                    [TASK_TYPE_DRVD,
+                                                        TASK_TYPE_NRML]
+                                                    )))
+                            .filter(and_(Workspace.area == WS_AREA_COMPLETED,
+                                         cast(func.replace(Workspace.created, 
+                                                           '-', 
+                                                           ''), 
+                                              Numeric(10, 0)) > back_lmt_day))
+                            .group_by(Workspace.ver_crt_diff_now)
+                            .all())
+    except SQLAlchemyError as e:
+        CONSOLE.print("Error while trying to get completed trend data")
+        LOGGER.error(str(e))
+        return FAILURE
+    if len(compl_trend) > 0:
+        trend_results = {i: 0 for i in range(-7, 1, 1)}
+        for cnt, rec in enumerate(compl_trend, start=1):
+            trend_results[int(rec.ver_crt_diff_now)] = rec.count
+        LOGGER.debug("Retrieved stats is ")
+        LOGGER.debug(trend_results)
+        # Display a bar grpah showing the trend for task completion over the 
+        # last 1 week and today
+        pltxt.simple_bar(["Day " + str(k) for k in trend_results.keys()], 
+                                trend_results.values(), 
+                                width = 50)
+        pltxt.show()
+        pltxt.clf()
+    else:
+        CONSOLE.print("No matching tasks in database.")
+    CONSOLE.print()      
+    CONSOLE.print()
+    
+    CONSOLE.print("----------------------------------------------")
+    CONSOLE.print("4. Preparing new tasks trend...", 
+                  style="default")
+    CONSOLE.print("----------------------------------------------")
+    back_lmt_day = int(datetime.now().date().strftime('%Y%m%d')) - 7
+    
+    try:
+        
+        new_trend = (SESSION.query(Workspace.ver_crt_diff_now,
+                                    func.count(Workspace.uuid).label('count'))
+                            .filter(and_(Workspace.area != WS_AREA_BIN,
+                                         cast(func.replace(Workspace.created, 
+                                                           '-', 
+                                                           ''), 
+                                              Numeric(10, 0)) > back_lmt_day, 
+                                        Workspace.task_type.in_(
+                                                [TASK_TYPE_DRVD,
+                                                TASK_TYPE_NRML]),
+                                        Workspace.version == 1
+                                        ))
+                            .group_by(Workspace.ver_crt_diff_now)
+                            .all())
+    except SQLAlchemyError as e:
+        CONSOLE.print("Error while trying to get completed trend data")
+        LOGGER.error(str(e))
+        return FAILURE
+    if len(new_trend) > 0:
+        trend_results = {i: 0 for i in range(-7, 1, 1)}
+        for cnt, rec in enumerate(new_trend, start=1):
+            trend_results[int(rec.ver_crt_diff_now)] = rec.count
+        LOGGER.debug("Retrieved stats is ")
+        LOGGER.debug(trend_results)
+        # Display a bar grpah showing the trend for task completion over the 
+        # last 1 week and today
+        pltxt.simple_bar(["Day " + str(k) for k in trend_results.keys()], 
+                                trend_results.values(), 
+                                width = 50, color=226)
+        pltxt.show()
+        pltxt.clf()
+    else:
+        CONSOLE.print("No matching tasks in database.")
+    CONSOLE.print()      
     return SUCCESS
 
 def display_default(potential_filters, pager=False, top=None):
