@@ -1,5 +1,14 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.1.7 - Released on 04-Mar-2024
+
+-- Features --
+* Added new command to show stats around all tasks, TODO and STARTED tasks by due date and completion and new task trends.
+
+-- Other --
+* Fixed a typo in the help for the 'view' command where the filter should be 'complete' instead of 'completed'.
+
+----------------------------------------------------------------
 v0.1.6 - Released on 04-Mar-2024
 
 -- Other --
