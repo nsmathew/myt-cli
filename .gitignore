@@ -1,7 +1,7 @@
 myt_cli.egg-info/*
 __pycache__/*
 tests/__pycache__/*
-tasksdb.sqlite3
+tasksdb.*
 */*/*/__pycache__/
 */*/__pycache__/
 */__pycache__/

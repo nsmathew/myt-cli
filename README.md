@@ -16,11 +16,15 @@ A simple command line task manager written in python. It is inspired from taskwa
 You can add tasks with descriptions, due dates and notes. You can groups tasks together and can add tags to them. Tasks can be modified. Tasks can also be set to indicate they are currently being worked on. There is functionality to set recurring tasks
 
 ### Screenshots
-1. The default view
+1. The default view - `myt view`
 ![TaskView](https://github.com/nsmathew/myt-cli/blob/master/images/TaskView.png?raw=true)
 &nbsp;
-2. Information displyed after adding a task
+2. Information displayed after adding a task - `myt add -de "Pay council tax" -du +2 -gr home.fin -tg bills,official`
 ![TaskView](https://github.com/nsmathew/myt-cli/blob/master/images/TaskAdd.png?raw=true)
+&nbsp;
+3. Basic statistics - `myt stats`
+![TaskView](https://github.com/nsmathew/myt-cli/blob/master/images/TaskStats.png?raw=true)
+
 ### Examples
 1. Add a simple task
 `myt add -de "Buy gifts" -du 2021-06-25 -gr PERS.SHOPPING -tg birthday,occassions`
