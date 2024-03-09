@@ -37,7 +37,6 @@ def test_reinit(set_full_db_path):
         assert "Tasks database initialized..." in result.output
 
 def test_add_1(set_full_db_path):
-    print(set_full_db_path)
     result = runner.invoke(add, ['-de','Test task1','-gr','ABC.XYZ','-tg',
                            'qwerty,asdfgh,zxcvb', '-db', set_full_db_path])
     assert result.exit_code == 0
@@ -882,6 +881,38 @@ def test_urlopen_4(set_full_db_path):
     assert "No URLS found in notes for this task" in result.output
     runner.invoke(delete, ['id:' + idn, '-db', set_full_db_path])
 
+# Test if the prompt is shown when a url num is provided
+def test_urlopen_5(set_full_db_path):
+    result = runner.invoke(add, ['-de', 'Test task 13.1', '-du', '+0', '-no',
+                            'Test https://abc.com [ABC] https://xy.com [ XY]', 
+                            '-tg', 'tag13', '-db', set_full_db_path])
+    result = runner.invoke(add, ['-de', 'Test task 13.2', '-du', '+0', '-no',
+                            'Test https://abc.com [ABC] https://xy.com [ XY]', 
+                            '-tg', 'tag13', '-db', set_full_db_path])
+    temp = result.output.replace("\n"," ")
+    idn = temp.split(" ")[3]
+    with mock.patch('builtins.input', return_value="no"):
+        result = runner.invoke(urlopen, ['id:' + idn, '-ur', str(2), '-db', set_full_db_path])
+    assert result.exit_code == 0
+    assert "Would you like to open https://xy.com [ XY]" in result.output
+    runner.invoke(delete, ['tg:tag13', '-db', set_full_db_path])
+
+# Test if the prompt is shown when there is only 1 URL
+def test_urlopen_6(set_full_db_path):
+    result = runner.invoke(add, ['-de', 'Test task 13.1', '-du', '+0', '-no',
+                            'Test https://abc.com [ABC]', 
+                            '-tg', 'tag13', '-db', set_full_db_path])
+    result = runner.invoke(add, ['-de', 'Test task 13.2', '-du', '+0', '-no',
+                            'Test https://abc.com [ABC]', 
+                            '-tg', 'tag13', '-db', set_full_db_path])
+    temp = result.output.replace("\n"," ")
+    idn = temp.split(" ")[3]
+    with mock.patch('builtins.input', return_value="none"):
+        result = runner.invoke(urlopen, ['id:' + idn, '-db', set_full_db_path])
+    assert result.exit_code == 0
+    assert "1 - https://abc.com [ABC]" in result.output
+    assert "Choose the URL to be openned" in result.output
+    runner.invoke(delete, ['tg:tag13', '-db', set_full_db_path])    
         
 # Tests stats view 2
 def test_stats(set_full_db_path, caplog):

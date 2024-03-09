@@ -3572,19 +3572,28 @@ def process_url(potential_filters, urlno=None):
     LOGGER.debug(url_list)
     if url_list and url_list is not None:
         if urlno is not None:
-            LOGGER.debug("User has provided a urlno - {}".format(urlno))
-            if urlno < 1 or urlno > len(url_list)-1:
+            LOGGER.debug("User has provided a urlno - {}".format(urlno))           
+            if int(urlno) < 1 or int(urlno) > len(url_list):
                 CONSOLE.print("No URL found at the position provided {}. "
                 "Attempting to identify URLs..."
                 .format(urlno))
             else:
                 LOGGER.debug("urlno is valid, attempting to open")
                 #Attempt to open a URL at position given by user
+                # Extract the URL description if available
+                pattern = r'\[(.*?)\]'
+                match = re.search(pattern, url_list[urlno-1])
+                if match:
+                    url_desc = " " + match.group(0) 
+                else:
+                    url_desc = ""                    
                 try:
                     #Extract just the URL
                     #ex: 'https://www.abc.com'
                     url_ = re.findall(regex_2, url_list[urlno-1])
-                    ret = open_url(url_[0])
+                    if confirm_prompt("Would you like to open " 
+                                        + url_[0] + url_desc):
+                        ret = open_url(url_[0])
                     return ret
                 except IndexError as e:
                     #No URL exists in this position, print message and move
@@ -3592,30 +3601,25 @@ def process_url(potential_filters, urlno=None):
                     CONSOLE.print("No URL found at the position provided {}. "
                                 "Attempting to identify URLs..."
                                 .format(urlno))
-        if len(url_list) == 1:
-            #Only 1 link so just open that
-            CONSOLE.print("Only 1 URL found")
-            url_ = re.findall(regex_2, url_list[0])
-            ret = open_url(url_[0])
+
+        LOGGER.debug("URLs found")
+        #More than 1 URLavailable so ask user to choose
+        cnt = 1
+        for cnt, u in enumerate(url_list, start=1):
+            LOGGER.debug("Printing URL - {}".format(u))
+            #For some reason the descriptions are not 
+            #being printed when using console's print
+            #so using click's echo instead 
+            click.echo("{} - {}".format(str(cnt), u))
+        choice_rng = [str(x) for x in list(range(1,cnt+1))]
+        res = Prompt.ask("Choose the URL to be openned:",
+                            choices=[*choice_rng,"none"],
+                            default="none")
+        if res == "none":
+            ret = SUCCESS
         else:
-            LOGGER.debug("More than 1 URL found")
-            #More than 1 URLavailable so ask user to choose
-            cnt = 1
-            for cnt, u in enumerate(url_list, start=1):
-                LOGGER.debug("Printing URL - {}".format(u))
-                #For some reason the descriptions are not 
-                #being printed when using console's print
-                #so using click's echo instead 
-                click.echo("{} - {}".format(str(cnt), u))
-            choice_rng = [str(x) for x in list(range(1,cnt+1))]
-            res = Prompt.ask("Choose the URL to be openned:",
-                                choices=[*choice_rng,"none"],
-                                default="none")
-            if res == "none":
-                ret = SUCCESS
-            else:
-                url_ = re.findall(regex_2, url_list[int(res)-1])
-                ret = open_url(url_[0])
+            url_ = re.findall(regex_2, url_list[int(res)-1])
+            ret = open_url(url_[0])
         return ret
     else:
         CONSOLE.print("No URLS found in notes for this task")
