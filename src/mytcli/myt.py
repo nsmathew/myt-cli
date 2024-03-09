@@ -2,6 +2,7 @@ from importlib import metadata
 from operator import itemgetter
 import re
 import os
+from os.path import getsize
 import uuid
 import sys
 from pathlib import Path
@@ -36,7 +37,7 @@ import plotext as pltxt
 DB_SCHEMA_VER = 0.1
 # SQL Connection Related
 DEFAULT_FOLDER = os.path.join(str(Path.home()), "myt-cli")
-DEFAULT_DB_NAME = "tasksdb.sqlite3"
+DEFAULT_DB_NAME = "tasksdb.db"
 ENGINE = None
 SESSION = None
 Session = None
@@ -1583,27 +1584,69 @@ def stats(verbose, full_db_path=None):
     exit_app(ret)
 
 #App startup and exit functions
+def check_valid_db(full_db_path):
+    """
+    Check the validity of the sqlite3 database file based on size of file and 
+    content of first 16 bytes. Additional information available in the below 
+    link, https://www.sqlite.org/fileformat.html.
+    
+    No check on if the file is a valid file in the filesystem is made since 
+    this will already be done before this function is called.
+    
+    Parameters:
+        full_db_path(str): The path to the database file. Default is None
+
+    Returns:
+        int: SUCCESS(0) or FAILURE(1)
+    """
+    # The file header is 100 bytes, so file with size < 100 is invalid
+    if getsize(full_db_path) < 100:
+        return FAILURE
+
+    # The first 16 bytes should be "SQLite format 3\000"
+    # This is as per https://www.sqlite.org/fileformat.html
+    with open(full_db_path, 'rb') as fd:
+        header = fd.read(100)
+
+    if header[:16] ==  b'SQLite format 3\x00':
+        return SUCCESS
+    else:
+        return FAILURE
+
 def connect_to_tasksdb(verbose=False, full_db_path=None):
     """
     Connect to the tasks database and performs some startup functions
 
     Reads the global parameters on database location and creates a global
-    Session object which is used by the functions to access the database.
-    In case the database does not exist the function will create one,
-    create the tables and then create a Session object.
+    Session object which is used by the functions to access the database. 
+    If a database path is provided in the command argument it will attempt 
+    to use it.In case the database does not exist the function will create 
+    one, create the tables and then create a Session object.
 
     Post this it also check if any recurring instances of tasks have to be
     created and calls the create_recur_inst() to do so.
 
     Parameters:
-        verbose(bool): Indicates if logging should be verbose(debug mode)
+        verbose(bool): Indicates if logging should be verbose(debug mode).
+        Default is False.
+                       
+        full_db_path(str): The path to the database file. Default is None
 
     Returns:
         int: SUCCESS(0) or FAILURE(1)
     """
     global Session, SESSION, ENGINE
-    if full_db_path is None:
+    if full_db_path is None: # If path not provided as cmd arg then default
         full_db_path = os.path.join(DEFAULT_FOLDER, DEFAULT_DB_NAME)
+    
+    # Validate the path
+    if ".." in full_db_path or \
+        not os.path.isdir(os.path.dirname(full_db_path)) or \
+        not os.path.isabs(full_db_path):
+        LOGGER.error("Tasks database path is invalid. " +\
+                     "Please use absolute path only.")
+        return FAILURE
+    
     ENGINE = create_engine("sqlite:///"+full_db_path, echo=verbose)
     db_init = False
     if not os.path.exists(full_db_path):
@@ -1623,9 +1666,18 @@ def connect_to_tasksdb(verbose=False, full_db_path=None):
             return FAILURE
         CONSOLE.print("Tasks database initialized...", style="info")
         db_init = True
+    
+    LOGGER.debug("Checking if tasks database at {} is valid"\
+                .format(full_db_path))    
+    if check_valid_db(full_db_path) == FAILURE:
+        LOGGER.error("Tasks database at {} is not a valid sqlite3 database."\
+                .format(full_db_path))        
+        return FAILURE
+    
     LOGGER.debug("Now using tasks database at {}".format(full_db_path))
 
     LOGGER.debug("Creating session...")
+    
     try:
         Session = sessionmaker(bind=ENGINE)
         SESSION = Session()
