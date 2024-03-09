@@ -37,7 +37,7 @@ import plotext as pltxt
 DB_SCHEMA_VER = 0.1
 # SQL Connection Related
 DEFAULT_FOLDER = os.path.join(str(Path.home()), "myt-cli")
-DEFAULT_DB_NAME = "tasksdb.db"
+DEFAULT_DB_NAME = "tasksdb.sqlite3"
 ENGINE = None
 SESSION = None
 Session = None
