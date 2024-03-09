@@ -1,6 +1,18 @@
 CHANGELOG
 ----------------------------------------------------------------
-v0.1.7 - Released on 04-Mar-2024
+v0.1.8 - Released on 09-Mar-2024
+
+-- Fixes --
+* Behaviour of urlopen changed to always ask the user to confirm the url to be opened.
+* Added checks on if the database file is available and is a valid sqlite3 db file.
+* Fixed a bug for the trend views in stats command where numbers for Day -7 were not shown.
+
+-- Other --
+* Updated the screenshots in README and added a new screenshot for the stats command output.
+* Included security scan using bandit https://bandit.readthedocs.io/en/latest/start.html
+
+----------------------------------------------------------------
+v0.1.7 - Released on 08-Mar-2024
 
 -- Features --
 * Added new command to show stats around all tasks, TODO and STARTED tasks by due date and completion and new task trends.
