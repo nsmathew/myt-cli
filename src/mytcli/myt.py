@@ -5795,7 +5795,7 @@ def display_stats():
     CONSOLE.print("3. Preparing completion trend...", 
                   style="default")
     CONSOLE.print("----------------------------------------------")
-    back_lmt_day = int(datetime.now().date().strftime('%Y%m%d')) - 7
+    back_lmt_day = int(datetime.now().date().strftime('%Y%m%d')) - 8
     
     try:
         
@@ -5842,7 +5842,7 @@ def display_stats():
     CONSOLE.print("4. Preparing new tasks trend...", 
                   style="default")
     CONSOLE.print("----------------------------------------------")
-    back_lmt_day = int(datetime.now().date().strftime('%Y%m%d')) - 7
+    back_lmt_day = int(datetime.now().date().strftime('%Y%m%d')) - 8
     
     try:
         
