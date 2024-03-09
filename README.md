@@ -1,6 +1,14 @@
 # myt-cli
 My Tasks - A personal task manager
 
+[![GitHub Release](https://img.shields.io/github/v/release/nsmathew/myt-cli)](https://github.com/nsmathew/myt-cli/releases/latest)
+[![GitHub License](https://img.shields.io/github/license/nsmathew/myt-cli)](https://raw.githubusercontent.com/nsmathew/myt-cli/master/LICENSE)
+![App Type](https://img.shields.io/badge/app_type-cli-blue)
+[![PyPI - Status](https://img.shields.io/pypi/status/myt-cli)](https://pypi.org/project/myt-cli/)
+![Python Version from PEP 621 TOML](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fnsmathew%2Fmyt-cli%2Fmaster%2Fpyproject.toml)
+![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/nsmathew/myt-cli)
+[![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
+
 ### What is it
 A simple command line task manager written in python. It is inspired from taskwarrior but with no where near as much functionality. 
 
