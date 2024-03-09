@@ -17,10 +17,10 @@ You can add tasks with descriptions, due dates and notes. You can groups tasks t
 
 ### Screenshots
 1. The default view
-![TaskView](https://github.com/nsmathew/myt-cli/blob/master/images/TaskAdd.png?raw=true)
+![TaskView](https://github.com/nsmathew/myt-cli/blob/master/images/TaskView.png?raw=true)
 &nbsp;
 2. Information displyed after adding a task
-![TaskView](https://github.com/nsmathew/myt-cli/blob/master/images/TaskView.png?raw=true)
+![TaskView](https://github.com/nsmathew/myt-cli/blob/master/images/TaskAdd.png?raw=true)
 ### Examples
 1. Add a simple task
 `myt add -de "Buy gifts" -du 2021-06-25 -gr PERS.SHOPPING -tg birthday,occassions`
