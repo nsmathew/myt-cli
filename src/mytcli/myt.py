@@ -2193,10 +2193,10 @@ def calc_task_scores(task_list):
     sc_priority = {PRIORITY_HIGH[0]:100, PRIORITY_MEDIUM[0]:95,
                    PRIORITY_NORMAL[0]:85, PRIORITY_LOW[0]:70}
     sc_status = {TASK_STATUS_STARTED:100, TASK_STATUS_TODO:75}
-    sc_groups = {"yes":50}
-    sc_tags = {"yes":50}
-    sc_notes = {"yes":50}
-    sc_due = {"today":100, "past":99.9, "fut":100}
+    sc_groups = {"yes":10}
+    sc_tags = {"yes":10}
+    sc_notes = {"yes":10}
+    sc_due = {"today":100, "past":99, "fut":99.5}
     weights = {"now":15, "due":50, "priority":15, "status":14, "inception":3,
                "groups":1,"tags":1,"notes":1}
     due_sum = 0
