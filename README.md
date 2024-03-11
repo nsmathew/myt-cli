@@ -48,7 +48,7 @@ Install using pip: `pip install myt-cli`
 
 ### Links
 - Github - https://github.com/nsmathew/myt-cli
-- PyPi - https://test.pypi.org/project/myt-cli
+- PyPi - https://pypi.org/project/myt-cli
 
 ### Contact
 Nitin Mathew, nitn_mathew2000@hotmail.com
