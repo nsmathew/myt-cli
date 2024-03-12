@@ -142,6 +142,7 @@ INDC_PR_NRML = ""
 INDC_PR_LOW = "[L]"
 INDC_NOW = "[++]"
 INDC_NOTES = "[^]"
+INDC_RECUR = "[~]"
 # Date formats
 FMT_DATEONLY = "%Y-%m-%d"
 FMT_DATETIME = "%Y-%m-%d %H:%M:%S"
@@ -1348,7 +1349,9 @@ def view(filters, verbose, pager, top, viewmode, full_db_path=None):
     elif viewmode == "notes":
         ret = display_notes(potential_filters, pager, top)
     elif viewmode == "7day":
-        ret = display_7day(potential_filters, pager, top)        
+        if top is not None:
+            CONSOLE.print("Top option is not applicable, ignoring.")
+        ret = display_7day(potential_filters, pager)        
     exit_app(ret)
 
 
@@ -4842,22 +4845,29 @@ def display_full(potential_filters, pager=False, top=None):
         CONSOLE.print(out_str)
     return SUCCESS
 
-def display_7day(potential_filters, pager=False, top=None):
+def display_7day(potential_filters, pager):
     """
-    Display tasks due for today and the next 6 days
+    Display tasks due for today and the next 6 days in kanban style. Tasks 
+    without a due date are also shown in a separate swimlane. This works for 
+    only pending tasks. 'view' command options like 'pager' and 'top' are not 
+    relevant here.
     
     Parameters:
         potential_filters(dict): Dictionary with the various types of
                                  filters to determine tasks for display
         pager(boolean): Default=False. Determines if a pager should be used
-                        to display the task information
-        top(integer): Limit the number of tasks which should be displayed
-
+                        to display the task information                                 
     Returns:
         integer: Status of Success=0 or Failure=1    
     """
-    curr_day = datetime.now().date()
-    tommr = curr_day + relativedelta(days=1)
+    
+    # View is relevant only for tasks in pending area
+    if potential_filters.get(TASK_BIN) is not None \
+            or potential_filters.get(TASK_COMPLETE) is not None:
+        CONSOLE.print("No tasks to display...", style="default")
+        get_and_print_task_count({WS_AREA_PENDING: "yes"})
+        return SUCCESS
+    
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
@@ -4871,11 +4881,14 @@ def display_7day(potential_filters, pager=False, top=None):
                              else_=Workspace.due).label("drvd_due")
         drvd_groups = case((Workspace.groups == None, "No Group"), 
                            else_=Workspace.groups)
+        is_recur = case((Workspace.task_type == TASK_TYPE_DRVD, "1"), 
+                           else_=0)        
         task_list = (SESSION.query(case((cast(Workspace.due_diff_today, 
                                              Numeric(10, 0))<0, 1), 
                                         else_=0).label("is_overdue"),
                                    drvd_due.label("drvd_due"),
                                    Workspace.id.label("id"),
+                                   is_recur.label("is_recur"),
                                    drvd_groups.label("drvd_groups"),
                                    Workspace.description.label("description"),
                                    Workspace.status.label("status"))
@@ -4889,7 +4902,12 @@ def display_7day(potential_filters, pager=False, top=None):
                      .all())
     except SQLAlchemyError as e:
         LOGGER.error(str(e))
-        return FAILURE        
+        return FAILURE
+    if task_list:
+        CONSOLE.print("Preparing view...", style="default")
+    else:
+        CONSOLE.print("No tasks to display")
+        return SUCCESS                
     
     date_tasks_dict = {}    
     # Populate the dictionary with dates from today until +6 days
@@ -4903,44 +4921,55 @@ def display_7day(potential_filters, pager=False, top=None):
     group_tasks_dict = {}
     group_tasks = []
     reset = True
-    for cnt, task in enumerate(task_list, start=1):     
-        #print(task.drvd_due, '-', task.drvd_groups, '-', task.id,'-',task.description,'-', task.status, '-', task.is_overdue)
+    
+    # Populate a heirarchy of Dict->Dict->List to populate the tables
+    # {Due Date 1: {
+    #   Group 1: 
+    #       [task1, task2, ...], 
+    #   Group 2: 
+    #       [task1, task2, ...],
+    #   ...
+    #   },
+    #  Due Date 2: {
+    #   Group 1: 
+    #       [task1, task2, ...], 
+    #   Group 2: 
+    #       [task1, task2, ...]
+    #   ...
+    #   },
+    #   ...
+    # }
+    for cnt, task in enumerate(task_list, start=1):
+        # To kickoff the process we need to initialise the 'prev' variables
+        # with values of the first task
         if reset:
             prev_due = task.drvd_due
             prev_group = task.drvd_groups
         if prev_due == task.drvd_due and prev_group == task.drvd_groups:
             group_tasks.append((task.id, 
-                                task.description, 
+                                task.description,
+                                task.is_recur, 
                                 task.status, 
                                 task.is_overdue))
-            #print("1111: ", group_tasks)
             reset = False
         elif prev_group != task.drvd_groups and prev_due == task.drvd_due:
             group_tasks_dict[prev_group] = copy(group_tasks)
-            #print(group_tasks_dict)
-            #print(prev_group, group_tasks_dict.get(prev_group))
-            #return SUCCESS
             group_tasks.clear()
             group_tasks.append((task.id, 
                                 task.description,  
+                                task.is_recur, 
                                 task.status, 
                                 task.is_overdue))
-            #print("2222: ", group_tasks)            
-            #return SUCCESS
         elif prev_due != task.drvd_due:
             group_tasks_dict[prev_group] = copy(group_tasks)
-            #print(group_tasks_dict)
-            #return SUCCESS
             group_tasks.clear()
             date_tasks_dict[prev_due] = copy(group_tasks_dict)
-            #print(date_tasks_dict)
-            #return SUCCESS
             group_tasks_dict.clear()
             group_tasks.append((task.id, 
                                 task.description, 
+                                task.is_recur, 
                                 task.status, 
                                 task.is_overdue))
-            #print("3333: ", group_tasks)
             
         if cnt == len(task_list):
             group_tasks_dict[task.drvd_groups] = copy(group_tasks)
@@ -4948,10 +4977,12 @@ def display_7day(potential_filters, pager=False, top=None):
             group_tasks.clear()
             group_tasks_dict.clear()
             
-            
         prev_due = task.drvd_due
         prev_group = task.drvd_groups
-            
+    
+    # The data will be displayed kanban style with each due date representing 
+    # a swimlane. Individual rich Tables are used for each swim lane and are
+    # brought together using a rich Panel
     tables = []
     for due_date, g_tasks in date_tasks_dict.items():
         table = RichTable(box=box.SIMPLE_HEAD, show_header=True,
@@ -4970,33 +5001,50 @@ def display_7day(potential_filters, pager=False, top=None):
                 table.add_row(grp + "  (" + str(task_cnt) + ")", 
                               style="subheader")
                 for task in tasks:
+                    # Intepret the is_recur flag which is used for the display
+                    recur_flag = str(" " + INDC_RECUR \
+                                        if  int(task[-3]) == 1 else "")
                     # Set colours based on tasks status and if they are overdue
                     if task[-1] == 1: 
                         table.add_row(": ".join(str(item) \
-                            for item in task[:2]), style="overdue")
+                            for item in task[:2]) + recur_flag, 
+                                      style="overdue")
                     elif task[-2] == TASK_STARTED:
                         table.add_row(": ".join(str(item) \
-                            for item in task[:2]), style="started")
+                            for item in task[:2]) + recur_flag, 
+                                      style="started")
                     else:
                         table.add_row(": ".join(str(item) \
-                            for item in task[:2]), style="")
+                            for item in task[:2]) + recur_flag, 
+                                      style="")
                 table.add_row("")
         tables.append(table)
-        
+    
+    # Use a panel to display the tables 
+    # Panel will shown a border for better visualisation
     panel = Panel.fit(
             Columns(tables),
             title="",
             border_style="none",
             title_align="left",
-            padding=(1, 2),
-            #box=box.MINIMAL
+            padding=(1, 2)
         )
+    
+    # Display a legend row at the bottom
     grid = RichTable.grid(padding=3)
     grid.add_column(style="overdue", justify="center")
     grid.add_column(style="started", justify="center")
-    grid.add_row("OVERDUE", "STARTED")
-    CONSOLE.print(panel)
-    CONSOLE.print(grid, justify="right")
+    grid.add_column(style="default", justify="center")
+    grid.add_row("OVERDUE", "STARTED", INDC_RECUR + " RECURRING")
+    if pager:
+        with CONSOLE.pager(styles=True):
+            CONSOLE.print(panel)
+            CONSOLE.print(grid, justify="right")
+    else:
+        CONSOLE.print(panel)
+        CONSOLE.print(grid, justify="right")
+    
+    # Print the standard task counts
     print_dict = {}
     print_dict[PRNT_CURR_VW_CNT] = len(task_list)
     print_dict[WS_AREA_PENDING] = "yes"
@@ -5005,6 +5053,7 @@ def display_7day(potential_filters, pager=False, top=None):
     elif potential_filters.get(TASK_BIN) == "yes":
         print_dict[WS_AREA_BIN] = "yes"
     get_and_print_task_count(print_dict)    
+    
     return SUCCESS
 
 def display_notes(potential_filters, pager=False, top=None):
