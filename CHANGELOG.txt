@@ -1,5 +1,18 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.1.9 - Released on 17-Mar-2024
+
+-- Features --
+* Issue #4: Added a new option for the view command, '--7day' to provide a 7 day view of pending tasks.
+
+-- Fixes --
+* Issue #2: Fixed an issue in scoring where today tasks without tags and projects have lower scores than tasks due in the future.
+
+-- Other --
+* Issue #1: Correct pypi url in the README.
+* Issue #5: Added more clarity aroudn using the 'hidden' filter in the context of the default view command vs other commands.
+
+----------------------------------------------------------------
 v0.1.8 - Released on 09-Mar-2024
 
 -- Fixes --

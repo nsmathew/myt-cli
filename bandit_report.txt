@@ -1,10 +1,10 @@
-Run started:2024-03-09 17:14:30.033923
+Run started:2024-03-17 18:58:59.202895
 
 Test results:
 	No issues identified.
 
 Code scanned:
-	Total lines of code: 5871
+	Total lines of code: 6094
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
 
@@ -22,4 +22,4 @@ Run metrics:
 Files skipped (0):
 
 myt-cli app version for bandit run is:
-version = "0.1.7"
+version = "0.1.9"
