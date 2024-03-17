@@ -664,6 +664,10 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
     """
     Modify task details. Specify 1 or more filters and provide the new values
     for attributes which need modification using the options available.
+    
+    NOTE: The tasks to be modified will be filtered based on provided filters 
+    with hidden tasks included by default. If the 'hidden' filter is also 
+    provided then the tasks will be filtered from only among hidden tasks.    
 
     --- FILTERS ---
 
@@ -861,7 +865,11 @@ def now(ctx, filters, verbose, full_db_path=None):
 
     As this is a toggle type command you use the same command to set and remove
     the 'now' status for a task.
-
+    
+    NOTE: The tasks to be set as NOW will be filtered based on provided filters 
+    with hidden tasks included by default. If the 'hidden' filter is also 
+    provided then the tasks will be filtered from only among hidden tasks.    
+    
     --- FILTERS ---
 
     Now tasks accept only the 'id:' filter and only 1 task id in the filter
@@ -964,6 +972,10 @@ def start(filters, verbose, full_db_path=None):
     The task remains in the 'pending' area. This command is only applicable
     for tasks in the 'pending' area.
 
+    NOTE: The tasks to be started will be filtered based on provided filters 
+    with hidden tasks included by default. If the 'hidden' filter is also 
+    provided then the tasks will be filtered from only among hidden tasks.    
+    
     --- FILTERS ---
 
     Please refer the help for the 'modify' command for information on
@@ -1023,6 +1035,10 @@ def done(filters, verbose, full_db_path=None):
     The task remains in the 'pending' area. This command is only applicable
     for tasks in the 'pending' area.
 
+    NOTE: The tasks to be completed will be filtered based on provided filters 
+    with hidden tasks included by default. If the 'hidden' filter is also 
+    provided then the tasks will be filtered from only among hidden tasks.    
+    
     --- FILTERS ---
 
     Please refer the help for the 'modify' command for information on
@@ -1078,7 +1094,11 @@ def revert(filters, verbose, full_db_path=None):
     task then the duration tracking continues. Additionally the revert
     command only work in the 'completed' area hence you need to use the
     'complete' filter when running the command, refer the examples.
-
+    
+    NOTE: The tasks to be reverted will be filtered based on provided filters 
+    with hidden tasks included by default. If the 'hidden' filter is also 
+    provided then the tasks will be filtered from only among hidden tasks.    
+    
     --- FILTERS ---
 
     Please refer the help for the 'modify' command for information on
@@ -1139,7 +1159,11 @@ def reset(filters, verbose, full_db_path=None):
     This works on tasks in STARTED status.
 
     The task remains in the 'pending' area. This command is only applicable
-    for tasks in the 'pending' area.
+    for tasks in the 'pending' area.    
+    
+    NOTE: The tasks to be reset will be filtered based on provided filters 
+    with hidden tasks included by default. If the 'hidden' filter is also 
+    provided then the tasks will be filtered from only among hidden tasks.    
 
     --- FILTERS ---
 
@@ -1191,15 +1215,19 @@ def reset(filters, verbose, full_db_path=None):
               )
 def stop(filters, verbose, full_db_path=None):
     """
-    Stop a started task and stop duration tracking
+    Stop a started task and stop duration tracking.
 
     When you stop working on a task but it is yet to be completed you can
     you can use this command. It will set the task's status as 'TO_DO' and
     will stop tracking the task's duration.
-
+    
     If you need to start the task again then just use the 'start' command.
     The task remains in the 'pending' area. This command is only applicable
     for tasks in the 'pending' area.
+    
+    NOTE: The tasks to be stopped will be filtered based on provided filters 
+    with hidden tasks included by default. If the 'hidden' filter is also 
+    provided then the tasks will be filtered from only among hidden tasks.    
 
     --- FILTERS ---
 
@@ -1304,11 +1332,15 @@ def view(filters, verbose, pager, top, viewmode, full_db_path=None):
     Display tasks using various views and filters.
 
     The views by default apply on the 'pending' area and for tasks that are
-    not, ie any task that is in 'TO_DO' or 'STARTED' status and has no hide
-    date or the hide date > today. If you need tasks from other areas you need
-    to use the 'complete' or 'bin' filter.
+    not hidden, ie any task that is in 'TO_DO' or 'STARTED' status and has no 
+    hide date or the hide date > today. If you need tasks from other areas you 
+    need to use the 'complete' or 'bin' filter.
+    
+    If additional filters like id, gr, tg etc are provided without 'bin' or 
+    'complete', then the tasks will be filtered with hidden tasks also scoped 
+    in unless the 'hidden' filter is also provided.
 
-    All tasks in 'pending' area hidden or not are shown with a numeric task
+    All tasks in 'pending' area, hidden or not are shown with a numeric task
     id. Tasks in 'completed' or 'bin' area are always shown with their uuid or
     the unqiue identifier from the backend.
 
@@ -1384,6 +1416,10 @@ def delete(filters, verbose, full_db_path=None):
     This command works for tasks in the 'pending' and 'completed' areas.
     While deleting tasks which are recurring you will be asked if you would
     like to delete just the one instance or all of them.
+        
+    NOTE: The tasks to be deleted will be filtered based on provided filters 
+    with hidden tasks included by default. If the 'hidden' filter is also 
+    provided then the tasks will be filtered from only among hidden tasks.    
 
     --- FILTERS ---
 
@@ -1542,6 +1578,9 @@ def urlopen(filters, urlno, verbose, full_db_path=None):
     The user can use the --urlno or -ur option to provide a number as part of
     the command to open that particular URL without having to choose from the
     menu.
+    
+    The tasks to be stopped will be filtered based on provided filters with 
+    hidden tasks included by default.        
 
     --- FILTERS ---
 
@@ -2772,8 +2811,18 @@ def get_task_uuid_n_ver(potential_filters):
     Return task UUID and version by applying filters on tasks
 
     Using a list of filters identify the relevant task UUIDs and their
-    latest versions. The filters come in the form of a dictionary and
-    expected keys include:
+    latest versions. When all pending tasks are requested, i.e. no other 
+    filters are provided, then hidden tasks are not extracted and the 'hidden' 
+    filter is required to extract them. 
+    When any other filter is provided the search by default will include 
+    hidden tasks. This is done since the filters requested could apply to 
+    hidden tasks and can cause unexpected behaviours if the hidden task are 
+    filtered out by default. This has more significant impact on modify, 
+    delete, start, stop and now actions.
+    The purpose of hiding tasks is to avoid cluttering the default view 
+    command (display_default) which gives an overview of all pending tasks.
+    
+    The filters come in the form of a dictionary and expected keys include:
         - For all pending - Default when non filter provided
         - Overdue Tasks - Works only on pending
         - Tasks due today - Works only on pending
@@ -2876,7 +2925,8 @@ def get_task_uuid_n_ver(potential_filters):
     LOGGER.debug("Derived area is {}".format(drvd_area))
     if all_tasks:
         """
-        When no filter is provided retrieve all tasks from pending area
+        When no filter is provided retrieve all tasks from pending area.
+        Hidden tasks are not included here.
         """
         LOGGER.debug("Inside all_tasks filter")
         innrqr_all = (SESSION.query(Workspace.uuid, Workspace.version)
@@ -6111,7 +6161,8 @@ def display_stats():
 def display_default(potential_filters, pager=False, top=None):
     """
     Displays a tasks with relevant information. Tasks are sorted by their
-    score in this view.
+    score in this view. Hidden tasks are not shown in the default view unless 
+    specified as a filter.
 
     Parameters:
         potential_filters(dict): Dictionary with the various types of
