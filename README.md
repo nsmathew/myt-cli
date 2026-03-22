@@ -42,6 +42,19 @@ Other functionality in the app can be explored using the app's help
 ### Installation
 Install using pip: `pip install myt-cli`
 
+### Development Setup
+```bash
+git clone https://github.com/nsmathew/myt-cli.git
+cd myt-cli
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+Run tests: `pytest tests/`
+
+Run security scan: `bandit --recursive --severity-level all src/`
+
 ### Technology
 * Python 3
 * Sqlite3
