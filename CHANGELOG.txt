@@ -1,5 +1,10 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.2.0 - Released on 22-Mar-2026
+-- Other --
+* Refactoring the main source file into multiple logical modules for easier maintenance and testing.
+
+----------------------------------------------------------------
 v0.1.9 - Released on 17-Mar-2024
 
 -- Features --

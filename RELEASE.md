@@ -31,9 +31,15 @@ password = pypi-...
 ```
 
 This runs tests, bandit security scan, and checks for uncommitted changes.
-Commit the updated `bandit_report.txt` if changed.
 
-## 3. Build
+## 3. Commit the release
+
+Commit the version bump, changelog, and updated `bandit_report.txt` together:
+```
+Version, changelog and bandit sec run for vx.y.z
+```
+
+## 4. Build
 
 ```bash
 ./scripts/build.sh
@@ -41,7 +47,7 @@ Commit the updated `bandit_report.txt` if changed.
 
 Cleans `dist/` and builds wheel + sdist.
 
-## 4. Test on Test PyPI
+## 5. Test on Test PyPI
 
 ```bash
 ./scripts/publish_test.sh --verify
@@ -55,7 +61,7 @@ If fixes are required:
 3. Rebuild and re-upload: `./scripts/build.sh && ./scripts/publish_test.sh --verify`
 4. Once verified, reset version back to `x.y.z` if it was bumped
 
-## 5. Publish to PyPI
+## 6. Publish to PyPI
 
 1. Commit distributables with message `Distributables for vx.y.z`
 
@@ -65,7 +71,7 @@ If fixes are required:
    ```
    This uploads to PyPI, creates a git tag `vx.y.z`, and pushes both to origin.
 
-## 6. Create GitHub Release
+## 7. Create GitHub Release
 
 Go to https://github.com/nsmathew/myt-cli/releases/new, select the tag `vx.y.z`,
 and add the changelog contents as the release description.
