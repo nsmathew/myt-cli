@@ -7,18 +7,21 @@ authors = [
 description = "myt - My Task Manager"
 readme = "README.md"
 requires-python = ">=3.8"
-dependencies = ['Click','rich','python-dateutil','mock','sqlalchemy']
+dependencies = ['Click','rich','python-dateutil','mock','sqlalchemy','plotext']
 classifiers = [
     'Development Status :: 5 - Production/Stable',
     'Environment :: Console',
     'Intended Audience :: Science/Research',
-    'License :: OSI Approved :: MIT License',  
+    'License :: OSI Approved :: MIT License',
     'Programming Language :: Python',
     'Operating System :: Microsoft :: Windows',
     'Operating System :: MacOS',
     'Operating System :: POSIX :: Linux',
     'Topic :: Office/Business',
 ]
+
+[project.optional-dependencies]
+dev = ['pytest', 'bandit']
 
 [project.scripts]
 myt = "src.mytcli.myt:myt"
