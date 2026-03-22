@@ -21,7 +21,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ['pytest', 'bandit']
+dev = ['pytest', 'bandit', 'build', 'twine']
 
 [project.scripts]
 myt = "src.mytcli.myt:myt"
