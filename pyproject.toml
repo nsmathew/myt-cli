@@ -34,5 +34,10 @@ Issues = "https://github.com/nsmathew/myt-cli/issues"
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::DeprecationWarning:sqlalchemy",
+]
+
 [tool.setuptools.packages.find]
 exclude = [".github*"]

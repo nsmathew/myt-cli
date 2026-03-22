@@ -2627,36 +2627,32 @@ def calc_next_inst_date(recur_mode, recur_when, start_dt, end_dt, cnt=2):
     next_due = None
     if recur_mode == MODE_DAILY:
         if recur_when is None:
-            next_due = (list(rrule(DAILY, count=cnt, dtstart=start_dt,
-                                   until=end_dt)))
+            next_due = (list(rrule(DAILY, count=cnt, dtstart=start_dt)))
         else:
             rec_intvl = int(recur_when[1:])
             next_due = (list(rrule(DAILY, interval=rec_intvl, count=cnt,
-                                   dtstart=start_dt, until=end_dt)))
+                                   dtstart=start_dt)))
     elif recur_mode == MODE_WEEKLY:
         if recur_when is None:
-            next_due = (list(rrule(WEEKLY, count=cnt, dtstart=start_dt,
-                                   until=end_dt)))
+            next_due = (list(rrule(WEEKLY, count=cnt, dtstart=start_dt)))
         else:
             rec_intvl = int(recur_when[1:])
             next_due = (list(rrule(WEEKLY, interval=rec_intvl, count=cnt,
-                                   dtstart=start_dt, until=end_dt)))
+                                   dtstart=start_dt)))
     elif recur_mode == MODE_MONTHLY:
         if recur_when is None:
-            next_due = (list(rrule(MONTHLY, count=cnt, dtstart=start_dt,
-                                   until=end_dt)))
+            next_due = (list(rrule(MONTHLY, count=cnt, dtstart=start_dt)))
         else:
             rec_intvl = int(recur_when[1:])
             next_due = (list(rrule(MONTHLY, interval=rec_intvl, count=cnt,
-                                   dtstart=start_dt, until=end_dt)))
+                                   dtstart=start_dt)))
     elif recur_mode == MODE_YEARLY:
         if recur_when is None:
-            next_due = (list(rrule(YEARLY, count=cnt, dtstart=start_dt,
-                                   until=end_dt)))
+            next_due = (list(rrule(YEARLY, count=cnt, dtstart=start_dt)))
         else:
             rec_intvl = int(recur_when[1:])
             next_due = (list(rrule(YEARLY, interval=rec_intvl, count=cnt,
-                                   dtstart=start_dt, until=end_dt)))
+                                   dtstart=start_dt)))
     else:
         #EXTENDED Modes
         #Parse the when list and check for modes which require a when
@@ -2666,14 +2662,16 @@ def calc_next_inst_date(recur_mode, recur_when, start_dt, end_dt, cnt=2):
             #Adjust the when days by -1 to factor the 0 vs 1 index
             when_list = [day - 1 for day in when_list]
             next_due = (list(rrule(DAILY, count=cnt, byweekday=when_list,
-                                   dtstart=start_dt, until=end_dt)))
+                                   dtstart=start_dt)))
         elif recur_mode == MODE_MTHDYS:
             next_due = (list(rrule(DAILY, count=cnt, bymonthday=when_list,
-                                   dtstart=start_dt, until=end_dt)))
+                                   dtstart=start_dt)))
         elif recur_mode == MODE_MONTHS:
             next_due = (list(rrule(MONTHLY, count=cnt, bymonth=when_list,
-                                   dtstart=start_dt, until=end_dt)))
+                                   dtstart=start_dt)))
     if next_due is not None:
+        if end_dt is not None:
+            next_due = [d for d in next_due if d.date() <= end_dt]
         return [day.date() for day in next_due]
 
 
