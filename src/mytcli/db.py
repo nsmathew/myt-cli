@@ -76,7 +76,6 @@ def connect_to_tasksdb(verbose=False, full_db_path=None):
 
     # Validate the path
     if ".." in full_db_path or \
-        not os.path.isdir(os.path.dirname(full_db_path)) or \
         not os.path.isabs(full_db_path):
         LOGGER.error("Tasks database path is invalid. " +\
                      "Please use absolute path only.")
