@@ -4,6 +4,7 @@ import logging
 import click
 from dateutil.parser import parse
 
+import src.mytcli.constants as constants
 from src.mytcli.constants import (LOGGER, CONSOLE, SUCCESS, FAILURE,
                                TASK_COMPLETE, TASK_BIN, TASK_ALL,
                                HL_FILTERS_ONLY,
@@ -31,15 +32,22 @@ from src.mytcli.display import (display_default, display_full, display_history,
 
 
 # Start Commands Config
-@click.group()
-def myt():
+@click.group(invoke_without_command=True)
+@click.pass_context
+def myt(ctx):
     """
     myt - my tASK MANAGER
 
     An application to manage your tasks through the command line using
     simple options.
+
+    Run without a subcommand to launch the interactive TUI.
     """
-    pass
+    if ctx.invoked_subcommand is None:
+        from src.mytcli.tui import MytTUI
+        constants.TUI_MODE = True
+        tui = MytTUI()
+        tui.run()
 
 # Version
 @myt.command()

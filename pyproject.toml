@@ -7,7 +7,7 @@ authors = [
 description = "myt - My Task Manager"
 readme = "README.md"
 requires-python = ">=3.8"
-dependencies = ['Click','rich','python-dateutil','mock','sqlalchemy','plotext']
+dependencies = ['Click','rich','python-dateutil','mock','sqlalchemy','plotext','prompt_toolkit>=3.0']
 classifiers = [
     'Development Status :: 5 - Production/Stable',
     'Environment :: Console',

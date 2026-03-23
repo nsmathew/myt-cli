@@ -14,6 +14,7 @@ from sqlalchemy.orm import make_transient
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import inspect
 
+import src.mytcli.constants as constants
 from src.mytcli.constants import (LOGGER, CONSOLE, SUCCESS, FAILURE,
                                TASK_OVERDUE, TASK_TODAY, TASK_HIDDEN,
                                TASK_BIN, TASK_COMPLETE, TASK_STARTED,
@@ -58,6 +59,9 @@ def open_url(url_):
 
 
 def confirm_prompt(prompt_msg):
+    if constants.TUI_MODE:
+        CONSOLE.print("{} → Auto-denied in TUI mode. Use --yes/-y flag to confirm.".format(prompt_msg))
+        return False
     res = Prompt.ask(prompt_msg, choices=["yes", "no"], default="no")
     if res == "no":
         return False

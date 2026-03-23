@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from src.mytcli.constants import (SUCCESS, FAILURE, DEFAULT_FOLDER, DEFAULT_DB_NAME,
                                DB_SCHEMA_VER, FMT_DATEONLY, LOGGER, CONSOLE)
+import src.mytcli.constants as constants
 from src.mytcli.models import Base, AppMetadata
 
 # Global state
@@ -71,6 +72,9 @@ def connect_to_tasksdb(verbose=False, full_db_path=None):
         int: SUCCESS(0) or FAILURE(1)
     """
     global Session, SESSION, ENGINE
+    # Idempotent in TUI mode: if already connected, skip reconnection
+    if constants.TUI_MODE and SESSION is not None and ENGINE is not None:
+        return SUCCESS
     if full_db_path is None: # If path not provided as cmd arg then default
         full_db_path = os.path.join(DEFAULT_FOLDER, DEFAULT_DB_NAME)
 
@@ -154,6 +158,9 @@ def connect_to_tasksdb(verbose=False, full_db_path=None):
 
 def exit_app(stat=0):
     LOGGER.debug("Preparing to exit app...")
+    if constants.TUI_MODE:
+        # In TUI mode, return status instead of exiting the process
+        return 1 if stat != 0 else 0
     ret = discard_db_resources()
     if ret != 0 or stat != 0:
         LOGGER.error("Errors encountered either in executing commands"

@@ -10,6 +10,7 @@ from sqlalchemy.orm import make_transient
 from sqlalchemy.exc import SQLAlchemyError
 from rich.prompt import Prompt
 
+import src.mytcli.constants as constants
 from src.mytcli.constants import (LOGGER, CONSOLE, SUCCESS, FAILURE,
                                TASK_OVERDUE, TASK_TODAY, TASK_HIDDEN,
                                TASK_BIN, TASK_COMPLETE, TASK_STARTED,
@@ -209,14 +210,18 @@ def process_url(potential_filters, urlno=None):
             #so using click's echo instead
             click.echo("{} - {}".format(str(cnt), u))
         choice_rng = [str(x) for x in list(range(1,cnt+1))]
-        res = Prompt.ask("Choose the URL to be openned:",
-                            choices=[*choice_rng,"none"],
-                            default="none")
-        if res == "none":
+        if constants.TUI_MODE:
+            CONSOLE.print("Multiple URLs found. Re-run with -ur <number> to open one.")
             ret = SUCCESS
         else:
-            url_ = re.findall(regex_2, url_list[int(res)-1])
-            ret = open_url(url_[0])
+            res = Prompt.ask("Choose the URL to be openned:",
+                                choices=[*choice_rng,"none"],
+                                default="none")
+            if res == "none":
+                ret = SUCCESS
+            else:
+                url_ = re.findall(regex_2, url_list[int(res)-1])
+                ret = open_url(url_[0])
         return ret
     else:
         CONSOLE.print("No URLS found in notes for this task")
@@ -391,12 +396,17 @@ def prep_delete(potential_filters, event_id, delete_all=False):
             """
             LOGGER.debug("Is a derived task")
             if not delete_all:
-                res = Prompt.ask("{}, {} - This is a recurring task, do you "
-                                "want to modify 'all' pending instances or "
-                                "just 'this' instance"
-                                    .format(ws_task.description, ws_task.due),
-                                choices=["all", "this", "none"],
-                                default="none")
+                if constants.TUI_MODE:
+                    CONSOLE.print("{}, {} - Recurring task: defaulting to 'this' instance in TUI mode."
+                                  .format(ws_task.description, ws_task.due))
+                    res = "this"
+                else:
+                    res = Prompt.ask("{}, {} - This is a recurring task, do you "
+                                    "want to modify 'all' pending instances or "
+                                    "just 'this' instance"
+                                        .format(ws_task.description, ws_task.due),
+                                    choices=["all", "this", "none"],
+                                    default="none")
             else:
                 LOGGER.debug("Forced delete all")
                 res = "all"
@@ -1036,12 +1046,17 @@ def prep_modify(potential_filters, ws_task_src, tag):
         make_transient(ws_task)
         ws_task.uuid = uuidn
         if ws_task.task_type == TASK_TYPE_DRVD:
-            res = Prompt.ask("{}, {} - This is a recurring task, do you want"
-                                " to modify 'all' pending instances or "
-                                "just 'this' instance"
-                                    .format(ws_task.description, ws_task.due),
-                                choices=["all", "this", "none"],
-                                default="none")
+            if constants.TUI_MODE:
+                CONSOLE.print("{}, {} - Recurring task: defaulting to 'this' instance in TUI mode."
+                              .format(ws_task.description, ws_task.due))
+                res = "this"
+            else:
+                res = Prompt.ask("{}, {} - This is a recurring task, do you want"
+                                    " to modify 'all' pending instances or "
+                                    "just 'this' instance"
+                                        .format(ws_task.description, ws_task.due),
+                                    choices=["all", "this", "none"],
+                                    default="none")
             if (ws_task_src.recur_end is not None
                     or ws_task_src.recur_mode is not None
                     or ws_task_src.recur_when is not None):
