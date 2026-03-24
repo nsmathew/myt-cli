@@ -34,6 +34,7 @@ class MytTUI:
     def __init__(self):
         self._display_text = ""
         self._filter_args = []
+        self._last_command = None  # last command that produced the display
         self._last_refresh = None
         self._status_message = ""
         self._completer = MytCompleter()
@@ -42,17 +43,64 @@ class MytTUI:
         self._display_window = None
         self._input_window = None
 
+    def _get_task_counts(self):
+        """Get pending task counts for the toolbar."""
+        try:
+            from sqlalchemy import and_, func, distinct, case
+            from src.mytcli.models import Workspace
+            from src.mytcli.constants import (WS_AREA_PENDING, TASK_TYPE_NRML,
+                                              TASK_TYPE_DRVD)
+            import src.mytcli.db as db
+            from datetime import datetime as dt
+            curr_day = dt.now()
+            visib_xpr = (case((and_(Workspace.hide > curr_day.date(),
+                                    Workspace.hide != None),
+                               "HIDDEN"), else_="VISIBLE")
+                         .label("VISIBILITY"))
+            max_ver_sqr = (db.SESSION.query(Workspace.uuid,
+                                            func.max(Workspace.version)
+                                            .label("maxver"))
+                           .group_by(Workspace.uuid).subquery())
+            results = (db.SESSION.query(visib_xpr,
+                                        func.count(distinct(Workspace.uuid))
+                                        .label("CNT"))
+                        .join(max_ver_sqr, Workspace.uuid ==
+                              max_ver_sqr.c.uuid)
+                        .filter(and_(Workspace.area == WS_AREA_PENDING,
+                                     Workspace.version ==
+                                     max_ver_sqr.c.maxver,
+                                     Workspace.task_type.in_(
+                                         [TASK_TYPE_NRML, TASK_TYPE_DRVD])))
+                        .group_by(visib_xpr)
+                        .all())
+            vis = hid = 0
+            for r in results:
+                if r[0] == "HIDDEN":
+                    hid = r[1]
+                elif r[0] == "VISIBLE":
+                    vis = r[1]
+            return vis + hid, hid
+        except Exception:
+            return None, None
+
     def _get_toolbar_text(self):
         filter_str = " ".join(self._filter_args) if self._filter_args else "(none)"
         refresh_str = self._last_refresh or "--:--:--"
+        total, hidden = self._get_task_counts()
+        counts = ""
+        if total is not None:
+            displayed = constants.TUI_DISPLAYED_COUNT
+            if displayed is not None:
+                counts = " | Displayed: {} | Pending: {} | Hidden: {}".format(
+                    displayed, total, hidden)
+            else:
+                counts = " | Pending: {} | Hidden: {}".format(total, hidden)
         status = ""
         if self._status_message:
             status = "  |  " + self._status_message
         return [
-            ("class:toolbar", " Filter: {} | Last refresh: {}  ".format(
-                filter_str, refresh_str)),
-            ("class:toolbar.key", " F6:scroll "),
-            ("class:toolbar", status),
+            ("class:toolbar", " Filter: {} | Refresh: {}{}{}  ".format(
+                filter_str, refresh_str, counts, status)),
         ]
 
     def _get_display_text(self):
@@ -68,25 +116,42 @@ class MytTUI:
         if self._app:
             self._app.invalidate()
 
+    def _get_terminal_width(self):
+        """Get current terminal width."""
+        try:
+            return os.get_terminal_size().columns
+        except OSError:
+            return 120
+
     def _refresh_view(self):
         """Re-run the view command with saved filters."""
         filter_str = " ".join(self._filter_args)
         cmd = "view {}".format(filter_str) if filter_str else "view"
-        code, output, _ = self._dispatcher.dispatch(cmd)
+        self._last_command = cmd
+        width = self._get_terminal_width()
+        code, output, _ = self._dispatcher.dispatch(cmd, width_override=width)
         self._update_display(output)
 
     async def _open_pager(self):
-        """Open current display content in a pager (less)."""
-        if not self._display_text:
+        """Open current display content in a pager (less).
+
+        Re-renders the last command at full 200-col width for the pager.
+        """
+        if self._last_command:
+            code, pager_text, _ = self._dispatcher.dispatch(
+                self._last_command, width_override=200)
+        elif self._display_text:
+            pager_text = self._display_text
+        else:
             return
         pager = os.environ.get("PAGER", "less")
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt",
                                          delete=False) as f:
-            f.write(self._display_text)
+            f.write(pager_text)
             tmp_path = f.name
         try:
             await run_in_terminal(
-                lambda: subprocess.call([pager, "-R", tmp_path])
+                lambda: subprocess.call([pager, "-RS", "+g", tmp_path])
             )
         finally:
             try:
@@ -115,11 +180,13 @@ class MytTUI:
 
         cmd_name = text.split()[0] if text.split() else ""
 
-        code, output, is_mutation = self._dispatcher.dispatch(text)
+        width = self._get_terminal_width()
+        code, output, is_mutation = self._dispatcher.dispatch(text, width_override=width)
 
         if cmd_name == "view":
             parts = text.split()[1:]
             self._filter_args = parts
+            self._last_command = text
             self._update_display(output)
             self._status_message = ""
         elif is_mutation:
@@ -127,6 +194,7 @@ class MytTUI:
             self._completer.invalidate_cache()
             self._refresh_view()
         else:
+            self._last_command = text
             self._update_display(output)
 
     def _build_layout(self):

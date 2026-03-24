@@ -34,8 +34,12 @@ class TUIDispatcher:
     def width(self, value):
         self._width = value or 200
 
-    def dispatch(self, input_text: str) -> tuple:
+    def dispatch(self, input_text: str, width_override=None) -> tuple:
         """Dispatch a command string.
+
+        Args:
+            input_text: The command string to dispatch.
+            width_override: Optional width to use instead of the default.
 
         Returns:
             (exit_code, output_text, is_mutation)
@@ -61,7 +65,8 @@ class TUIDispatcher:
             ), False)
 
         buf = StringIO()
-        constants.CONSOLE.set_target(buf, width=self._width)
+        render_width = width_override if width_override is not None else self._width
+        constants.CONSOLE.set_target(buf, width=render_width)
         # Redirect stdout to capture Click output (--help, click.echo, etc.)
         old_stdout = sys.stdout
         sys.stdout = buf

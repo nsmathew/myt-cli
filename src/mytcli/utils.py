@@ -570,9 +570,16 @@ def get_and_print_task_count(print_dict):
                          .format(ws_task.uuid, ws_task.area))
     # Print No. of Tasks Displayed in the view
     if print_dict.get(PRNT_CURR_VW_CNT):
-        CONSOLE.print(("Displayed Tasks: [magenta]{}[/magenta]"
-                        .format(print_dict.get(PRNT_CURR_VW_CNT))),
-                        style="info")
+        if constants.TUI_MODE:
+            constants.TUI_DISPLAYED_COUNT = print_dict.get(PRNT_CURR_VW_CNT)
+        else:
+            CONSOLE.print(("Displayed Tasks: [magenta]{}[/magenta]"
+                            .format(print_dict.get(PRNT_CURR_VW_CNT))),
+                            style="info")
+
+    # In TUI mode, counts are shown in the toolbar
+    if constants.TUI_MODE:
+        return
 
     # Print Pending, Complted and Bin Tasks
     curr_day = datetime.now()

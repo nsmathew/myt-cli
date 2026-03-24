@@ -118,6 +118,7 @@ myt_theme = Theme({
 CONSOLE = _ConsoleProxy(theme=myt_theme)
 # TUI Mode flag
 TUI_MODE = False
+TUI_DISPLAYED_COUNT = None
 # TUI Constants
 HISTORY_FILE = os.path.join(str(Path.home()), ".myt-cli", "history")
 REFRESH_INTERVAL = 60  # seconds
