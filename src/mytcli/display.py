@@ -589,6 +589,8 @@ def display_history(potential_filters, pager=False, top=None):
                          else_=Workspace.hide))
         groups_xpr = (case((Workspace.groups == None, None),
                            else_=Workspace.groups))
+        context_xpr = (case((Workspace.context == None, None),
+                            else_=Workspace.context))
         now_flag_xpr = (case((Workspace.now_flag == True, INDC_NOW),
                              else_=""))
         recur_xpr = (case((Workspace.recur_mode != None, Workspace.recur_mode
@@ -620,6 +622,7 @@ def display_history(potential_filters, pager=False, top=None):
                                    recur_xpr.label("recur"),
                                    end_xpr.label("end"),
                                    groups_xpr.label("groups"),
+                                   context_xpr.label("context"),
                                    case((tags_subqr.c.tags == None, None),
                                         else_=tags_subqr.c.tags).label("tags"),
                                    Workspace.status.label("status"),
@@ -656,6 +659,7 @@ def display_history(potential_filters, pager=False, top=None):
     table.add_column("recur", justify="left")
     table.add_column("end", justify="left")
     table.add_column("groups", justify="right")
+    table.add_column("context", justify="right")
     table.add_column("tags", justify="right")
     table.add_column("status", justify="left")
     table.add_column("priority", justify="center")
@@ -681,7 +685,7 @@ def display_history(potential_filters, pager=False, top=None):
                 break
             if cnt > 1:
                 #Empty row to separate recurring tasks
-                trow = [None] * 15
+                trow = [None] * 16
                 table.add_row(*trow)
         # Format the dates to
         # YYYY-MM-DD
@@ -720,8 +724,9 @@ def display_history(potential_filters, pager=False, top=None):
                         .strftime(FMT_DATEW_TIME))
         # Create a list to print
         trow = [task.uuid, str(task.id), task.description, due, task.recur,end,
-                task.groups, task.tags, task.status, task.priority_flg,
-                task.now, hide, str(task.version), inception, created]
+                task.groups, task.context, task.tags, task.status,
+                task.priority_flg, task.now, hide, str(task.version),
+                inception, created]
         table.add_row(*trow, style="default")
 
     # Print a legend on the indicators used for priority and now
@@ -1418,6 +1423,8 @@ def display_default(potential_filters, pager=False, top=None):
                          else_=Workspace.hide))
         groups_xpr = (case((Workspace.groups == None, None),
                            else_=Workspace.groups))
+        context_xpr = (case((Workspace.context == None, None),
+                            else_=Workspace.context))
         now_flag_xpr = (case((Workspace.now_flag == True, INDC_NOW),
                              else_=""))
         notes_flag_xpr = (case((Workspace.notes != None, INDC_NOTES),
@@ -1465,6 +1472,7 @@ def display_default(potential_filters, pager=False, top=None):
                                    recur_xpr.label("recur"),
                                    end_xpr.label("end"),
                                    groups_xpr.label("groups"),
+                                   context_xpr.label("context"),
                                    case((tags_subqr.c.tags == None, None),
                                         else_=tags_subqr.c.tags).label("tags"),
                                    Workspace.status.label("status"),
@@ -1514,6 +1522,7 @@ def display_default(potential_filters, pager=False, top=None):
     table.add_column("recur", justify="left")
     table.add_column("end", justify="left")
     table.add_column("groups", justify="right")
+    table.add_column("context", justify="right")
     table.add_column("tags", justify="right")
     table.add_column("status", justify="left")
     table.add_column("duration", justify="left")
@@ -1572,29 +1581,28 @@ def display_default(potential_filters, pager=False, top=None):
         # Create a list to print. Any change in order ensure the if/else
         #in below loop is also modified
         trow = [str(task.id_or_uuid), task.description, task.due_in, due,
-                task.recur, end, task.groups, task.tags, task.status,
-                duration, hide,
+                task.recur, end, task.groups, task.context, task.tags,
+                task.status, duration, hide,
                 "".join([task.now,task.notes, task.priority_flg]),
                 str(task.version), age, created, score]
-                #str(score_dict.get(task.uuid))]
         tdata.append(trow)
     #Now sort the list depending on which area we are displaying
     if task_list[0].area == WS_AREA_PENDING:
         #based on score, descending
-        tdata = sorted(tdata, key=itemgetter(15), reverse=True)
+        tdata = sorted(tdata, key=itemgetter(16), reverse=True)
     else:
         #hidden or bin task, so based on created date
-        tdata = sorted(tdata, key=itemgetter(14), reverse=True)
+        tdata = sorted(tdata, key=itemgetter(15), reverse=True)
 
     for trow in tdata:
         # Next Display the tasks with formatting based on various conditions
-        if trow[8] == TASK_STATUS_DONE:
+        if trow[9] == TASK_STATUS_DONE:
             table.add_row(*trow, style="done")
-        elif trow[8] == TASK_STATUS_DELETED:
+        elif trow[9] == TASK_STATUS_DELETED:
             table.add_row(*trow, style="binn")
-        elif INDC_NOW in trow[11]:
+        elif INDC_NOW in trow[12]:
             table.add_row(*trow, style="now")
-        elif trow[8] == TASK_STATUS_STARTED:
+        elif trow[9] == TASK_STATUS_STARTED:
             table.add_row(*trow, style="started")
         elif trow[2] == TASK_OVERDUE:
             table.add_row(*trow, style="overdue")

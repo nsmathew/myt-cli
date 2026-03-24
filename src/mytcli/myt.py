@@ -88,6 +88,11 @@ def version():
               type=str,
               help="Hierachical grouping for tasks using '.'",
               )
+@click.option("--context",
+              "-cx",
+              type=str,
+              help="Context for the task",
+              )
 @click.option("--tag",
               "-tg",
               type=str,
@@ -119,8 +124,8 @@ def version():
               type=str,
               help="Full path to tasks database file",
               )
-def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose,
-        full_db_path=None):
+def add(desc, priority, due, hide, group, context, tag, recur, end, notes,
+        verbose, full_db_path=None):
     """
     Add a task. Provide details of task using the various options available.
     Task gets added with a TO_DO status and as a 'pending' task.
@@ -207,8 +212,8 @@ def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose,
     else:
         event_id = get_event_id()
         ws_task = Workspace(description=desc, priority=priority,
-                            due=due, hide=hide, groups=group, now_flag=False,
-                            notes=notes)
+                            due=due, hide=hide, groups=group,
+                            context=context, now_flag=False, notes=notes)
         if tag is not None:
             """
             bug-17 to handle duplicate tags on input.
@@ -316,6 +321,11 @@ def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose,
               help=("Hierachical grouping for tasks using '.', use 'clr' to "
                     "clear groups."),
               )
+@click.option("--context",
+              "-cx",
+              type=str,
+              help=("Context for the task, use 'clr' to clear context."),
+              )
 @click.option("--tag",
               "-tg",
               type=str,
@@ -349,8 +359,8 @@ def add(desc, priority, due, hide, group, tag, recur, end, notes, verbose,
               type=str,
               help="Full path to tasks database file",
               )
-def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
-           verbose, full_db_path=None):
+def modify(filters, desc, priority, due, hide, group, context, tag, recur, end,
+           notes, verbose, full_db_path=None):
     """
     Modify task details. Specify 1 or more filters and provide the new values
     for attributes which need modification using the options available.
@@ -476,8 +486,8 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
                       style="default")
         exit_app(SUCCESS)
     if (desc is None and priority is None and due is None and hide is None
-            and group is None and tag is None and recur is None
-            and notes is None and end is None):
+            and group is None and context is None and tag is None
+            and recur is None and notes is None and end is None):
         CONSOLE.print("No modification values provided. Nothing to do...",
                       style="default")
         exit_app(SUCCESS)
@@ -511,9 +521,9 @@ def modify(filters, desc, priority, due, hide, group, tag, recur, end, notes,
         end = convert_date(end)
     event_id = get_event_id()
     ws_task = Workspace(description=desc, priority=priority,
-                        due=due, hide=hide, groups=group, recur_end=end,
-                        notes=notes, recur_when=when, recur_mode=mode,
-                        event_id=event_id)
+                        due=due, hide=hide, groups=group, context=context,
+                        recur_end=end, notes=notes, recur_when=when,
+                        recur_mode=mode, event_id=event_id)
     ret, task_tags_print = prep_modify(potential_filters,
                                        ws_task,
                                        tag)

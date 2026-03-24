@@ -33,7 +33,7 @@ class _ConsoleProxy:
         return getattr(self._console, name)
 
 #Global - START
-DB_SCHEMA_VER = 0.1
+DB_SCHEMA_VER = 0.2
 # SQL Connection Related
 DEFAULT_FOLDER = os.path.join(str(Path.home()), "myt-cli")
 DEFAULT_DB_NAME = "tasksdb.sqlite3"
@@ -123,8 +123,8 @@ TUI_DISPLAYED_COUNT = None
 HISTORY_FILE = os.path.join(str(Path.home()), ".myt-cli", "history")
 REFRESH_INTERVAL = 60  # seconds
 # Printable attributes
-PRINT_ATTR = ["description", "priority", "due", "hide", "groups", "tags",
-              "status", "now_flag", "recur_mode", "recur_when", "uuid",
+PRINT_ATTR = ["description", "priority", "due", "hide", "groups", "context",
+              "tags", "status", "now_flag", "recur_mode", "recur_when", "uuid",
               "task_type", "area"]
 # Modes
 VALID_MODES = [MODE_DAILY, MODE_WEEKLY, MODE_WKDAY, MODE_MONTHLY,

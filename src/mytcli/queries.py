@@ -162,6 +162,7 @@ def get_task_uuid_n_ver(potential_filters):
     idn = potential_filters.get("id")
     uuidn = potential_filters.get("uuid")
     group = potential_filters.get("group")
+    context = potential_filters.get("context")
     notes = potential_filters.get("notes")
     tag = potential_filters.get("tag")
     desc = potential_filters.get("desc")
@@ -351,6 +352,20 @@ def get_task_uuid_n_ver(potential_filters):
                                                     .like("%"+group+"%"),
                                             Workspace.area == drvd_area)))
             innrqr_list.append(innrqr_groups)
+        if context is not None:
+            LOGGER.debug("Inside context filter with below params")
+            LOGGER.debug("%" + context + "%")
+            innrqr_context = (db.SESSION.query(Workspace.uuid,
+                                               Workspace.version)
+                                .join(max_ver_sqr,
+                                    and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                                .filter(and_(Workspace.context
+                                                    .like("%"+context+"%"),
+                                            Workspace.area == drvd_area)))
+            innrqr_list.append(innrqr_context)
         if tag is not None:
             """
             Query to get a list of uuid and version for matchiing tags
@@ -799,6 +814,18 @@ def get_all_groups():
         results = (db.SESSION.query(distinct(Workspace.groups))
                    .filter(and_(Workspace.area == WS_AREA_PENDING,
                                 Workspace.groups.isnot(None)))
+                   .all())
+        return [r[0] for r in results if r[0]]
+    except SQLAlchemyError:
+        return []
+
+
+def get_all_contexts():
+    """Returns list of distinct non-null context names from pending area."""
+    try:
+        results = (db.SESSION.query(distinct(Workspace.context))
+                   .filter(and_(Workspace.area == WS_AREA_PENDING,
+                                Workspace.context.isnot(None)))
                    .all())
         return [r[0] for r in results if r[0]]
     except SQLAlchemyError:

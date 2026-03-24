@@ -9,12 +9,12 @@ from src.mytcli.constants import LOGGER
 
 # Command definitions: command_name -> list of flags
 COMMAND_FLAGS = {
-    "add": ["-de", "-pr", "-du", "-hi", "-gr", "-tg", "-re", "-en", "-no",
-            "--desc", "--priority", "--due", "--hide", "--group", "--tag",
-            "--recur", "--end", "--notes"],
-    "modify": ["-de", "-pr", "-du", "-hi", "-gr", "-tg", "-re", "-en", "-no",
-               "--desc", "--priority", "--due", "--hide", "--group", "--tag",
-               "--recur", "--end", "--notes"],
+    "add": ["-de", "-pr", "-du", "-hi", "-gr", "-cx", "-tg", "-re", "-en",
+            "-no", "--desc", "--priority", "--due", "--hide", "--group",
+            "--context", "--tag", "--recur", "--end", "--notes"],
+    "modify": ["-de", "-pr", "-du", "-hi", "-gr", "-cx", "-tg", "-re", "-en",
+               "-no", "--desc", "--priority", "--due", "--hide", "--group",
+               "--context", "--tag", "--recur", "--end", "--notes"],
     "view": ["-p", "-t", "--pager", "--top", "--default", "--full",
              "--history", "--tags", "--groups", "--dates", "--notes", "--7day"],
     "done": [],
@@ -40,7 +40,7 @@ DATE_FLAGS = {"-du", "--due", "-hi", "--hide", "-en", "--end"}
 DATE_HINTS = ["+0", "+1", "+2", "+7", "+14", "+30", "today", "tomorrow"]
 
 # Filter prefixes for view/modify and commands with filter arguments
-FILTER_PREFIXES = ["id:", "gr:", "tg:", "pr:", "de:", "du:", "no:", "uuid:"]
+FILTER_PREFIXES = ["id:", "gr:", "cx:", "tg:", "pr:", "de:", "du:", "no:", "uuid:"]
 HIGH_LEVEL_FILTERS = [
     "overdue", "today", "tomorrow", "hidden", "complete", "bin",
     "started", "now",
@@ -66,11 +66,13 @@ class MytCompleter(Completer):
         self._groups_cache = None
         self._tags_cache = None
         self._ids_cache = None
+        self._contexts_cache = None
 
     def invalidate_cache(self):
         self._groups_cache = None
         self._tags_cache = None
         self._ids_cache = None
+        self._contexts_cache = None
 
     def _get_groups(self):
         if self._groups_cache is None:
@@ -98,6 +100,15 @@ class MytCompleter(Completer):
             except Exception:
                 self._ids_cache = []
         return self._ids_cache
+
+    def _get_contexts(self):
+        if self._contexts_cache is None:
+            try:
+                from src.mytcli.queries import get_all_contexts
+                self._contexts_cache = get_all_contexts()
+            except Exception:
+                self._contexts_cache = []
+        return self._contexts_cache
 
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor
@@ -153,6 +164,12 @@ class MytCompleter(Completer):
                     yield Completion(t, start_position=-len(current))
             return
 
+        if prev in {"-cx", "--context"}:
+            for c in self._get_contexts():
+                if c.lower().startswith(current.lower()):
+                    yield Completion(c, start_position=-len(current))
+            return
+
         # Level 5: filter value completion (e.g., after typing "gr:")
         if cmd_name in FILTER_COMMANDS and ":" in current:
             prefix_part, _, val_part = current.partition(":")
@@ -173,6 +190,12 @@ class MytCompleter(Completer):
                 for i in self._get_ids():
                     if i.startswith(val_part):
                         yield Completion(filter_key + i,
+                                         start_position=-len(current))
+                return
+            elif filter_key == "cx:":
+                for c in self._get_contexts():
+                    if c.lower().startswith(val_part.lower()):
+                        yield Completion(filter_key + c,
                                          start_position=-len(current))
                 return
             elif filter_key == "pr:":

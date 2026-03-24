@@ -1296,6 +1296,11 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
     elif ws_task_src.groups is not None:
         ws_task.groups = ws_task_src.groups
 
+    if ws_task_src.context == CLR_STR:
+        ws_task.context = None
+    elif ws_task_src.context is not None:
+        ws_task.context = ws_task_src.context
+
     if ws_task_src.notes == CLR_STR:
         ws_task.notes = None
     elif ws_task_src.notes is not None:
@@ -1658,6 +1663,7 @@ def add_task_and_tags(ws_task_src, ws_tags_list=None, ws_rec_dt=None,
     ws_task.version = get_task_new_version(str(ws_task.uuid))
     ws_task.description = ws_task_src.description
     ws_task.groups = ws_task_src.groups
+    ws_task.context = ws_task_src.context
     ws_task.notes = ws_task_src.notes
     ws_task.now_flag = ws_task_src.now_flag
     if not ws_task_src.area:

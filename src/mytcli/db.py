@@ -49,6 +49,44 @@ def check_valid_db(full_db_path):
     else:
         return FAILURE
 
+def _apply_migrations():
+    """Apply schema migrations for existing databases."""
+    global SESSION, ENGINE
+    from sqlalchemy import text, inspect as sa_inspect
+    try:
+        ver_row = (SESSION.query(AppMetadata.value)
+                   .filter(AppMetadata.key == "DB_SCHEMA_VERSION")
+                   .one_or_none())
+        current_ver = float(ver_row[0]) if ver_row else 0.1
+
+        if current_ver < 0.2:
+            # Add context column if it doesn't exist
+            inspector = sa_inspect(ENGINE)
+            columns = [c["name"] for c in inspector.get_columns("workspace")]
+            if "context" not in columns:
+                LOGGER.debug("Migrating schema to 0.2: adding context column")
+                with ENGINE.connect() as conn:
+                    conn.execute(text(
+                        "ALTER TABLE workspace ADD COLUMN context TEXT"))
+                    conn.commit()
+                CONSOLE.print("Database migrated: added 'context' column.",
+                              style="info")
+
+        # Update schema version
+        if current_ver < DB_SCHEMA_VER:
+            meta = (SESSION.query(AppMetadata)
+                    .filter(AppMetadata.key == "DB_SCHEMA_VERSION")
+                    .one_or_none())
+            if meta:
+                meta.value = str(DB_SCHEMA_VER)
+                SESSION.add(meta)
+            else:
+                SESSION.add(AppMetadata(key="DB_SCHEMA_VERSION",
+                                        value=str(DB_SCHEMA_VER)))
+    except Exception as e:
+        LOGGER.error("Error during schema migration: {}".format(str(e)))
+
+
 def connect_to_tasksdb(verbose=False, full_db_path=None):
     """
     Connect to the tasks database and performs some startup functions
@@ -131,6 +169,9 @@ def connect_to_tasksdb(verbose=False, full_db_path=None):
                                value=curr_day.strftime(FMT_DATEONLY))
             SESSION.add(rcdt)
             SESSION.add(mtdt)
+        else:
+            # Apply schema migrations for existing databases
+            _apply_migrations()
         results = (SESSION.query(AppMetadata.value)
                           .filter(AppMetadata.key == "LAST_RECUR_CREATE_DT")
                           .all())

@@ -286,6 +286,8 @@ def parse_filters(filters):
                                                  .rstrip(","))
             if str(fl).startswith("gr:") or str(fl).startswith("group:"):
                 potential_filters["group"] = (str(fl).split(":"))[1]
+            if str(fl).startswith("cx:") or str(fl).startswith("context:"):
+                potential_filters["context"] = (str(fl).split(":"))[1]
             if str(fl).startswith("no:") or str(fl).startswith("notes:"):
                 potential_filters["notes"] = (str(fl).split(":"))[1]
             if str(fl).startswith("tg:") or str(fl).startswith("tag:"):

@@ -32,6 +32,7 @@ class Workspace(Base):
     area = Column(String, nullable=False)
     created = Column(String, nullable=False)
     groups = Column(String)
+    context = Column(String)
     event_id = Column(String, nullable=False)
     now_flag = Column(BOOLEAN)
     task_type = Column(String, nullable=False)
