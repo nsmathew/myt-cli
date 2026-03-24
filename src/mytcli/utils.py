@@ -530,6 +530,19 @@ def get_and_print_task_count(print_dict):
     # Print Task Details
     if print_dict.get(PRNT_TASK_DTLS):
         task_tags_list = print_dict.get(PRNT_TASK_DTLS)
+        if constants.TUI_MODE:
+            # Short status message for TUI toolbar
+            ids = []
+            for item in task_tags_list:
+                ws_task = item[0]
+                if ws_task.task_type == TASK_TYPE_BASE:
+                    ids.append("recurring")
+                elif ws_task.id == '-':
+                    ids.append(ws_task.uuid[:8])
+                else:
+                    ids.append(str(ws_task.id))
+            CONSOLE.print("OK — task {}".format(", ".join(ids)))
+            return
         for item in task_tags_list:
             ws_task = item[0]
             tags_str = item[1]

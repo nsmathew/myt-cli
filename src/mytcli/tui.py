@@ -190,7 +190,7 @@ class MytTUI:
             self._update_display(output)
             self._status_message = ""
         elif is_mutation:
-            self._status_message = output.strip().replace("\n", " ")[:80] if output.strip() else ""
+            self._status_message = output.strip().replace("\n", " ") if output.strip() else ""
             self._completer.invalidate_cache()
             self._refresh_view()
         else:
