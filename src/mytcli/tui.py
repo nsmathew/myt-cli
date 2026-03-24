@@ -1,6 +1,7 @@
 """Interactive TUI for myt-cli using prompt_toolkit."""
 
 import os
+import re
 import subprocess
 import tempfile
 from datetime import datetime
@@ -8,6 +9,7 @@ from pathlib import Path
 
 from prompt_toolkit import Application
 from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.filters import Condition
 from prompt_toolkit.layout.containers import (
     HSplit, VSplit, Window, FloatContainer, Float,
 )
@@ -42,6 +44,9 @@ class MytTUI:
         self._app = None
         self._display_window = None
         self._input_window = None
+        self._table_focused = False
+        self._selected_row = 0
+        self._data_row_indices = []
 
     def _get_task_counts(self):
         """Get pending task counts for the toolbar."""
@@ -98,21 +103,71 @@ class MytTUI:
         status = ""
         if self._status_message:
             status = "  |  " + self._status_message
+        nav = ""
+        if self._table_focused:
+            nav = " | [F5] TABLE NAV"
         return [
-            ("class:toolbar", " Filter: {} | Refresh: {}{}{}  ".format(
-                filter_str, refresh_str, counts, status)),
+            ("class:toolbar", " Filter: {} | Refresh: {}{}{}{}  ".format(
+                filter_str, refresh_str, counts, status, nav)),
         ]
+
+    def _parse_data_rows(self):
+        """Identify line indices in display text that are data rows."""
+        if not self._display_text:
+            self._data_row_indices = []
+            return
+        lines = self._display_text.split("\n")
+        indices = []
+        # Strip ANSI to inspect content
+        ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+        header_found = False
+        past_header_sep = False
+        in_data = False
+        for i, line in enumerate(lines):
+            plain = ansi_re.sub("", line).strip()
+            if not plain:
+                continue
+            is_separator = all(c in "─ " for c in plain)
+            if not header_found and not is_separator:
+                header_found = True
+                continue
+            if header_found and not past_header_sep and is_separator:
+                past_header_sep = True
+                in_data = True
+                continue
+            if in_data:
+                if is_separator:
+                    # Closing separator — end of data rows
+                    break
+                indices.append(i)
+        self._data_row_indices = indices
 
     def _get_display_text(self):
         if not self._display_text:
             return [("", "Type 'view' to see your tasks, or any myt command.\n"
                         "Tab: autocomplete | Ctrl-R: refresh | Ctrl-Q: quit\n"
                         "F6: open pager for scrolling (j/k/arrows/search)")]
+        if self._table_focused and self._data_row_indices:
+            lines = self._display_text.split("\n")
+            idx = self._data_row_indices[self._selected_row]
+            if idx < len(lines):
+                # Highlight with background color, re-applying after resets
+                hl = "\x1b[48;5;238m"
+                lines[idx] = hl + lines[idx].replace(
+                    "\x1b[0m", "\x1b[0m" + hl) + "\x1b[49m"
+            return ANSI("\n".join(lines))
         return ANSI(self._display_text)
 
     def _update_display(self, text):
         self._display_text = text
         self._last_refresh = datetime.now().strftime("%H:%M:%S")
+        self._parse_data_rows()
+        # Clamp selected row to valid range
+        if self._data_row_indices:
+            self._selected_row = min(self._selected_row,
+                                     len(self._data_row_indices) - 1)
+        else:
+            self._selected_row = 0
         if self._app:
             self._app.invalidate()
 
@@ -226,6 +281,7 @@ class MytTUI:
             accept_handler=self._handle_command,
             multiline=False,
             complete_while_typing=True,
+            read_only=Condition(lambda: self._table_focused),
         )
 
         self._input_window = Window(
@@ -281,10 +337,38 @@ class MytTUI:
 
         @kb.add("escape", eager=True)
         def dismiss_completions(event):
-            """Escape: close autocomplete menu if open."""
+            """Escape: close autocomplete menu or exit table nav."""
+            if self._table_focused:
+                self._table_focused = False
+                event.app.invalidate()
+                return
             buff = event.app.current_buffer
             if buff.complete_state:
                 buff.cancel_completion()
+
+        @kb.add("f5")
+        def toggle_table_focus(event):
+            """F5: toggle table row navigation."""
+            self._table_focused = not self._table_focused
+            if self._table_focused and self._data_row_indices:
+                self._selected_row = min(self._selected_row,
+                                         len(self._data_row_indices) - 1)
+            event.app.invalidate()
+
+        @kb.add("up", filter=Condition(lambda: self._table_focused))
+        @kb.add("k", filter=Condition(lambda: self._table_focused))
+        def nav_up(event):
+            if self._selected_row > 0:
+                self._selected_row -= 1
+                event.app.invalidate()
+
+        @kb.add("down", filter=Condition(lambda: self._table_focused))
+        @kb.add("j", filter=Condition(lambda: self._table_focused))
+        def nav_down(event):
+            if (self._data_row_indices and
+                    self._selected_row < len(self._data_row_indices) - 1):
+                self._selected_row += 1
+                event.app.invalidate()
 
         @kb.add("f6")
         async def open_pager(event):
