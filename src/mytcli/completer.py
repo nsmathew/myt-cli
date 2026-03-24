@@ -6,6 +6,9 @@ from prompt_toolkit.completion import Completer, Completion
 
 from src.mytcli.constants import LOGGER
 
+# Commands that accept shorthand setters (+group, @context, #tag, etc.)
+SHORTHAND_COMMANDS = {"add", "modify"}
+
 
 # Command definitions: command_name -> list of flags
 COMMAND_FLAGS = {
@@ -169,6 +172,53 @@ class MytCompleter(Completer):
                 if c.lower().startswith(current.lower()):
                     yield Completion(c, start_position=-len(current))
             return
+
+        # Shorthand value completion for add/modify commands
+        if cmd_name in SHORTHAND_COMMANDS and len(current) >= 1:
+            prefix_char = current[0]
+            val_part = current[1:]
+            if prefix_char == "+" and len(current) > 0:
+                # +group completion
+                for g in self._get_groups():
+                    if not val_part or g.lower().startswith(val_part.lower()):
+                        yield Completion("+" + g,
+                                         start_position=-len(current))
+                return
+            elif prefix_char == "@" and len(current) > 0:
+                # @context completion
+                for c in self._get_contexts():
+                    if not val_part or c.lower().startswith(val_part.lower()):
+                        yield Completion("@" + c,
+                                         start_position=-len(current))
+                return
+            elif prefix_char == "#" and len(current) > 0:
+                # #tag completion
+                for t in self._get_tags():
+                    if not val_part or t.lower().startswith(val_part.lower()):
+                        yield Completion("#" + t,
+                                         start_position=-len(current))
+                return
+            elif prefix_char == "^":
+                # ^due date hints
+                for v in DATE_HINTS:
+                    if not val_part or v.startswith(val_part):
+                        yield Completion("^" + v,
+                                         start_position=-len(current))
+                return
+            elif prefix_char == "!":
+                # !priority completion
+                for v in PRIORITY_VALUES:
+                    if not val_part or v.startswith(val_part.upper()):
+                        yield Completion("!" + v,
+                                         start_position=-len(current))
+                return
+            elif prefix_char == "~":
+                # ~hide date hints
+                for v in DATE_HINTS:
+                    if not val_part or v.startswith(val_part):
+                        yield Completion("~" + v,
+                                         start_position=-len(current))
+                return
 
         # Level 5: filter value completion (e.g., after typing "gr:")
         if cmd_name in FILTER_COMMANDS and ":" in current:

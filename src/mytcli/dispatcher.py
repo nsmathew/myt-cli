@@ -11,6 +11,7 @@ import click
 
 import src.mytcli.constants as constants
 from src.mytcli.constants import LOGGER
+from src.mytcli.shorthand import expand_shorthand
 
 # Commands that mutate data and should trigger a view refresh
 MUTATION_COMMANDS = {
@@ -47,6 +48,10 @@ class TUIDispatcher:
         input_text = input_text.strip()
         if not input_text:
             return (0, "", False)
+
+        # Expand shorthand syntax (e.g., +Group, @context, #tag)
+        input_text = expand_shorthand(input_text)
+        LOGGER.debug("Expanded input: %s", input_text)
 
         try:
             args = shlex.split(input_text)
