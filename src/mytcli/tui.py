@@ -339,7 +339,10 @@ class MytTUI:
         async def _refresh_loop():
             while True:
                 await asyncio.sleep(REFRESH_INTERVAL)
-                if self._display_text:
-                    self._refresh_view()
+                if self._last_command:
+                    width = self._get_terminal_width()
+                    code, output, _ = self._dispatcher.dispatch(
+                        self._last_command, width_override=width)
+                    self._update_display(output)
 
         asyncio.ensure_future(_refresh_loop())
