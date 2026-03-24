@@ -6,6 +6,32 @@ from datetime import datetime
 from rich.console import Console
 from rich.theme import Theme
 
+
+class _ConsoleProxy:
+    """Transparent proxy around Rich Console.
+
+    Every module imports CONSOLE and calls CONSOLE.print(...).
+    In TUI mode, set_target() swaps the underlying Console to write
+    to a StringIO buffer so output can be captured and displayed
+    in the prompt_toolkit layout.
+    """
+
+    def __init__(self, theme):
+        self._theme = theme
+        self._console = Console(theme=theme)
+
+    def set_target(self, file_obj, width=None):
+        self._console = Console(
+            theme=self._theme, file=file_obj,
+            force_terminal=True, width=width or 200,
+        )
+
+    def reset(self):
+        self._console = Console(theme=self._theme)
+
+    def __getattr__(self, name):
+        return getattr(self._console, name)
+
 #Global - START
 DB_SCHEMA_VER = 0.1
 # SQL Connection Related
@@ -89,7 +115,13 @@ myt_theme = Theme({
     "header": "bold black on white",
     "subheader": "bold black"
 }, inherit=False)
-CONSOLE = Console(theme=myt_theme, )
+CONSOLE = _ConsoleProxy(theme=myt_theme)
+# TUI Mode flag
+TUI_MODE = False
+TUI_DISPLAYED_COUNT = None
+# TUI Constants
+HISTORY_FILE = os.path.join(str(Path.home()), ".myt-cli", "history")
+REFRESH_INTERVAL = 60  # seconds
 # Printable attributes
 PRINT_ATTR = ["description", "priority", "due", "hide", "groups", "tags",
               "status", "now_flag", "recur_mode", "recur_when", "uuid",

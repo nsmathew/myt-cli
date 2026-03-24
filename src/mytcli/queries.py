@@ -791,3 +791,50 @@ def get_task_uuid_n_ver(potential_filters):
         LOGGER.debug("List of resulting Task UUIDs and Versions:")
         LOGGER.debug("------------- {}".format(results))
         return results
+
+
+def get_all_groups():
+    """Returns list of distinct non-null group names from pending area."""
+    try:
+        results = (db.SESSION.query(distinct(Workspace.groups))
+                   .filter(and_(Workspace.area == WS_AREA_PENDING,
+                                Workspace.groups.isnot(None)))
+                   .all())
+        return [r[0] for r in results if r[0]]
+    except SQLAlchemyError:
+        return []
+
+
+def get_all_tags():
+    """Returns list of distinct tag names from pending area."""
+    try:
+        results = (db.SESSION.query(distinct(WorkspaceTags.tags))
+                   .join(Workspace, and_(
+                       WorkspaceTags.uuid == Workspace.uuid,
+                       WorkspaceTags.version == Workspace.version))
+                   .filter(Workspace.area == WS_AREA_PENDING)
+                   .all())
+        return [r[0] for r in results if r[0]]
+    except SQLAlchemyError:
+        return []
+
+
+def get_all_ids():
+    """Returns list of current task IDs from pending area."""
+    try:
+        max_ver_sqr = (db.SESSION.query(
+            Workspace.uuid,
+            func.max(Workspace.version).label("maxver"))
+            .group_by(Workspace.uuid)
+            .subquery())
+        results = (db.SESSION.query(Workspace.id)
+                   .join(max_ver_sqr,
+                         and_(Workspace.version == max_ver_sqr.c.maxver,
+                              Workspace.uuid == max_ver_sqr.c.uuid))
+                   .filter(and_(Workspace.area == WS_AREA_PENDING,
+                                Workspace.id.isnot(None)))
+                   .order_by(cast(Workspace.id, Numeric))
+                   .all())
+        return [str(r[0]) for r in results if r[0]]
+    except SQLAlchemyError:
+        return []
