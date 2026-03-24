@@ -3,6 +3,7 @@
 Parses input strings, invokes Click commands, and captures output.
 """
 
+import sys
 import shlex
 from io import StringIO
 
@@ -61,8 +62,10 @@ class TUIDispatcher:
 
         buf = StringIO()
         constants.CONSOLE.set_target(buf, width=self._width)
+        # Redirect stdout to capture Click output (--help, click.echo, etc.)
+        old_stdout = sys.stdout
+        sys.stdout = buf
         try:
-            # Build a parent context for the myt group
             parent_ctx = click.Context(self._myt, info_name="myt")
             ctx = click.Context(cmd, parent=parent_ctx, info_name=cmd_name)
             with parent_ctx:
@@ -72,6 +75,8 @@ class TUIDispatcher:
             return (0, buf.getvalue(), is_mutation)
         except SystemExit as e:
             return (e.code or 0, buf.getvalue(), is_mutation)
+        except click.exceptions.Exit as e:
+            return (e.exit_code or 0, buf.getvalue(), False)
         except click.UsageError as e:
             return (1, buf.getvalue() + "\nUsage error: " + str(e), False)
         except click.Abort:
@@ -80,4 +85,5 @@ class TUIDispatcher:
             LOGGER.error("Dispatch error: %s", e, exc_info=True)
             return (1, buf.getvalue() + "\nError: " + str(e), False)
         finally:
+            sys.stdout = old_stdout
             constants.CONSOLE.reset()

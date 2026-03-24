@@ -1,3 +1,5 @@
+import sys
+from io import StringIO
 from operator import itemgetter
 from datetime import datetime, timedelta
 from copy import copy
@@ -11,6 +13,7 @@ from rich.panel import Panel
 from rich.columns import Columns
 import plotext as pltxt
 
+import src.mytcli.constants as constants
 from src.mytcli.constants import (LOGGER, CONSOLE, SUCCESS, FAILURE,
                                TASK_OVERDUE, TASK_TODAY, TASK_HIDDEN,
                                TASK_BIN, TASK_COMPLETE, TASK_STARTED,
@@ -55,7 +58,8 @@ def display_full(potential_filters, pager=False, top=None):
         CONSOLE.print("No tasks to display...", style="default")
         get_and_print_task_count({WS_AREA_PENDING: "yes"})
         return SUCCESS
-    CONSOLE.print("Preparing view...", style="default")
+    if not constants.TUI_MODE:
+        CONSOLE.print("Preparing view...", style="default")
     task_list = get_tasks(uuid_version_results)
     if top is None:
         top = len(task_list)
@@ -146,7 +150,8 @@ def display_7day(potential_filters, pager):
         LOGGER.error(str(e))
         return FAILURE
     if task_list:
-        CONSOLE.print("Preparing view...", style="default")
+        if not constants.TUI_MODE:
+            CONSOLE.print("Preparing view...", style="default")
     else:
         CONSOLE.print("No tasks to display")
         return SUCCESS
@@ -447,7 +452,8 @@ def display_dates(potential_filters, pager=False, top=None):
     #Work on only derived tasks
     task_list = [task for task in task_list if task.task_type==TASK_TYPE_DRVD]
     if task_list:
-        CONSOLE.print("Preparing view...", style="default")
+        if not constants.TUI_MODE:
+            CONSOLE.print("Preparing view...", style="default")
     else:
         CONSOLE.print("No tasks to display")
         return SUCCESS
@@ -572,7 +578,8 @@ def display_history(potential_filters, pager=False, top=None):
         CONSOLE.print("No tasks to display...", style="default")
         get_and_print_task_count({WS_AREA_PENDING: "yes"})
         return SUCCESS
-    CONSOLE.print("Preparing view...", style="default")
+    if not constants.TUI_MODE:
+        CONSOLE.print("Preparing view...", style="default")
     curr_day = datetime.now().date()
     tommr = curr_day + relativedelta(days=1)
     try:
@@ -766,7 +773,8 @@ def display_by_tags(potential_filters, pager=False, top=None):
         CONSOLE.print("No tasks to display...", style="default")
         get_and_print_task_count({WS_AREA_PENDING: "yes"})
         return SUCCESS
-    CONSOLE.print("Preparing view...", style="default")
+    if not constants.TUI_MODE:
+        CONSOLE.print("Preparing view...", style="default")
     try:
         """
         bug-7: replaced the query to now include tasks with no tags.
@@ -856,7 +864,8 @@ def display_by_groups(potential_filters, pager=False, top=None):
         CONSOLE.print("No tasks to display...", style="default")
         get_and_print_task_count({WS_AREA_PENDING: "yes"})
         return SUCCESS
-    CONSOLE.print("Preparing view...", style="default")
+    if not constants.TUI_MODE:
+        CONSOLE.print("Preparing view...", style="default")
     task_list = get_tasks(uuid_version_results)
     area = task_list[0].area
     task_cnt = {}
@@ -1210,7 +1219,14 @@ def display_stats():
                                         'hidden started'],
                                 colors=[32, 47, 104, 226])
 
-        pltxt.show()
+        if constants.TUI_MODE:
+            old_stdout = sys.stdout
+            sys.stdout = buf = StringIO()
+            pltxt.show()
+            sys.stdout = old_stdout
+            CONSOLE.print(buf.getvalue())
+        else:
+            pltxt.show()
         pltxt.clf()
         CONSOLE.print()
 
@@ -1302,7 +1318,14 @@ def display_stats():
         pltxt.simple_bar(["Day " + str(k) for k in trend_results.keys()],
                                 trend_results.values(),
                                 width = 50)
-        pltxt.show()
+        if constants.TUI_MODE:
+            old_stdout = sys.stdout
+            sys.stdout = buf = StringIO()
+            pltxt.show()
+            sys.stdout = old_stdout
+            CONSOLE.print(buf.getvalue())
+        else:
+            pltxt.show()
         pltxt.clf()
     else:
         CONSOLE.print("No matching tasks in database.")
@@ -1345,7 +1368,14 @@ def display_stats():
         pltxt.simple_bar(["Day " + str(k) for k in trend_results.keys()],
                                 trend_results.values(),
                                 width = 50, color=226)
-        pltxt.show()
+        if constants.TUI_MODE:
+            old_stdout = sys.stdout
+            sys.stdout = buf = StringIO()
+            pltxt.show()
+            sys.stdout = old_stdout
+            CONSOLE.print(buf.getvalue())
+        else:
+            pltxt.show()
         pltxt.clf()
     else:
         CONSOLE.print("No matching tasks in database.")
@@ -1374,7 +1404,8 @@ def display_default(potential_filters, pager=False, top=None):
         CONSOLE.print("No tasks to display...", style="default")
         get_and_print_task_count({WS_AREA_PENDING: "yes"})
         return SUCCESS
-    CONSOLE.print("Preparing view...", style="default")
+    if not constants.TUI_MODE:
+        CONSOLE.print("Preparing view...", style="default")
     curr_day = datetime.now().date()
     tommr = curr_day + relativedelta(days=1)
     try:

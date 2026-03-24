@@ -7,7 +7,10 @@ from pathlib import Path
 
 from prompt_toolkit import Application
 from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.layout.containers import HSplit, Window, FloatContainer, Float
+from prompt_toolkit.layout.containers import (
+    HSplit, VSplit, Window, FloatContainer, Float,
+)
+from prompt_toolkit.layout import ScrollablePane
 from prompt_toolkit.layout.controls import FormattedTextControl, BufferControl
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.layout.menus import CompletionsMenu
@@ -35,9 +38,8 @@ class MytTUI:
         self._completer = MytCompleter()
         self._dispatcher = None
         self._app = None
-        self._focus_on_input = True  # track which pane has focus
-        self._scroll_offset = 0
-        self._display_lines = []
+        self._display_window = None
+        self._input_window = None
 
     def _get_toolbar_text(self):
         filter_str = " ".join(self._filter_args) if self._filter_args else "(none)"
@@ -45,15 +47,19 @@ class MytTUI:
         status = ""
         if self._status_message:
             status = "  |  " + self._status_message
+        # Show focus hint
+        focused = self._app and self._app.layout.has_focus(self._display_window)
+        focus_hint = "[SCROLL MODE - F6 to return to input]" if focused else ""
         return [
-            ("class:toolbar", " Filter: {} | Last refresh: {}{}  ".format(
-                filter_str, refresh_str, status)),
+            ("class:toolbar", " Filter: {} | Last refresh: {}  {} ".format(
+                filter_str, refresh_str, focus_hint)),
         ]
 
     def _get_display_text(self):
         if not self._display_text:
             return [("", "Type 'view' to see your tasks, or any myt command.\n"
-                        "Tab: autocomplete | Ctrl-R: refresh | Ctrl-Q: quit")]
+                        "Tab: autocomplete | Ctrl-R: refresh | Ctrl-Q: quit\n"
+                        "F6: toggle scroll mode")]
         return ANSI(self._display_text)
 
     def _update_display(self, text):
@@ -115,13 +121,18 @@ class MytTUI:
             style="class:toolbar",
         )
 
-        # Main display area
-        display_window = Window(
+        # Main display area — wrapped in ScrollablePane for scrolling
+        display_content = Window(
             content=FormattedTextControl(
                 self._get_display_text,
                 focusable=True,
             ),
             wrap_lines=True,
+        )
+        self._display_window = display_content
+
+        display_area = ScrollablePane(
+            content=display_content,
         )
 
         # Separator
@@ -143,7 +154,7 @@ class MytTUI:
             complete_while_typing=True,
         )
 
-        input_window = Window(
+        self._input_window = Window(
             content=BufferControl(
                 buffer=input_buffer,
                 search_buffer_control=search_toolbar.control,
@@ -158,14 +169,13 @@ class MytTUI:
             height=1,
         )
 
-        from prompt_toolkit.layout.containers import VSplit
-        input_row = VSplit([prompt_label, input_window])
+        input_row = VSplit([prompt_label, self._input_window])
 
         body = FloatContainer(
             content=HSplit([
                 toolbar,
                 separator,
-                display_window,
+                display_area,
                 separator,
                 input_row,
                 search_toolbar,
@@ -179,7 +189,7 @@ class MytTUI:
             ],
         )
 
-        return Layout(body, focused_element=input_window)
+        return Layout(body, focused_element=self._input_window)
 
     def _build_keybindings(self):
         kb = KeyBindings()
@@ -196,6 +206,22 @@ class MytTUI:
         def refresh(event):
             self._refresh_view()
 
+        @kb.add("escape", eager=True)
+        def dismiss_completions(event):
+            """Escape: close autocomplete menu if open."""
+            buff = event.app.current_buffer
+            if buff.complete_state:
+                buff.cancel_completion()
+
+        @kb.add("f6")
+        def toggle_focus(event):
+            """F6: toggle focus between display and input."""
+            layout = event.app.layout
+            if layout.has_focus(self._display_window):
+                layout.focus(self._input_window)
+            else:
+                layout.focus(self._display_window)
+
         return kb
 
     def _build_style(self):
@@ -205,18 +231,6 @@ class MytTUI:
             "separator": "#666666",
             "prompt": "bold #00aa00",
         })
-
-    def _auto_refresh(self, app):
-        """Background task for periodic auto-refresh."""
-        import asyncio
-
-        async def _refresh_loop():
-            while True:
-                await asyncio.sleep(REFRESH_INTERVAL)
-                if self._display_text:  # only refresh if we've shown something
-                    self._refresh_view()
-
-        asyncio.ensure_future(_refresh_loop())
 
     def run(self):
         """Launch the TUI application."""
@@ -250,7 +264,6 @@ class MytTUI:
 
     def _auto_refresh_once(self, app):
         """Set up auto-refresh after first render (called once)."""
-        # Replace with no-op after first call to avoid re-registering
         if hasattr(self, "_refresh_task_started"):
             return
         self._refresh_task_started = True
