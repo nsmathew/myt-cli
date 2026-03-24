@@ -1,7 +1,8 @@
 """Interactive TUI for myt-cli using prompt_toolkit."""
 
 import os
-import time
+import subprocess
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -10,12 +11,12 @@ from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.layout.containers import (
     HSplit, VSplit, Window, FloatContainer, Float,
 )
-from prompt_toolkit.layout import ScrollablePane
 from prompt_toolkit.layout.controls import FormattedTextControl, BufferControl
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.application import run_in_terminal
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.widgets import SearchToolbar
 
@@ -47,19 +48,18 @@ class MytTUI:
         status = ""
         if self._status_message:
             status = "  |  " + self._status_message
-        # Show focus hint
-        focused = self._app and self._app.layout.has_focus(self._display_window)
-        focus_hint = "[SCROLL MODE - F6 to return to input]" if focused else ""
         return [
-            ("class:toolbar", " Filter: {} | Last refresh: {}  {} ".format(
-                filter_str, refresh_str, focus_hint)),
+            ("class:toolbar", " Filter: {} | Last refresh: {}  ".format(
+                filter_str, refresh_str)),
+            ("class:toolbar.key", " F6:scroll "),
+            ("class:toolbar", status),
         ]
 
     def _get_display_text(self):
         if not self._display_text:
             return [("", "Type 'view' to see your tasks, or any myt command.\n"
                         "Tab: autocomplete | Ctrl-R: refresh | Ctrl-Q: quit\n"
-                        "F6: toggle scroll mode")]
+                        "F6: open pager for scrolling (j/k/arrows/search)")]
         return ANSI(self._display_text)
 
     def _update_display(self, text):
@@ -74,6 +74,25 @@ class MytTUI:
         cmd = "view {}".format(filter_str) if filter_str else "view"
         code, output, _ = self._dispatcher.dispatch(cmd)
         self._update_display(output)
+
+    async def _open_pager(self):
+        """Open current display content in a pager (less)."""
+        if not self._display_text:
+            return
+        pager = os.environ.get("PAGER", "less")
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt",
+                                         delete=False) as f:
+            f.write(self._display_text)
+            tmp_path = f.name
+        try:
+            await run_in_terminal(
+                lambda: subprocess.call([pager, "-R", tmp_path])
+            )
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def _handle_command(self, buff):
         """Called when Enter is pressed in the input buffer."""
@@ -99,49 +118,36 @@ class MytTUI:
         code, output, is_mutation = self._dispatcher.dispatch(text)
 
         if cmd_name == "view":
-            # Update display with view output and save filters
-            parts = text.split()[1:]  # everything after "view"
+            parts = text.split()[1:]
             self._filter_args = parts
             self._update_display(output)
             self._status_message = ""
         elif is_mutation:
-            # Show mutation output briefly then refresh view
             self._status_message = output.strip().replace("\n", " ")[:80] if output.strip() else ""
             self._completer.invalidate_cache()
             self._refresh_view()
         else:
-            # Non-view, non-mutation: just show output
             self._update_display(output)
 
     def _build_layout(self):
-        # Toolbar at top
         toolbar = Window(
             content=FormattedTextControl(self._get_toolbar_text),
             height=1,
             style="class:toolbar",
         )
 
-        # Main display area — wrapped in ScrollablePane for scrolling
-        display_content = Window(
+        self._display_window = Window(
             content=FormattedTextControl(
                 self._get_display_text,
-                focusable=True,
+                focusable=False,
             ),
             wrap_lines=True,
         )
-        self._display_window = display_content
 
-        display_area = ScrollablePane(
-            content=display_content,
-        )
-
-        # Separator
         separator = Window(height=1, char="─", style="class:separator")
 
-        # Input area
         search_toolbar = SearchToolbar()
 
-        # Ensure history directory exists
         history_dir = os.path.dirname(HISTORY_FILE)
         Path(history_dir).mkdir(parents=True, exist_ok=True)
 
@@ -162,7 +168,6 @@ class MytTUI:
             height=1,
         )
 
-        # Prompt label
         prompt_label = Window(
             content=FormattedTextControl([("class:prompt", "myt> ")]),
             width=5,
@@ -175,7 +180,7 @@ class MytTUI:
             content=HSplit([
                 toolbar,
                 separator,
-                display_area,
+                self._display_window,
                 separator,
                 input_row,
                 search_toolbar,
@@ -214,13 +219,9 @@ class MytTUI:
                 buff.cancel_completion()
 
         @kb.add("f6")
-        def toggle_focus(event):
-            """F6: toggle focus between display and input."""
-            layout = event.app.layout
-            if layout.has_focus(self._display_window):
-                layout.focus(self._input_window)
-            else:
-                layout.focus(self._display_window)
+        async def open_pager(event):
+            """F6: open current display in pager for scrolling."""
+            await self._open_pager()
 
         return kb
 
@@ -228,19 +229,18 @@ class MytTUI:
         from prompt_toolkit.styles import Style
         return Style.from_dict({
             "toolbar": "bg:#333333 #ffffff",
+            "toolbar.key": "bg:#555555 #ffffff bold",
             "separator": "#666666",
             "prompt": "bold #00aa00",
         })
 
     def run(self):
         """Launch the TUI application."""
-        # Initialize DB connection
         ret = connect_to_tasksdb()
         if ret != SUCCESS:
             print("Failed to connect to tasks database.")
             return
 
-        # Import the myt group for dispatching
         from src.mytcli.myt import myt as myt_group
         self._dispatcher = TUIDispatcher(myt_group)
 
@@ -257,9 +257,7 @@ class MytTUI:
             after_render=self._auto_refresh_once,
         )
 
-        # Run initial view
         self._refresh_view()
-
         self._app.run()
 
     def _auto_refresh_once(self, app):
