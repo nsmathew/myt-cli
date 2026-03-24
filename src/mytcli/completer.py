@@ -81,7 +81,14 @@ class MytCompleter(Completer):
         if self._groups_cache is None:
             try:
                 from src.mytcli.queries import get_all_groups
-                self._groups_cache = get_all_groups()
+                raw_groups = get_all_groups()
+                # Expand hierarchy: "A.B.C" -> "A", "A.B", "A.B.C"
+                expanded = set()
+                for g in raw_groups:
+                    parts = g.split(".")
+                    for i in range(1, len(parts) + 1):
+                        expanded.add(".".join(parts[:i]))
+                self._groups_cache = sorted(expanded)
             except Exception:
                 self._groups_cache = []
         return self._groups_cache
