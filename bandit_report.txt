@@ -1,29 +1,29 @@
-Run started:2026-03-24 13:40:03.778108+00:00
+Run started:2026-03-24 23:54:50.044033+00:00
 
 Test results:
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
-   Location: src/mytcli/tui.py:4:0
-3	import os
-4	import subprocess
-5	import tempfile
+   Location: src/mytcli/tui.py:5:0
+4	import re
+5	import subprocess
+6	import tempfile
 
 --------------------------------------------------
 >> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: src/mytcli/tui.py:154:24
-153	            await run_in_terminal(
-154	                lambda: subprocess.call([pager, "-RS", "+g", tmp_path])
-155	            )
+   Location: src/mytcli/tui.py:209:24
+208	            await run_in_terminal(
+209	                lambda: subprocess.call([pager, "-RS", "+g", tmp_path])
+210	            )
 
 --------------------------------------------------
 
 Code scanned:
-	Total lines of code: 7156
+	Total lines of code: 7247
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
 

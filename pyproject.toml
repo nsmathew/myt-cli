@@ -1,6 +1,6 @@
 [project]
 name = "myt-cli"
-version = "0.4.0"
+version = "0.5.0"
 authors = [
   { name="Nitin Mathew", email="nitn_mathew2000@hotmail.com" },
 ]
