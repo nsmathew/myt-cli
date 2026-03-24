@@ -1,4 +1,4 @@
-Run started:2026-03-24 10:02:46.907548+00:00
+Run started:2026-03-24 13:40:03.778108+00:00
 
 Test results:
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
@@ -23,7 +23,7 @@ Test results:
 --------------------------------------------------
 
 Code scanned:
-	Total lines of code: 6888
+	Total lines of code: 7156
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
 
