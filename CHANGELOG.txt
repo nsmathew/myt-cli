@@ -1,5 +1,15 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.5.1 - Released on 25-Mar-2026
+
+-- Fixes --
+* TUI: Autocomplete for groups, tags, and contexts now uses only the latest version of each task, preventing stale values from older versions
+* TUI: Group and tag autocomplete now includes values from completed tasks in addition to pending tasks
+
+-- Other --
+* Release scripts (build.sh, publish.sh) now handle git commits automatically, reducing manual steps
+
+----------------------------------------------------------------
 v0.5.0 - Released on 24-Mar-2026
 
 -- Features --
