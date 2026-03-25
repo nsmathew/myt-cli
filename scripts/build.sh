@@ -16,6 +16,12 @@ rm -rf dist/
 echo "Building..."
 python -m build
 
+# Commit release files
+echo ""
+echo "--- Committing release files ---"
+git add CHANGELOG.txt pyproject.toml bandit_report.txt
+git commit -m "Release v${VERSION}"
+
 echo ""
 echo "=== Build complete ==="
 echo "Artifacts:"

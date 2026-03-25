@@ -13,11 +13,10 @@ if [ ! -d "dist" ] || [ -z "$(ls dist/ 2>/dev/null)" ]; then
     exit 1
 fi
 
-# Check for uncommitted changes
-if [ -n "$(git status --porcelain)" ]; then
-    echo "ERROR: Uncommitted changes exist. Commit first."
-    exit 1
-fi
+# Commit distributables
+echo "--- Committing distributables ---"
+git add dist/
+git commit -m "Distributables for v${VERSION}"
 
 # Confirm
 read -p "Upload v${VERSION} to PyPI and tag? [y/N] " confirm

@@ -811,7 +811,15 @@ def get_task_uuid_n_ver(potential_filters):
 def get_all_groups():
     """Returns list of distinct non-null group names from pending area."""
     try:
+        max_ver_sqr = (db.SESSION.query(
+            Workspace.uuid,
+            func.max(Workspace.version).label("maxver"))
+            .group_by(Workspace.uuid)
+            .subquery())
         results = (db.SESSION.query(distinct(Workspace.groups))
+                   .join(max_ver_sqr,
+                         and_(Workspace.version == max_ver_sqr.c.maxver,
+                              Workspace.uuid == max_ver_sqr.c.uuid))
                    .filter(and_(Workspace.area == WS_AREA_PENDING,
                                 Workspace.groups.isnot(None)))
                    .all())
@@ -823,7 +831,15 @@ def get_all_groups():
 def get_all_contexts():
     """Returns list of distinct non-null context names from pending area."""
     try:
+        max_ver_sqr = (db.SESSION.query(
+            Workspace.uuid,
+            func.max(Workspace.version).label("maxver"))
+            .group_by(Workspace.uuid)
+            .subquery())
         results = (db.SESSION.query(distinct(Workspace.context))
+                   .join(max_ver_sqr,
+                         and_(Workspace.version == max_ver_sqr.c.maxver,
+                              Workspace.uuid == max_ver_sqr.c.uuid))
                    .filter(and_(Workspace.area == WS_AREA_PENDING,
                                 Workspace.context.isnot(None)))
                    .all())
@@ -835,10 +851,18 @@ def get_all_contexts():
 def get_all_tags():
     """Returns list of distinct tag names from pending area."""
     try:
+        max_ver_sqr = (db.SESSION.query(
+            Workspace.uuid,
+            func.max(Workspace.version).label("maxver"))
+            .group_by(Workspace.uuid)
+            .subquery())
         results = (db.SESSION.query(distinct(WorkspaceTags.tags))
                    .join(Workspace, and_(
                        WorkspaceTags.uuid == Workspace.uuid,
                        WorkspaceTags.version == Workspace.version))
+                   .join(max_ver_sqr,
+                         and_(Workspace.version == max_ver_sqr.c.maxver,
+                              Workspace.uuid == max_ver_sqr.c.uuid))
                    .filter(Workspace.area == WS_AREA_PENDING)
                    .all())
         return [r[0] for r in results if r[0]]
