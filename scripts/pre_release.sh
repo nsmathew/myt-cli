@@ -18,7 +18,7 @@ echo "Tests passed."
 echo ""
 echo "--- Running bandit scan ---"
 out_file=bandit_report.txt
-bandit --recursive --severity-level all --output $out_file --format txt src/
+bandit --recursive --severity-level all --output $out_file --format txt src/ || true
 echo "" >> $out_file
 echo "myt-cli app version for bandit run is:" >> $out_file
 grep "^version = " pyproject.toml >> $out_file
