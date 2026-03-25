@@ -1041,7 +1041,105 @@ def test_stats4(set_full_db_path, caplog):
     
     result = runner.invoke(stats, ['--verbose', '-db', set_full_db_path])   
     assert result.exit_code == 0
-    assert "Retrieved stats for view 4 is {-7: 0, -6: 0, -5: 0, -4: 0, -3: 0, -2: 0, -1: 0, 0: 2}" in caplog.text    
-    
+    assert "Retrieved stats for view 4 is {-7: 0, -6: 0, -5: 0, -4: 0, -3: 0, -2: 0, -1: 0, 0: 2}" in caplog.text
+
     runner.invoke(delete, ['gr:STATS', '-db', set_full_db_path])
-    
+
+
+# ── Autocomplete query tests ──────────────────────────────────────────
+
+from src.mytcli.queries import (get_all_groups, get_all_tags,
+                                get_all_contexts, get_all_ids)
+
+
+def test_autocomplete_groups(set_full_db_path):
+    """get_all_groups returns groups from pending and done areas only."""
+    with mock.patch('builtins.input', return_value="yes"):
+        runner.invoke(admin, ['--reinit', '-db', set_full_db_path])
+    runner.invoke(add, ['-de', 'task1', '-gr', 'Work.Dev', '-db', set_full_db_path])
+    runner.invoke(add, ['-de', 'task2', '-gr', 'Home', '-db', set_full_db_path])
+    groups = get_all_groups()
+    assert 'Work.Dev' in groups
+    assert 'Home' in groups
+    # Mark task2 done – its group should still appear
+    runner.invoke(done, ['id:2', '-db', set_full_db_path])
+    groups = get_all_groups()
+    assert 'Home' in groups
+    # Delete task1 (moves to bin) – its group should disappear
+    runner.invoke(delete, ['id:1', '-db', set_full_db_path])
+    groups = get_all_groups()
+    assert 'Work.Dev' not in groups
+    runner.invoke(delete, ['gr:Home', '-db', set_full_db_path])
+
+
+def test_autocomplete_tags(set_full_db_path):
+    """get_all_tags returns tags from pending and done areas only."""
+    with mock.patch('builtins.input', return_value="yes"):
+        runner.invoke(admin, ['--reinit', '-db', set_full_db_path])
+    runner.invoke(add, ['-de', 'task1', '-tg', 'urgent,backend', '-db', set_full_db_path])
+    runner.invoke(add, ['-de', 'task2', '-tg', 'frontend', '-db', set_full_db_path])
+    tags = get_all_tags()
+    assert 'urgent' in tags
+    assert 'backend' in tags
+    assert 'frontend' in tags
+    # Mark task2 done – its tag should still appear
+    runner.invoke(done, ['id:2', '-db', set_full_db_path])
+    tags = get_all_tags()
+    assert 'frontend' in tags
+    # Delete task1 (moves to bin) – its tags should disappear
+    runner.invoke(delete, ['id:1', '-db', set_full_db_path])
+    tags = get_all_tags()
+    assert 'urgent' not in tags
+    assert 'backend' not in tags
+    runner.invoke(delete, ['tg:frontend', '-db', set_full_db_path])
+
+
+def test_autocomplete_contexts(set_full_db_path):
+    """get_all_contexts returns contexts from pending area only."""
+    with mock.patch('builtins.input', return_value="yes"):
+        runner.invoke(admin, ['--reinit', '-db', set_full_db_path])
+    runner.invoke(add, ['-de', 'task1', '-cx', 'office', '-db', set_full_db_path])
+    runner.invoke(add, ['-de', 'task2', '-cx', 'home', '-db', set_full_db_path])
+    contexts = get_all_contexts()
+    assert 'office' in contexts
+    assert 'home' in contexts
+    # Mark task2 done – its context should disappear (pending only)
+    runner.invoke(done, ['id:2', '-db', set_full_db_path])
+    contexts = get_all_contexts()
+    assert 'home' not in contexts
+    assert 'office' in contexts
+    runner.invoke(delete, ['id:1', '-db', set_full_db_path])
+
+
+def test_autocomplete_ids(set_full_db_path):
+    """get_all_ids returns only IDs from pending area."""
+    with mock.patch('builtins.input', return_value="yes"):
+        runner.invoke(admin, ['--reinit', '-db', set_full_db_path])
+    runner.invoke(add, ['-de', 'task1', '-db', set_full_db_path])
+    runner.invoke(add, ['-de', 'task2', '-db', set_full_db_path])
+    ids = get_all_ids()
+    assert '1' in ids
+    assert '2' in ids
+    runner.invoke(done, ['id:2', '-db', set_full_db_path])
+    ids = get_all_ids()
+    assert '2' not in ids
+    assert '1' in ids
+    runner.invoke(delete, ['id:1', '-db', set_full_db_path])
+
+
+def test_autocomplete_latest_version_only(set_full_db_path):
+    """Autocomplete uses latest task version, not stale values."""
+    with mock.patch('builtins.input', return_value="yes"):
+        runner.invoke(admin, ['--reinit', '-db', set_full_db_path])
+    runner.invoke(add, ['-de', 'task1', '-gr', 'OldGroup', '-tg', 'oldtag',
+                        '-cx', 'oldctx', '-db', set_full_db_path])
+    # Modify to new values – old values should no longer appear
+    runner.invoke(modify, ['id:1', '-gr', 'NewGroup', '-tg', '-oldtag,newtag',
+                           '-cx', 'newctx', '-db', set_full_db_path])
+    assert 'OldGroup' not in get_all_groups()
+    assert 'NewGroup' in get_all_groups()
+    assert 'oldtag' not in get_all_tags()
+    assert 'newtag' in get_all_tags()
+    assert 'oldctx' not in get_all_contexts()
+    assert 'newctx' in get_all_contexts()
+    runner.invoke(delete, ['id:1', '-db', set_full_db_path])

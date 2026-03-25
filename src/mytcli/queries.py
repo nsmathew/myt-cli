@@ -809,7 +809,7 @@ def get_task_uuid_n_ver(potential_filters):
 
 
 def get_all_groups():
-    """Returns list of distinct non-null group names from pending area."""
+    """Returns distinct non-null group names from pending and done areas."""
     try:
         max_ver_sqr = (db.SESSION.query(
             Workspace.uuid,
@@ -820,7 +820,8 @@ def get_all_groups():
                    .join(max_ver_sqr,
                          and_(Workspace.version == max_ver_sqr.c.maxver,
                               Workspace.uuid == max_ver_sqr.c.uuid))
-                   .filter(and_(Workspace.area == WS_AREA_PENDING,
+                   .filter(and_(Workspace.area.in_(
+                                    [WS_AREA_PENDING, WS_AREA_COMPLETED]),
                                 Workspace.groups.isnot(None)))
                    .all())
         return [r[0] for r in results if r[0]]
@@ -849,7 +850,7 @@ def get_all_contexts():
 
 
 def get_all_tags():
-    """Returns list of distinct tag names from pending area."""
+    """Returns distinct tag names from pending and done areas."""
     try:
         max_ver_sqr = (db.SESSION.query(
             Workspace.uuid,
@@ -863,7 +864,8 @@ def get_all_tags():
                    .join(max_ver_sqr,
                          and_(Workspace.version == max_ver_sqr.c.maxver,
                               Workspace.uuid == max_ver_sqr.c.uuid))
-                   .filter(Workspace.area == WS_AREA_PENDING)
+                   .filter(Workspace.area.in_(
+                               [WS_AREA_PENDING, WS_AREA_COMPLETED]))
                    .all())
         return [r[0] for r in results if r[0]]
     except SQLAlchemyError:
