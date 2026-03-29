@@ -1,4 +1,4 @@
-Run started:2026-03-25 09:14:44.963218+00:00
+Run started:2026-03-29 17:09:55.282195+00:00
 
 Test results:
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
@@ -15,15 +15,15 @@ Test results:
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: src/mytcli/tui.py:209:24
-208	            await run_in_terminal(
-209	                lambda: subprocess.call([pager, "-RS", "+g", tmp_path])
-210	            )
+   Location: src/mytcli/tui.py:215:24
+214	            await run_in_terminal(
+215	                lambda: subprocess.call([pager, "-RS", "+g", tmp_path])
+216	            )
 
 --------------------------------------------------
 
 Code scanned:
-	Total lines of code: 7273
+	Total lines of code: 7314
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
 

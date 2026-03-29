@@ -1,5 +1,15 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.5.2 - Released on 29-Mar-2026
+
+-- Fixes --
+* Fix hide date with +X (relative to today) not resolving when no due date is set on add command
+* Fix "Displayed Tasks: 0" not shown on empty views; count line was skipped due to truthiness check failing for zero
+
+-- Other --
+* Added comprehensive test suite for due dates, hide dates, and recurrence scenarios (116 tests)
+
+----------------------------------------------------------------
 v0.5.1 - Released on 25-Mar-2026
 
 -- Fixes --
