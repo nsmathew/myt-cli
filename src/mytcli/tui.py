@@ -106,6 +106,8 @@ class MytTUI:
         nav = ""
         if self._table_focused:
             nav = " | [F5] TABLE NAV"
+        if constants.COMPACT_VIEW:
+            nav += " | [F7] COMPACT"
         return [
             ("class:toolbar", " Filter: {} | Refresh: {}{}{}{}  ".format(
                 filter_str, refresh_str, counts, status, nav)),
@@ -378,6 +380,12 @@ class MytTUI:
         async def open_pager(event):
             """F6: open current display in pager for scrolling."""
             await self._open_pager()
+
+        @kb.add("f7", filter=Condition(lambda: bool(self._display_text)))
+        def toggle_concise_view(event):
+            """F7: toggle compact view (hide end/duration/hide/version/age/date/score)."""
+            constants.COMPACT_VIEW = not constants.COMPACT_VIEW
+            self._refresh_view()
 
         return kb
 

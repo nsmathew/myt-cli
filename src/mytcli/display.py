@@ -1520,23 +1520,26 @@ def display_default(potential_filters, pager=False, top=None):
     table.add_column("due in", justify="right")
     table.add_column("due date", justify="left")
     table.add_column("recur", justify="left")
-    table.add_column("end", justify="left")
+    if not constants.COMPACT_VIEW:
+        table.add_column("end", justify="left")
     table.add_column("groups", justify="right")
     table.add_column("context", justify="right")
     table.add_column("tags", justify="right")
     table.add_column("status", justify="left")
-    table.add_column("duration", justify="left")
-    table.add_column("hide until", justify="left")
+    if not constants.COMPACT_VIEW:
+        table.add_column("duration", justify="left")
+        table.add_column("hide until", justify="left")
     table.add_column("flags", justify="right")
-    table.add_column("version", justify="right")
-    table.add_column("age", justify="right")
-    if(task_list[0].area == WS_AREA_COMPLETED):
-        table.add_column("done_date", justify="left")
-    elif(task_list[0].area == WS_AREA_BIN):
-        table.add_column("deleted_date", justify="left")
-    else:
-        table.add_column("modifed_date", justify="left")
-    table.add_column("score", justify="right")
+    if not constants.COMPACT_VIEW:
+        table.add_column("version", justify="right")
+        table.add_column("age", justify="right")
+        if(task_list[0].area == WS_AREA_COMPLETED):
+            table.add_column("done_date", justify="left")
+        elif(task_list[0].area == WS_AREA_BIN):
+            table.add_column("deleted_date", justify="left")
+        else:
+            table.add_column("modifed_date", justify="left")
+        table.add_column("score", justify="right")
     if top is None:
         top = len(task_list)
     else:
@@ -1594,22 +1597,25 @@ def display_default(potential_filters, pager=False, top=None):
         #hidden or bin task, so based on created date
         tdata = sorted(tdata, key=itemgetter(15), reverse=True)
 
+    _COMPACT_HIDDEN = frozenset({5, 10, 11, 13, 14, 15, 16})
     for trow in tdata:
+        row = ([v for i, v in enumerate(trow) if i not in _COMPACT_HIDDEN]
+               if constants.COMPACT_VIEW else trow)
         # Next Display the tasks with formatting based on various conditions
         if trow[9] == TASK_STATUS_DONE:
-            table.add_row(*trow, style="done")
+            table.add_row(*row, style="done")
         elif trow[9] == TASK_STATUS_DELETED:
-            table.add_row(*trow, style="binn")
+            table.add_row(*row, style="binn")
         elif INDC_NOW in trow[12]:
-            table.add_row(*trow, style="now")
+            table.add_row(*row, style="now")
         elif trow[9] == TASK_STATUS_STARTED:
-            table.add_row(*trow, style="started")
+            table.add_row(*row, style="started")
         elif trow[2] == TASK_OVERDUE:
-            table.add_row(*trow, style="overdue")
+            table.add_row(*row, style="overdue")
         elif trow[2] == TASK_TODAY:
-            table.add_row(*trow, style="today")
+            table.add_row(*row, style="today")
         else:
-            table.add_row(*trow, style="default")
+            table.add_row(*row, style="default")
 
     # Print a legend on the indicators used for priority and now
     grid = RichTable.grid(padding=3)
