@@ -30,6 +30,14 @@ SHORTHAND_MAP = {
     "~": "-hi",
 }
 
+# Flags that consume the next token as their value (not shorthand-expanded)
+VALUE_FLAGS = {
+    "-de", "--desc", "-pr", "--priority", "-du", "--due",
+    "-hi", "--hide", "-gr", "--group", "-cx", "--context",
+    "-tg", "--tag", "-re", "--recur", "-en", "--end",
+    "-no", "--notes", "-ur", "--urlno", "-t", "--top", "-db",
+}
+
 # Commands that accept shorthand setters
 SETTER_COMMANDS = {"add", "modify"}
 
@@ -67,10 +75,15 @@ def expand_shorthand(input_text):
 
         # Check if this token is a quoted description (was quoted in original)
         # We detect this by checking if the original input had this token quoted
-        # Standard flags pass through unchanged
+        # Standard flags pass through unchanged; value-taking flags also
+        # consume the next token as their value to prevent shorthand expansion
+        # of things like `-du +1` where `+1` is a date, not a group.
         if token.startswith("-"):
             expanded.append(token)
             i += 1
+            if token in VALUE_FLAGS and i < len(tokens):
+                expanded.append(tokens[i])
+                i += 1
             continue
 
         # Filter tokens (key:value) pass through unchanged

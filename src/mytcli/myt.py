@@ -517,6 +517,8 @@ def modify(filters, desc, priority, due, hide, group, context, tag, recur, end,
         LOGGER.debug("After cleaning tags are: {}".format(tag))
     else:
         tag = None
+    if due is not None:
+        due = convert_date(due)
     if end is not None:
         end = convert_date(end)
     event_id = get_event_id()

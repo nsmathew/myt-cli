@@ -157,7 +157,7 @@ def convert_date_rel(value, due):
         if not value[1:]:  # No number specified after sign, append a 0
             value = value[0] + "0"
         if value[0:1] == "+":
-            return adjust_date(date.today(), value)
+            return adjust_date(date.today(), value).strftime("%Y-%m-%d")
         elif due is not None and value[0:1] == "-":
             return adjust_date(due, value).strftime("%Y-%m-%d")
     elif value and is_date(value):

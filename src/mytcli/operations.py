@@ -1289,7 +1289,13 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
     if ws_task_src.hide == CLR_STR:
         ws_task.hide = None
     elif ws_task_src.hide is not None:
-        ws_task.hide = ws_task_src.hide
+        # Resolve relative hide dates using the effective due date:
+        # prefer the newly-set due (ws_task.due already updated above),
+        # fall back to the task's existing due date.
+        eff_due = parse(ws_task.due) if ws_task.due else None
+        converted = convert_date_rel(ws_task_src.hide, eff_due)
+        if converted is not None:
+            ws_task.hide = converted
 
     if ws_task_src.groups == CLR_STR:
         ws_task.groups = None
