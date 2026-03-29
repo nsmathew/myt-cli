@@ -40,7 +40,7 @@ PRIORITY_VALUES = ["H", "M", "L", "N"]
 
 # Flags that accept date-like values
 DATE_FLAGS = {"-du", "--due", "-hi", "--hide", "-en", "--end"}
-DATE_HINTS = ["+0", "+1", "+2", "+7", "+14", "+30", "today", "tomorrow"]
+DATE_HINTS = ["+0", "+1", "+2", "+7", "+14", "+30"]
 
 # Filter prefixes for view/modify and commands with filter arguments
 FILTER_PREFIXES = ["id:", "gr:", "cx:", "tg:", "pr:", "de:", "du:", "no:", "uuid:"]

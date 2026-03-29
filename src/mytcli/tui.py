@@ -139,7 +139,11 @@ class MytTUI:
                 if is_separator:
                     # Closing separator — end of data rows
                     break
-                indices.append(i)
+                # Only count lines that start a new task row (ID column has a digit).
+                # Wrapped continuation lines have blank space in the ID column area.
+                plain_raw = ansi_re.sub("", line)
+                if any(c.isdigit() for c in plain_raw[:6]):
+                    indices.append(i)
         self._data_row_indices = indices
 
     def _get_display_text(self):
