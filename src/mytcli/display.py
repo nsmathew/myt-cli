@@ -56,7 +56,8 @@ def display_full(potential_filters, pager=False, top=None):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
-        get_and_print_task_count({WS_AREA_PENDING: "yes"})
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                  PRNT_CURR_VW_CNT: 0})
         return SUCCESS
     if not constants.TUI_MODE:
         CONSOLE.print("Preparing view...", style="default")
@@ -111,13 +112,15 @@ def display_7day(potential_filters, pager):
     if potential_filters.get(TASK_BIN) is not None \
             or potential_filters.get(TASK_COMPLETE) is not None:
         CONSOLE.print("No tasks to display...", style="default")
-        get_and_print_task_count({WS_AREA_PENDING: "yes"})
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                  PRNT_CURR_VW_CNT: 0})
         return SUCCESS
 
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
-        get_and_print_task_count({WS_AREA_PENDING: "yes"})
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                  PRNT_CURR_VW_CNT: 0})
         return SUCCESS
     try:
         drvd_due = case((cast(Workspace.due_diff_today,
@@ -323,7 +326,8 @@ def display_notes(potential_filters, pager=False, top=None):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
-        get_and_print_task_count({WS_AREA_PENDING: "yes"})
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                  PRNT_CURR_VW_CNT: 0})
         return SUCCESS
     task_list = get_tasks(uuid_version_results)
     try:
@@ -446,7 +450,8 @@ def display_dates(potential_filters, pager=False, top=None):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
-        get_and_print_task_count({WS_AREA_PENDING: "yes"})
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                  PRNT_CURR_VW_CNT: 0})
         return SUCCESS
     task_list = get_tasks(uuid_version_results)
     #Work on only derived tasks
@@ -576,7 +581,8 @@ def display_history(potential_filters, pager=False, top=None):
     uuid_list = map(lambda x: x[0], uuid_version_results)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
-        get_and_print_task_count({WS_AREA_PENDING: "yes"})
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                  PRNT_CURR_VW_CNT: 0})
         return SUCCESS
     if not constants.TUI_MODE:
         CONSOLE.print("Preparing view...", style="default")
@@ -776,7 +782,8 @@ def display_by_tags(potential_filters, pager=False, top=None):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
-        get_and_print_task_count({WS_AREA_PENDING: "yes"})
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                  PRNT_CURR_VW_CNT: 0})
         return SUCCESS
     if not constants.TUI_MODE:
         CONSOLE.print("Preparing view...", style="default")
@@ -867,7 +874,8 @@ def display_by_groups(potential_filters, pager=False, top=None):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
-        get_and_print_task_count({WS_AREA_PENDING: "yes"})
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                  PRNT_CURR_VW_CNT: 0})
         return SUCCESS
     if not constants.TUI_MODE:
         CONSOLE.print("Preparing view...", style="default")
@@ -1407,7 +1415,8 @@ def display_default(potential_filters, pager=False, top=None):
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No tasks to display...", style="default")
-        get_and_print_task_count({WS_AREA_PENDING: "yes"})
+        get_and_print_task_count({WS_AREA_PENDING: "yes",
+                                  PRNT_CURR_VW_CNT: 0})
         return SUCCESS
     if not constants.TUI_MODE:
         CONSOLE.print("Preparing view...", style="default")

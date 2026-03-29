@@ -584,7 +584,7 @@ def get_and_print_task_count(print_dict):
             LOGGER.debug("Added/Updated Task UUID: {} and Area: {}"
                          .format(ws_task.uuid, ws_task.area))
     # Print No. of Tasks Displayed in the view
-    if print_dict.get(PRNT_CURR_VW_CNT):
+    if print_dict.get(PRNT_CURR_VW_CNT) is not None:
         if constants.TUI_MODE:
             constants.TUI_DISPLAYED_COUNT = print_dict.get(PRNT_CURR_VW_CNT)
         else:

@@ -232,6 +232,8 @@ def add(desc, priority, due, hide, group, context, tag, recur, end, notes,
         end = convert_date(end)
         if due is not None:
             hide = convert_date_rel(hide, parse(due))
+        else:
+            hide = convert_date_rel(hide, None)
         if recur is not None:
             LOGGER.debug("Recur: {}".format(recur))
             if due is None or due == CLR_STR:
