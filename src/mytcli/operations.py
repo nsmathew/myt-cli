@@ -211,8 +211,19 @@ def process_url(potential_filters, urlno=None):
             click.echo("{} - {}".format(str(cnt), u))
         choice_rng = [str(x) for x in list(range(1,cnt+1))]
         if constants.TUI_MODE:
-            CONSOLE.print("Multiple URLs found. Re-run with -ur <number> to open one.")
-            ret = SUCCESS
+            if constants.TUI_PROMPT_CALLBACK:
+                res = constants.TUI_PROMPT_CALLBACK(
+                    "Choose the URL to open:",
+                    [*choice_rng, "none"], "none"
+                )
+            else:
+                CONSOLE.print("Multiple URLs found. Re-run with -ur <number> to open one.")
+                res = "none"
+            if res == "none":
+                ret = SUCCESS
+            else:
+                url_ = re.findall(regex_2, url_list[int(res)-1])
+                ret = open_url(url_[0])
         else:
             res = Prompt.ask("Choose the URL to be openned:",
                                 choices=[*choice_rng,"none"],
@@ -396,15 +407,21 @@ def prep_delete(potential_filters, event_id, delete_all=False):
             """
             LOGGER.debug("Is a derived task")
             if not delete_all:
+                prompt_msg = ("{}, {} - This is a recurring task, do you "
+                              "want to modify 'all' pending instances or "
+                              "just 'this' instance"
+                              .format(ws_task.description, ws_task.due))
                 if constants.TUI_MODE:
-                    CONSOLE.print("{}, {} - Recurring task: defaulting to 'this' instance in TUI mode."
-                                  .format(ws_task.description, ws_task.due))
-                    res = "this"
+                    if constants.TUI_PROMPT_CALLBACK:
+                        res = constants.TUI_PROMPT_CALLBACK(
+                            prompt_msg, ["all", "this", "none"], "none"
+                        )
+                    else:
+                        CONSOLE.print("{} → Defaulting to 'this' in TUI mode."
+                                      .format(prompt_msg))
+                        res = "this"
                 else:
-                    res = Prompt.ask("{}, {} - This is a recurring task, do you "
-                                    "want to modify 'all' pending instances or "
-                                    "just 'this' instance"
-                                        .format(ws_task.description, ws_task.due),
+                    res = Prompt.ask(prompt_msg,
                                     choices=["all", "this", "none"],
                                     default="none")
             else:
@@ -1046,17 +1063,23 @@ def prep_modify(potential_filters, ws_task_src, tag):
         make_transient(ws_task)
         ws_task.uuid = uuidn
         if ws_task.task_type == TASK_TYPE_DRVD:
+            prompt_msg = ("{}, {} - This is a recurring task, do you want"
+                          " to modify 'all' pending instances or "
+                          "just 'this' instance"
+                          .format(ws_task.description, ws_task.due))
             if constants.TUI_MODE:
-                CONSOLE.print("{}, {} - Recurring task: defaulting to 'this' instance in TUI mode."
-                              .format(ws_task.description, ws_task.due))
-                res = "this"
+                if constants.TUI_PROMPT_CALLBACK:
+                    res = constants.TUI_PROMPT_CALLBACK(
+                        prompt_msg, ["all", "this", "none"], "none"
+                    )
+                else:
+                    CONSOLE.print("{} → Defaulting to 'this' in TUI mode."
+                                  .format(prompt_msg))
+                    res = "this"
             else:
-                res = Prompt.ask("{}, {} - This is a recurring task, do you want"
-                                    " to modify 'all' pending instances or "
-                                    "just 'this' instance"
-                                        .format(ws_task.description, ws_task.due),
-                                    choices=["all", "this", "none"],
-                                    default="none")
+                res = Prompt.ask(prompt_msg,
+                                choices=["all", "this", "none"],
+                                default="none")
             if (ws_task_src.recur_end is not None
                     or ws_task_src.recur_mode is not None
                     or ws_task_src.recur_when is not None):
