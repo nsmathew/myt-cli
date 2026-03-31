@@ -118,6 +118,8 @@ myt_theme = Theme({
 CONSOLE = _ConsoleProxy(theme=myt_theme)
 # TUI Mode flag
 TUI_MODE = False
+# TUI interactive prompt callback — set by TUI to handle prompts
+TUI_PROMPT_CALLBACK = None
 TUI_DISPLAYED_COUNT = None
 COMPACT_VIEW = False
 # TUI Constants

@@ -60,6 +60,11 @@ def open_url(url_):
 
 def confirm_prompt(prompt_msg):
     if constants.TUI_MODE:
+        if constants.TUI_PROMPT_CALLBACK:
+            res = constants.TUI_PROMPT_CALLBACK(
+                prompt_msg, ["yes", "no"], "no"
+            )
+            return res == "yes"
         CONSOLE.print("{} → Auto-denied in TUI mode. Use --yes/-y flag to confirm.".format(prompt_msg))
         return False
     res = Prompt.ask(prompt_msg, choices=["yes", "no"], default="no")

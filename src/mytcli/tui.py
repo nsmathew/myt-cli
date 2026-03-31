@@ -1,9 +1,11 @@
 """Interactive TUI for myt-cli using prompt_toolkit."""
 
+import asyncio
 import os
 import re
 import subprocess
 import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -47,6 +49,15 @@ class MytTUI:
         self._table_focused = False
         self._selected_row = 0
         self._data_row_indices = []
+        # Dialog state
+        self._dialog_visible = False
+        self._dialog_float = None
+        self._dialog_choices = []
+        self._dialog_default = None
+        self._dialog_selected = 0
+        self._prompt_event = threading.Event()
+        self._prompt_result = None
+        self._dispatching = False
 
     def _get_task_counts(self):
         """Get pending task counts for the toolbar."""
@@ -226,6 +237,10 @@ class MytTUI:
         if not text:
             return
 
+        # Ignore input while a command is being dispatched in a thread
+        if self._dispatching:
+            return
+
         # Special exit commands
         if text in ("quit", "exit", "q"):
             self._app.exit()
@@ -241,9 +256,45 @@ class MytTUI:
 
         cmd_name = text.split()[0] if text.split() else ""
 
+        # Check if this command might need interactive prompts
+        if cmd_name in MUTATION_COMMANDS:
+            self._dispatch_in_thread(text, cmd_name)
+        else:
+            self._dispatch_sync(text, cmd_name)
+
+    def _dispatch_sync(self, text, cmd_name):
+        """Dispatch a command synchronously (no dialog support needed)."""
         width = self._get_terminal_width()
         code, output, is_mutation = self._dispatcher.dispatch(text, width_override=width)
+        self._apply_result(text, cmd_name, output, is_mutation)
 
+    def _dispatch_in_thread(self, text, cmd_name):
+        """Dispatch a mutation command in a background thread.
+
+        This allows the command to block on _tui_prompt_callback while the
+        main event loop keeps rendering (and showing dialogs).
+        """
+        self._dispatching = True
+
+        def _run():
+            try:
+                width = self._get_terminal_width()
+                code, output, is_mutation = self._dispatcher.dispatch(
+                    text, width_override=width)
+            except Exception as e:
+                code, output, is_mutation = 1, "Error: {}".format(e), False
+
+            # Post the result back to the main loop
+            def _finish():
+                self._dispatching = False
+                self._apply_result(text, cmd_name, output, is_mutation)
+            self._app.loop.call_soon_threadsafe(_finish)
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+
+    def _apply_result(self, text, cmd_name, output, is_mutation):
+        """Apply command results to the display."""
         if cmd_name == "view":
             parts = text.split()[1:]
             self._filter_args = parts
@@ -257,6 +308,86 @@ class MytTUI:
         else:
             self._last_command = text
             self._update_display(output)
+
+    def _tui_prompt_callback(self, message, choices, default):
+        """Called from operations code (in a worker thread) when user input is needed.
+
+        Shows a dialog in the TUI and blocks until the user responds.
+        """
+        self._prompt_event.clear()
+        self._prompt_result = default
+
+        # Schedule dialog creation on the main event loop
+        def _show():
+            self._show_dialog(message, choices, default)
+
+        self._app.loop.call_soon_threadsafe(_show)
+
+        # Block the worker thread until the user responds
+        self._prompt_event.wait()
+        return self._prompt_result
+
+    def _get_dialog_text(self):
+        """Build formatted text for the dialog overlay."""
+        if not self._dialog_visible:
+            return []
+        fragments = []
+        fragments.append(("class:dialog.border", "┌" + "─" * 58 + "┐\n"))
+        # Message line(s) — word-wrap to fit inside the box
+        msg = self._dialog_message
+        max_w = 56
+        while msg:
+            line = msg[:max_w]
+            msg = msg[max_w:]
+            fragments.append(("class:dialog.border", "│ "))
+            fragments.append(("class:dialog.text", "{:<56}".format(line)))
+            fragments.append(("class:dialog.border", " │\n"))
+        fragments.append(("class:dialog.border", "│" + " " * 58 + "│\n"))
+        # Choices
+        for i, choice in enumerate(self._dialog_choices):
+            prefix = " ● " if i == self._dialog_selected else " ○ "
+            style = "class:dialog.selected" if i == self._dialog_selected else "class:dialog.text"
+            fragments.append(("class:dialog.border", "│ "))
+            fragments.append((style, "{:<56}".format(prefix + choice)))
+            fragments.append(("class:dialog.border", " │\n"))
+        fragments.append(("class:dialog.border", "│" + " " * 58 + "│\n"))
+        # Hint
+        hint = "↑/↓: select  Enter: confirm  Esc: cancel"
+        fragments.append(("class:dialog.border", "│ "))
+        fragments.append(("class:dialog.hint", "{:<56}".format(hint)))
+        fragments.append(("class:dialog.border", " │\n"))
+        fragments.append(("class:dialog.border", "└" + "─" * 58 + "┘"))
+        return fragments
+
+    def _show_dialog(self, message, choices, default):
+        """Show a choice dialog as a floating overlay."""
+        self._dialog_message = message
+        self._dialog_choices = choices
+        self._dialog_default = default
+        # Pre-select the default choice
+        if default in choices:
+            self._dialog_selected = choices.index(default)
+        else:
+            self._dialog_selected = 0
+
+        dialog_window = Window(
+            content=FormattedTextControl(self._get_dialog_text),
+            dont_extend_width=True,
+            dont_extend_height=True,
+        )
+        self._dialog_float = Float(content=dialog_window)
+        self._dialog_visible = True
+        self._float_container.floats.append(self._dialog_float)
+        self._app.invalidate()
+
+    def _dismiss_dialog(self):
+        """Remove the dialog and unblock the waiting thread."""
+        if self._dialog_float and self._dialog_float in self._float_container.floats:
+            self._float_container.floats.remove(self._dialog_float)
+        self._dialog_visible = False
+        self._dialog_float = None
+        self._app.invalidate()
+        self._prompt_event.set()
 
     def _build_layout(self):
         toolbar = Window(
@@ -287,7 +418,7 @@ class MytTUI:
             accept_handler=self._handle_command,
             multiline=False,
             complete_while_typing=True,
-            read_only=Condition(lambda: self._table_focused),
+            read_only=Condition(lambda: self._table_focused or self._dialog_visible),
         )
 
         self._input_window = Window(
@@ -306,7 +437,13 @@ class MytTUI:
 
         input_row = VSplit([prompt_label, self._input_window])
 
-        body = FloatContainer(
+        self._completions_float = Float(
+            xcursor=True,
+            ycursor=True,
+            content=CompletionsMenu(max_height=12, scroll_offset=1),
+        )
+
+        self._float_container = FloatContainer(
             content=HSplit([
                 toolbar,
                 separator,
@@ -315,14 +452,9 @@ class MytTUI:
                 input_row,
                 search_toolbar,
             ]),
-            floats=[
-                Float(
-                    xcursor=True,
-                    ycursor=True,
-                    content=CompletionsMenu(max_height=12, scroll_offset=1),
-                ),
-            ],
+            floats=[self._completions_float],
         )
+        body = self._float_container
 
         return Layout(body, focused_element=self._input_window)
 
@@ -343,7 +475,11 @@ class MytTUI:
 
         @kb.add("escape", eager=True)
         def dismiss_completions(event):
-            """Escape: close autocomplete menu or exit table nav."""
+            """Escape: close autocomplete menu, dismiss dialog, or exit table nav."""
+            if self._dialog_visible:
+                # Leave _prompt_result as its default (set during callback init)
+                self._dismiss_dialog()
+                return
             if self._table_focused:
                 self._table_focused = False
                 event.app.invalidate()
@@ -352,6 +488,29 @@ class MytTUI:
             if buff.complete_state:
                 buff.cancel_completion()
 
+        # -- Dialog keybindings --
+        dialog_filter = Condition(lambda: self._dialog_visible)
+
+        @kb.add("up", filter=dialog_filter, eager=True)
+        @kb.add("k", filter=dialog_filter, eager=True)
+        def dialog_up(event):
+            if self._dialog_selected > 0:
+                self._dialog_selected -= 1
+                event.app.invalidate()
+
+        @kb.add("down", filter=dialog_filter, eager=True)
+        @kb.add("j", filter=dialog_filter, eager=True)
+        def dialog_down(event):
+            if self._dialog_selected < len(self._dialog_choices) - 1:
+                self._dialog_selected += 1
+                event.app.invalidate()
+
+        @kb.add("enter", filter=dialog_filter, eager=True)
+        def dialog_accept(event):
+            self._prompt_result = self._dialog_choices[self._dialog_selected]
+            self._dismiss_dialog()
+
+        # -- Table navigation keybindings --
         @kb.add("f5")
         def toggle_table_focus(event):
             """F5: toggle table row navigation."""
@@ -361,15 +520,19 @@ class MytTUI:
                                          len(self._data_row_indices) - 1)
             event.app.invalidate()
 
-        @kb.add("up", filter=Condition(lambda: self._table_focused))
-        @kb.add("k", filter=Condition(lambda: self._table_focused))
+        @kb.add("up", filter=Condition(lambda: self._table_focused
+                                       and not self._dialog_visible))
+        @kb.add("k", filter=Condition(lambda: self._table_focused
+                                      and not self._dialog_visible))
         def nav_up(event):
             if self._selected_row > 0:
                 self._selected_row -= 1
                 event.app.invalidate()
 
-        @kb.add("down", filter=Condition(lambda: self._table_focused))
-        @kb.add("j", filter=Condition(lambda: self._table_focused))
+        @kb.add("down", filter=Condition(lambda: self._table_focused
+                                         and not self._dialog_visible))
+        @kb.add("j", filter=Condition(lambda: self._table_focused
+                                      and not self._dialog_visible))
         def nav_down(event):
             if (self._data_row_indices and
                     self._selected_row < len(self._data_row_indices) - 1):
@@ -396,6 +559,10 @@ class MytTUI:
             "toolbar.key": "bg:#555555 #ffffff bold",
             "separator": "#666666",
             "prompt": "bold #00aa00",
+            "dialog.border": "bg:#1a1a2e #666666",
+            "dialog.text": "bg:#1a1a2e #ffffff",
+            "dialog.selected": "bg:#1a1a2e bold #00aa00",
+            "dialog.hint": "bg:#1a1a2e #888888 italic",
         })
 
     def run(self):
@@ -407,6 +574,9 @@ class MytTUI:
 
         from src.mytcli.myt import myt as myt_group
         self._dispatcher = TUIDispatcher(myt_group)
+
+        # Register the prompt callback so operations can show dialogs
+        constants.TUI_PROMPT_CALLBACK = self._tui_prompt_callback
 
         layout = self._build_layout()
         kb = self._build_keybindings()
@@ -422,7 +592,10 @@ class MytTUI:
         )
 
         self._refresh_view()
-        self._app.run()
+        try:
+            self._app.run()
+        finally:
+            constants.TUI_PROMPT_CALLBACK = None
 
     def _auto_refresh_once(self, app):
         """Set up auto-refresh after first render (called once)."""
