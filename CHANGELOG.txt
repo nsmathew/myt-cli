@@ -1,5 +1,12 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.5.3 - Released on 31-Mar-2026
+
+-- Features --
+* TUI: Interactive dialog overlays for commands that require user input (recurring task scope, confirmations, URL selection)
+* TUI: Mutation commands now dispatch in a background thread, keeping the UI responsive during interactive prompts
+
+----------------------------------------------------------------
 v0.5.2 - Released on 29-Mar-2026
 
 -- Fixes --
