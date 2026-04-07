@@ -1,5 +1,12 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.5.4 - Released on 07-Apr-2026
+
+-- Fixes --
+* TUI: Fix table navigation skipping rows on wider terminals due to hardcoded ID column width detection
+* TUI: Disable keyboard navigation (F5) and compact mode (F7) for non-table views (--full, --history, --tags, --groups, --dates, --notes, --7day)
+
+----------------------------------------------------------------
 v0.5.3 - Released on 31-Mar-2026
 
 -- Features --
