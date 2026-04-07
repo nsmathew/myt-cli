@@ -175,10 +175,25 @@ class MytTUI:
             return ANSI("\n".join(lines))
         return ANSI(self._display_text)
 
+    _NON_TABLE_FLAGS = frozenset({
+        "--full", "--history", "--tags", "--groups",
+        "--dates", "--notes", "--7day",
+    })
+
+    @property
+    def _is_table_view(self):
+        """True when the current view is the default table view."""
+        return not any(f in self._NON_TABLE_FLAGS for f in self._filter_args)
+
     def _update_display(self, text):
         self._display_text = text
         self._last_refresh = datetime.now().strftime("%H:%M:%S")
         self._parse_data_rows()
+        # Disable table nav and compact mode for non-table views
+        if not self._is_table_view:
+            self._table_focused = False
+            if constants.COMPACT_VIEW:
+                constants.COMPACT_VIEW = False
         # Clamp selected row to valid range
         if self._data_row_indices:
             self._selected_row = min(self._selected_row,
@@ -511,7 +526,7 @@ class MytTUI:
             self._dismiss_dialog()
 
         # -- Table navigation keybindings --
-        @kb.add("f5")
+        @kb.add("f5", filter=Condition(lambda: self._is_table_view))
         def toggle_table_focus(event):
             """F5: toggle table row navigation."""
             self._table_focused = not self._table_focused
@@ -544,7 +559,8 @@ class MytTUI:
             """F6: open current display in pager for scrolling."""
             await self._open_pager()
 
-        @kb.add("f7", filter=Condition(lambda: bool(self._display_text)))
+        @kb.add("f7", filter=Condition(lambda: bool(self._display_text)
+                                       and self._is_table_view))
         def toggle_concise_view(event):
             """F7: toggle compact view (hide end/duration/hide/version/age/date/score)."""
             constants.COMPACT_VIEW = not constants.COMPACT_VIEW
