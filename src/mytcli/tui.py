@@ -136,6 +136,7 @@ class MytTUI:
         header_found = False
         past_header_sep = False
         in_data = False
+        id_col_end = 6  # fallback
         for i, line in enumerate(lines):
             plain = ansi_re.sub("", line).strip()
             if not plain:
@@ -143,6 +144,14 @@ class MytTUI:
             is_separator = all(c in "─ " for c in plain)
             if not header_found and not is_separator:
                 header_found = True
+                # Derive ID column width from the header line.
+                # The header has "id" (or "uuid") followed by spaces then
+                # the next column name like "description".  Everything up
+                # to that second column belongs to the ID column area.
+                plain_raw = ansi_re.sub("", line)
+                desc_pos = plain_raw.lower().find("desc")
+                if desc_pos > 0:
+                    id_col_end = desc_pos
                 continue
             if header_found and not past_header_sep and is_separator:
                 past_header_sep = True
@@ -155,7 +164,7 @@ class MytTUI:
                 # Only count lines that start a new task row (ID column has a digit).
                 # Wrapped continuation lines have blank space in the ID column area.
                 plain_raw = ansi_re.sub("", line)
-                if any(c.isdigit() for c in plain_raw[:6]):
+                if any(c.isdigit() for c in plain_raw[:id_col_end]):
                     indices.append(i)
         self._data_row_indices = indices
 
