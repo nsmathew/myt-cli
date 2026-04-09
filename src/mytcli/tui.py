@@ -326,7 +326,18 @@ class MytTUI:
             self._update_display(output)
             self._status_message = ""
         elif is_mutation:
-            self._status_message = output.strip().replace("\n", " ") if output.strip() else ""
+            # Strip ANSI escapes — the toolbar renders plain text fragments
+            # and would otherwise show raw color codes for styled messages.
+            # Covers SGR and other CSI sequences (e.g. cursor moves) plus
+            # OSC sequences (e.g. hyperlinks) that Rich may emit with
+            # force_terminal=True.
+            stripped = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
+            stripped = re.sub(
+                r"\x1b\].*?(?:\x07|\x1b\\)", "", stripped, flags=re.DOTALL)
+            # Collapse any whitespace runs — Rich wraps long messages to
+            # the console width so newlines and padding are common.
+            stripped = " ".join(stripped.split())
+            self._status_message = stripped
             self._completer.invalidate_cache()
             self._refresh_view()
         else:

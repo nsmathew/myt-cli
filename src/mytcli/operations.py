@@ -34,7 +34,7 @@ from src.mytcli.utils import (open_url, confirm_prompt, get_event_id,
                            generate_tags, derive_task_id, get_task_new_version,
                            reflect_object_n_print, calc_duration,
                            reset_now_flag, calc_next_inst_date,
-                           parse_n_validate_recur)
+                           parse_n_validate_recur, is_date_short_format)
 
 
 def create_recur_inst():
@@ -1110,11 +1110,53 @@ def prep_modify(potential_filters, ws_task_src, tag):
                     from the base task. (This is done so that they can then
                     be reverted individually if required)
                     3. Re-create the base task from the due date provided. If
-                    no due date is provided then the original due date is used
+                    no due date is provided then the original base task's
+                    due date is used, keeping the recreation independent of
+                    which derived instance the user happened to filter on.
                     """
                     LOGGER.debug("Change requested in due:{} or hide:{} or "
                                  "recur:{}".format(due_chg, hide_chg,
                                                    rec_chg))
+                    # Validate: clearing due ('clr') on 'all' recurring
+                    # instances leaves the base task without a due date,
+                    # which prep_recurring_tasks cannot use to generate
+                    # instances. Keep the message short so it fits in
+                    # the TUI's single-line status toolbar.
+                    if due_chg and ws_task_src.due == CLR_STR:
+                        CONSOLE.print(
+                            "Cannot clear due for 'all' recurring - "
+                            "pick a new date or delete instead.",
+                            style="default")
+                        return SUCCESS, None
+                    # Validate: for recurring tasks, modifying hide for 'all'
+                    # only makes sense as a due-relative offset (-N) or clr,
+                    # because each instance has its own due date and so the
+                    # hide is semantically an offset, not an absolute date.
+                    # Kept short for the TUI toolbar.
+                    if hide_chg and ws_task_src.hide != CLR_STR:
+                        if not (is_date_short_format(ws_task_src.hide)
+                                and ws_task_src.hide.startswith("-")):
+                            CONSOLE.print(
+                                "Hide for 'all' recurring needs a "
+                                "due-relative offset (e.g. -3) or 'clr'.",
+                                style="default")
+                            return SUCCESS, None
+                    # Fetch the base task BEFORE deleting so we can seed the
+                    # recreation from the base's stored due/hide rather than
+                    # from whatever derived instance the user filtered by.
+                    base_filter = {"baseuuidonly": base_uuid}
+                    base_uv = get_task_uuid_n_ver(base_filter)
+                    base_tasks = get_tasks(base_uv) if base_uv else []
+                    if not base_tasks:
+                        LOGGER.error("Could not retrieve base task for "
+                                     "recurring recreation")
+                        return FAILURE, None
+                    ws_task_seed = base_tasks[0]
+                    make_transient(ws_task_seed)
+                    ws_task_seed.uuid = base_uuid
+                    # Base task has id '*'; restore the filtered task's id so
+                    # the recreated first instance can reuse it naturally.
+                    ws_task_seed.id = ws_task.id
                     potential_filters = {}
                     potential_filters["id"] = str(ws_task.id)
                     # Delete base and derived tasks and unlink done tasks
@@ -1129,11 +1171,11 @@ def prep_modify(potential_filters, ws_task_src, tag):
                         return FAILURE, None
                     # Next call modify to merge user changes and
                     # recreate the recurring task
-                    LOGGER.debug("Sending this task for RECREATION to "
+                    LOGGER.debug("Sending base task for RECREATION to "
                                  "modify_task - UUID: {}"
-                                 .format(ws_task.uuid))
+                                 .format(ws_task_seed.uuid))
                     ret, r_tsk_tg_prnt3 = modify_task(ws_task_src,
-                                                      ws_task,
+                                                      ws_task_seed,
                                                       tag,
                                                       multi_change,
                                                       rec_chg,
@@ -1237,6 +1279,41 @@ def prep_modify(potential_filters, ws_task_src, tag):
                     CONSOLE.print("Cannot change the reccurence for 'this' "
                                   "task only")
                     return SUCCESS, None
+                # When due is being changed on a single recurring instance
+                # and the instance has a hide date that the user did not
+                # touch, offer to shift the hide by the same delta. Default
+                # is 'no' to keep the absolute-hide semantics consistent
+                # with non-recurring tasks; the prompt just spares users
+                # from having to recompute the new hide themselves.
+                if (due_chg and not hide_chg
+                        and ws_task_src.due != CLR_STR
+                        and ws_task.hide is not None
+                        and ws_task.due is not None):
+                    shift_msg = ("Shift hide date by the same delta as the "
+                                 "due change for this instance?")
+                    if constants.TUI_MODE:
+                        if constants.TUI_PROMPT_CALLBACK:
+                            shift_res = constants.TUI_PROMPT_CALLBACK(
+                                shift_msg, ["yes", "no"], "no"
+                            )
+                        else:
+                            shift_res = "no"
+                    else:
+                        shift_res = Prompt.ask(shift_msg,
+                                               choices=["yes", "no"],
+                                               default="no")
+                    if shift_res == "yes":
+                        old_due_d = datetime.strptime(ws_task.due,
+                                                      FMT_DATEONLY).date()
+                        new_due_d = datetime.strptime(ws_task_src.due,
+                                                      FMT_DATEONLY).date()
+                        delta_days = (new_due_d - old_due_d).days
+                        old_hide_d = datetime.strptime(ws_task.hide,
+                                                       FMT_DATEONLY).date()
+                        new_hide_d = (old_hide_d
+                                      + relativedelta(days=delta_days))
+                        ws_task_src.hide = new_hide_d.strftime(FMT_DATEONLY)
+                        hide_chg = True
                 multi_change = False
                 LOGGER.debug("Sending 'this' DERIVED task for "
                              "modification to modify_task - UUID: {}"
@@ -1307,6 +1384,23 @@ def modify_task(ws_task_src, ws_task, tag, multi_change, rec_chg, due_chg,
     if ws_task_src.due == CLR_STR:
         ws_task.due = None
     elif ws_task_src.due is not None:
+        # When recreating a recurring series with a due change but no
+        # explicit hide change, preserve the original hide/due offset.
+        # The base task stores hide as an absolute date, so naively
+        # swapping due alone would leave prep_recurring_tasks computing
+        # a meaningless (old_hide − new_due) offset for the rebuilt
+        # series. Shift hide here so the offset stays intact.
+        if (multi_change and due_chg and not hide_chg
+                and ws_task.hide is not None
+                and ws_task.due is not None):
+            old_offset = (datetime.strptime(ws_task.hide, FMT_DATEONLY)
+                          - datetime.strptime(ws_task.due,
+                                              FMT_DATEONLY)).days
+            new_due_date = datetime.strptime(ws_task_src.due,
+                                             FMT_DATEONLY).date()
+            ws_task.hide = ((new_due_date
+                             + relativedelta(days=old_offset))
+                            .strftime(FMT_DATEONLY))
         ws_task.due = ws_task_src.due
 
     if ws_task_src.hide == CLR_STR:
