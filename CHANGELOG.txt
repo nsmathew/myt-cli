@@ -1,5 +1,19 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.6.0 - Released on 09-Apr-2026
+
+-- Fixes --
+* Recurring tasks: fix hide date offset corruption on modify-all — series now recreates from the base task instead of the filtered derived instance, so the result is independent of which instance was picked
+* Recurring tasks: preserve hide/due offset when only due is changed on modify-all (base task seed is shifted proportionally)
+* Recurring tasks: reject absolute and today-relative (+N) hide dates on modify-all with a clear message — a due-relative offset (e.g. -3) or 'clr' is required since each instance has its own due date
+* Recurring tasks: reject clearing due (clr) on modify-all to prevent crash in instance generation
+* Recurring tasks: prompt to optionally shift hide by the same delta when changing due on a single instance (modify-this), defaulting to no
+
+-- Other --
+* TUI: Disable mouse support to restore native terminal text selection (click-drag to copy) across table and non-table views
+* Added 19 regression and fix tests covering recurring task hide date scenarios
+
+----------------------------------------------------------------
 v0.5.4 - Released on 07-Apr-2026
 
 -- Fixes --
