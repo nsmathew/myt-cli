@@ -623,7 +623,7 @@ class MytTUI:
             key_bindings=kb,
             style=style,
             full_screen=True,
-            mouse_support=True,
+            mouse_support=False,
             after_render=self._auto_refresh_once,
         )
 
