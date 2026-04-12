@@ -150,6 +150,7 @@ def add(desc, priority, due, hide, group, context, tag, recur, end, notes,
     subcommand), common flags can be replaced with single-character prefixes.
     A quoted string without a prefix becomes the description.
 
+    \b
     +value       ->  -gr  (group)
     @value       ->  -cx  (context)
     #value       ->  -tg  (tag)
@@ -500,9 +501,20 @@ def modify(filters, desc, priority, due, hide, group, context, tag, recur, end,
 
     --- TUI SHORTHAND ---
 
-    When using the interactive TUI mode, common flags can be replaced with
-    single-character prefixes. Refer to the help for the 'add' command for
-    the full shorthand reference.
+    When using the interactive TUI mode (launched by running 'myt' with no
+    subcommand), common flags can be replaced with single-character prefixes.
+
+    \b
+    +value       ->  -gr  (group)
+    @value       ->  -cx  (context)
+    #value       ->  -tg  (tag)
+    ^value       ->  -du  (due date)
+    !value       ->  -pr  (priority)
+    ~value       ->  -hi  (hide until)
+    *value       ->  -re  (recurrence)
+    *value|end   ->  -re and -en  (recurrence with end date)
+    *|end        ->  -en  (amend end date only)
+    &"text"      ->  -no  (notes)
 
     Ex: modify id:5 !H ~-3 @phone
 
