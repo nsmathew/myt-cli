@@ -7,7 +7,7 @@ from dateutil.parser import parse
 import src.mytcli.constants as constants
 from src.mytcli.constants import (LOGGER, CONSOLE, SUCCESS, FAILURE,
                                TASK_COMPLETE, TASK_BIN, TASK_ALL,
-                               HL_FILTERS_ONLY,
+                               TASK_UNRECOGNIZED, HL_FILTERS_ONLY,
                                WS_AREA_PENDING,
                                TASK_TYPE_NRML, TASK_STATUS_TODO, CLR_STR,
                                OPS_ADD, PRNT_TASK_DTLS, CHANGELOG)
@@ -522,6 +522,10 @@ def modify(filters, desc, priority, due, hide, group, context, tag, recur, end,
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
+    if potential_filters.get(TASK_UNRECOGNIZED) == "yes":
+        CONSOLE.print("No valid filters recognised. Nothing to do...",
+                      style="default")
+        exit_app(SUCCESS)
     LOGGER.debug("Values for update: desc - {} due - {} hide - {} group - {}"
                  " tag - {}"
                  .format(desc, due, hide, group, tag))
@@ -732,6 +736,10 @@ def start(filters, verbose, full_db_path=None):
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
+    if potential_filters.get(TASK_UNRECOGNIZED) == "yes":
+        CONSOLE.print("No valid filters recognised. Nothing to do...",
+                      style="default")
+        exit_app(SUCCESS)
     if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     if (potential_filters.get(TASK_COMPLETE) == "yes" or
@@ -795,6 +803,10 @@ def done(filters, verbose, full_db_path=None):
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
+    if potential_filters.get(TASK_UNRECOGNIZED) == "yes":
+        CONSOLE.print("No valid filters recognised. Nothing to do...",
+                      style="default")
+        exit_app(SUCCESS)
     if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     if (potential_filters.get(TASK_COMPLETE) == "yes" or
@@ -927,6 +939,10 @@ def reset(filters, verbose, full_db_path=None):
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
+    if potential_filters.get(TASK_UNRECOGNIZED) == "yes":
+        CONSOLE.print("No valid filters recognised. Nothing to do...",
+                      style="default")
+        exit_app(SUCCESS)
     if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     if (potential_filters.get(TASK_COMPLETE) == "yes" or
@@ -990,6 +1006,10 @@ def stop(filters, verbose, full_db_path=None):
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
+    if potential_filters.get(TASK_UNRECOGNIZED) == "yes":
+        CONSOLE.print("No valid filters recognised. Nothing to do...",
+                      style="default")
+        exit_app(SUCCESS)
     if connect_to_tasksdb(verbose, full_db_path) == FAILURE:
         exit_app(FAILURE)
     if (potential_filters.get(TASK_COMPLETE) == "yes" or
@@ -1185,6 +1205,10 @@ def delete(filters, verbose, full_db_path=None):
     if verbose:
         set_versbose_logging()
     potential_filters = parse_filters(filters)
+    if potential_filters.get(TASK_UNRECOGNIZED) == "yes":
+        CONSOLE.print("No valid filters recognised. Nothing to do...",
+                      style="default")
+        exit_app(SUCCESS)
     if (potential_filters.get(TASK_BIN) == "yes"):
         CONSOLE.print("Delete cannot be run on deleted tasks.",
                       style="default")

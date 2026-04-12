@@ -51,6 +51,8 @@ TASK_STARTED = "STARTED"
 TASK_NOW = "NOW"
 # For Search, when no filters are provided or only area filters provided
 TASK_ALL = "ALL"
+# Set when filter tokens were provided but none were recognised
+TASK_UNRECOGNIZED = "UNRECOGNIZED"
 # For Search, when no task property filters are provided
 HL_FILTERS_ONLY = "HL_FILTERS_ONLY"
 # To print the number of tasks shown in the filtered view

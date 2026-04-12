@@ -18,7 +18,7 @@ import src.mytcli.constants as constants
 from src.mytcli.constants import (LOGGER, CONSOLE, SUCCESS, FAILURE,
                                TASK_OVERDUE, TASK_TODAY, TASK_HIDDEN,
                                TASK_BIN, TASK_COMPLETE, TASK_STARTED,
-                               TASK_NOW, TASK_ALL, HL_FILTERS_ONLY,
+                               TASK_NOW, TASK_ALL, TASK_UNRECOGNIZED, HL_FILTERS_ONLY,
                                CLR_STR, FUTDT,
                                WS_AREA_PENDING, WS_AREA_COMPLETED, WS_AREA_BIN,
                                TASK_TYPE_BASE, TASK_TYPE_DRVD, TASK_TYPE_NRML,
@@ -316,7 +316,11 @@ def parse_filters(filters):
                                                               .split(":"))
 
     if not potential_filters:
-        potential_filters = {TASK_ALL: "yes"}
+        if filters:
+            # Tokens were provided but none matched any known filter format
+            potential_filters = {TASK_ALL: "yes", TASK_UNRECOGNIZED: "yes"}
+        else:
+            potential_filters = {TASK_ALL: "yes"}
     """
     If only High Level Filters provided then set a key to use to warn users
     as such actions could change properties for a large number of tasks

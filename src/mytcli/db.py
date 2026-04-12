@@ -200,8 +200,8 @@ def connect_to_tasksdb(verbose=False, full_db_path=None):
 def exit_app(stat=0):
     LOGGER.debug("Preparing to exit app...")
     if constants.TUI_MODE:
-        # In TUI mode, return status instead of exiting the process
-        return 1 if stat != 0 else 0
+        # Raise SystemExit so execution stops — the TUIDispatcher catches it
+        sys.exit(stat)
     ret = discard_db_resources()
     if ret != 0 or stat != 0:
         LOGGER.error("Errors encountered either in executing commands"
