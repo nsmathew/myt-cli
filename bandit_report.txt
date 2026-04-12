@@ -1,4 +1,4 @@
-Run started:2026-04-09 15:46:52.122077+00:00
+Run started:2026-04-12 13:56:09.169953+00:00
 
 Test results:
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
@@ -15,15 +15,15 @@ Test results:
    Severity: Low   Confidence: High
    CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
    More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
-   Location: src/mytcli/tui.py:250:24
-249	            await run_in_terminal(
-250	                lambda: subprocess.call([pager, "-RS", "+g", tmp_path])
-251	            )
+   Location: src/mytcli/tui.py:253:24
+252	            await run_in_terminal(
+253	                lambda: subprocess.call([pager, "-RS", "+g", tmp_path])
+254	            )
 
 --------------------------------------------------
 
 Code scanned:
-	Total lines of code: 7569
+	Total lines of code: 7716
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
 
@@ -41,4 +41,4 @@ Run metrics:
 Files skipped (0):
 
 myt-cli app version for bandit run is:
-version = "0.6.0"
+version = "0.7.0"

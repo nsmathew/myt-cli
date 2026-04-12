@@ -1,5 +1,26 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.7.0 - Released on 12-Apr-2026
+
+-- Features --
+* TUI: New shorthand tokens for recurrence and notes in add/modify commands
+  - *value expands to -re (recurrence), e.g. *M for monthly
+  - *value|end expands to -re and -en (recurrence with end date), e.g. *M|+365
+  - *|end expands to -en only (amend end date on existing recurring task)
+  - &"text" expands to -no (notes)
+* TUI: F8 toggles a popup showing the full last status message, useful when the toolbar is too narrow to display it in full. Dismiss with F8 or Esc
+* TUI: --help now appears in autocomplete suggestions for all commands
+
+-- Fixes --
+* TUI: Unrecognised filter tokens (e.g. 'modify xyz') were silently dropped and treated as 'no filter', causing a prompt to modify all tasks. They now produce a clear 'No valid filters recognised' message and abort
+* TUI: exit_app was returning instead of raising SystemExit in TUI mode, so confirmation prompts the user declined were ignored and execution continued. Commands now stop correctly when the user declines a prompt
+* Help text: shorthand reference table in 'add --help' was displaying as a single wrapped line due to Click paragraph collapsing. Fixed with \b marker
+
+-- Other --
+* README updated to cover TUI mode, shorthand syntax, keyboard shortcuts (F5/F6/F7/F8) and updated screenshots
+* Help text for add and modify updated with full shorthand reference, context filter examples, and corrected typos
+
+----------------------------------------------------------------
 v0.6.0 - Released on 09-Apr-2026
 
 -- Fixes --
