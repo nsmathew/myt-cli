@@ -137,12 +137,27 @@ def add(desc, priority, due, hide, group, context, tag, recur, end, notes,
     Use the 'myt view' command to view tasks.
 
     Ex: myt add -de "Complete the timesheet" -du 2020-11-29 -hi -2
-    -gr WORK.PROJA -tg timesheets
+    -gr WORK.PROJA -tg timesheets -cx work
 
     Adds a task to 'Complete the timesheets' due on 29th Nov 2020 under the
-    group 'WORK' and sub group 'PROJA' with a tag 'timesheets'. This task will
-    be hidden until 2 days before the due date in the 'myt view' command.
-    Use 'myt view HIDDEN' to view such hidden tasks.
+    group 'WORK' and sub group 'PROJA' with a tag 'timesheets' and a context
+    of '@work'. This task will be hidden until 2 days before the due date in
+    the 'myt view' command. Use 'myt view HIDDEN' to view such hidden tasks.
+
+    --- TUI SHORTHAND ---
+
+    When using the interactive TUI mode (launched by running 'myt' with no
+    subcommand), common flags can be replaced with single-character prefixes.
+    A quoted string without a prefix becomes the description.
+
+    +value  ->  -gr  (group)
+    @value  ->  -cx  (context)
+    #value  ->  -tg  (tag)
+    ^value  ->  -du  (due date)
+    !value  ->  -pr  (priority)
+    ~value  ->  -hi  (hide until)
+
+    Ex: add "Pay the bills" ^+2 +HOME #bills,expenses @errands
 
     --- DATE FORMAT ---
 
@@ -393,6 +408,9 @@ def modify(filters, desc, priority, due, hide, group, context, tag, recur, end,
     tags - Filter tasks on tags, can be provided as comman separated. Can be
     combined with other filters. Ex - tg:bills,finance or tag:bills,finance
 
+    context - Filter tasks on context. Can be combined with other filters.
+    Ex - cx:phone or context:home
+
     priority - Filter tasks on the priority. Can be combined with other
     filters. Ex - pr:M or priority:Medium
 
@@ -473,6 +491,16 @@ def modify(filters, desc, priority, due, hide, group, context, tag, recur, end,
 
     myt modify hidden gr:HOME -hi clr - For all hidden tasks which have group
     as 'HOME' clear the hide date.
+
+    myt modify id:5 -cx phone - Set the context for task 5 to 'phone'
+
+    --- TUI SHORTHAND ---
+
+    When using the interactive TUI mode, common flags can be replaced with
+    single-character prefixes. Refer to the help for the 'add' command for
+    the full shorthand reference.
+
+    Ex: modify id:5 !H ~-3 @phone
 
     """
     if verbose:
@@ -732,7 +760,7 @@ def done(filters, verbose, full_db_path=None):
     can be viewed when using the 'complete' filter. Refer the help for the
     'view' command for more details.
 
-    If the task was in 'STARTED' state the duractionm tracking is stopped
+    If the task was in 'STARTED' state the duration tracking is stopped
     and overall task duration is recorded. Tasks can be moved back to the
     'TO_DO' status by using the 'revert' command.
 
@@ -1061,6 +1089,10 @@ def view(filters, verbose, pager, top, viewmode, full_db_path=None):
     myt view hidden gr:FINANCES - The default view command but on hidden tasks
     in 'pending' area and filtered by group as FINANCES
 
+    myt view cx:phone - View all pending tasks with a context of 'phone'
+
+    myt view --7day - View tasks due in the next 7 days in a calendar layout
+
     myt view --top 10 - If you have a lot of tasks captured and would like to
     see the top 10 tasks only.
     """
@@ -1109,7 +1141,7 @@ def delete(filters, verbose, full_db_path=None):
     """
     Delete a task
 
-    You cna use this option to delete a task that is no longer required.
+    You can use this option to delete a task that is no longer required.
     Upon deletion the task moves into the 'bin' area and cannot be
     operated upon anymore.
 
