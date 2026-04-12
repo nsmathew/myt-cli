@@ -150,14 +150,18 @@ def add(desc, priority, due, hide, group, context, tag, recur, end, notes,
     subcommand), common flags can be replaced with single-character prefixes.
     A quoted string without a prefix becomes the description.
 
-    +value  ->  -gr  (group)
-    @value  ->  -cx  (context)
-    #value  ->  -tg  (tag)
-    ^value  ->  -du  (due date)
-    !value  ->  -pr  (priority)
-    ~value  ->  -hi  (hide until)
+    +value       ->  -gr  (group)
+    @value       ->  -cx  (context)
+    #value       ->  -tg  (tag)
+    ^value       ->  -du  (due date)
+    !value       ->  -pr  (priority)
+    ~value       ->  -hi  (hide until)
+    *value       ->  -re  (recurrence)
+    *value|end   ->  -re and -en  (recurrence with end date)
+    &"text"      ->  -no  (notes)
 
     Ex: add "Pay the bills" ^+2 +HOME #bills,expenses @errands
+    Ex: add "Pay the rent" ^+0 +HOME *M|+365 &"check statement"
 
     --- DATE FORMAT ---
 

@@ -4,13 +4,16 @@ Expands shorthand tokens into Click-compatible flag+value pairs.
 Only used in TUI mode — the CLI remains unchanged.
 
 Shorthand map:
-    +value   ->  -gr value    (group)
-    @value   ->  -cx value    (context)
-    #value   ->  -tg value    (tag)
-    ^value   ->  -du value    (due date)
-    !value   ->  -pr value    (priority: H, M, L, N)
-    ~value   ->  -hi value    (hide until)
-    "text"   ->  -de "text"   (description, for add/modify)
+    +value       ->  -gr value           (group)
+    @value       ->  -cx value           (context)
+    #value       ->  -tg value           (tag)
+    ^value       ->  -du value           (due date)
+    !value       ->  -pr value           (priority: H, M, L, N)
+    ~value       ->  -hi value           (hide until)
+    *value       ->  -re value           (recurrence)
+    *value|end   ->  -re value -en end   (recurrence with end date)
+    &"text"      ->  -no "text"          (notes)
+    "text"       ->  -de "text"          (description, for add/modify)
 
 Filters (key:value) are passed through unchanged.
 Standard flags (-de, --group, etc.) are also passed through unchanged.
@@ -28,6 +31,7 @@ SHORTHAND_MAP = {
     "^": "-du",
     "!": "-pr",
     "~": "-hi",
+    "&": "-no",
 }
 
 # Flags that consume the next token as their value (not shorthand-expanded)
@@ -89,6 +93,20 @@ def expand_shorthand(input_text):
         # Filter tokens (key:value) pass through unchanged
         if ":" in token and not token.startswith(":"):
             expanded.append(token)
+            i += 1
+            continue
+
+        # Recurrence shorthand: *value, *value|end, or *|end (end date only)
+        if token.startswith("*") and len(token) > 1:
+            parts = token[1:].split("|", 1)
+            recur_part = parts[0]
+            end_part = parts[1] if len(parts) > 1 else ""
+            if recur_part:
+                expanded.append("-re")
+                expanded.append(recur_part)
+            if end_part:
+                expanded.append("-en")
+                expanded.append(end_part)
             i += 1
             continue
 

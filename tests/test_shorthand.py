@@ -92,3 +92,39 @@ class TestExpandShorthand:
     def test_date_word_due(self):
         result = expand_shorthand('add "Task" ^today')
         assert "-du today" in result
+
+    def test_recur_shorthand_basic(self):
+        result = expand_shorthand('add "Pay rent" ^+0 *M')
+        assert "-re M" in result
+        assert "-en" not in result
+
+    def test_recur_shorthand_with_end(self):
+        result = expand_shorthand('add "Standup" ^+0 *WD1,2,5|+30')
+        assert "-re WD1,2,5" in result
+        assert "-en +30" in result
+
+    def test_recur_shorthand_extended(self):
+        result = expand_shorthand('add "Task" ^+0 *MD15|+365')
+        assert "-re MD15" in result
+        assert "-en +365" in result
+
+    def test_notes_shorthand(self):
+        result = expand_shorthand('add "Task" &"remember the expensive brand"')
+        assert "-no" in result
+        assert "remember the expensive brand" in result
+
+    def test_notes_shorthand_single_word(self):
+        result = expand_shorthand('add "Task" &urgent')
+        assert "-no urgent" in result
+
+    def test_recur_shorthand_end_only(self):
+        result = expand_shorthand("modify id:3 *|+120")
+        assert "-en +120" in result
+        assert "-re" not in result
+
+    def test_recur_and_notes_combined(self):
+        result = expand_shorthand('add "Pay rent" ^+0 +HOME *M|+365 &"check statement"')
+        assert "-re M" in result
+        assert "-en +365" in result
+        assert "-no" in result
+        assert "check statement" in result

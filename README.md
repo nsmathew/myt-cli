@@ -49,6 +49,9 @@ In TUI mode, common flags can be replaced with single-character prefixes for fas
 | `^value` | `-du` | Due date |
 | `!value` | `-pr` | Priority |
 | `~value` | `-hi` | Hide until |
+| `*value` | `-re` | Recurrence |
+| `*value\|end` | `-re` and `-en` | Recurrence with end date |
+| `&"text"` | `-no` | Notes |
 | `"text"` | `-de` | Description |
 
 **Keyboard shortcuts**
@@ -79,12 +82,15 @@ The TUI auto-refreshes every 60 seconds, re-running the last command. Interactiv
 **TUI mode with shorthand**
 
 1. Add a task using shorthand
-   `add "Buy gifts" ^2026-06-25 +PERS.SHOPPING #birthday #occasions @home`
+   `add "Buy gifts" ^2026-06-25 +PERS.SHOPPING #birthday #occasions @home &"pick up from the mall"`
    &nbsp;
 2. View tasks filtered by context
    `view cx:phone`
    &nbsp;
-3. Modify a task using shorthand
+3. Add a recurring task using shorthand
+   `add "Pay the rent" ^2026-06-25 +PERS.FINANCES #bills *M|+365`
+   &nbsp;
+4. Modify a task using shorthand
    `modify id:3 !H ~-3`
    Sets task 3 to High priority and hides it until 3 days before its due date
 

@@ -226,6 +226,14 @@ class MytCompleter(Completer):
                         yield Completion("~" + v,
                                          start_position=-len(current))
                 return
+            elif prefix_char == "*":
+                # *recurrence hints
+                recur_hints = ["D", "W", "M", "Y", "DE", "WE", "ME", "WD", "MD"]
+                for v in recur_hints:
+                    if not val_part or v.startswith(val_part.upper()):
+                        yield Completion("*" + v,
+                                         start_position=-len(current))
+                return
 
         # Level 5: filter value completion (e.g., after typing "gr:")
         if cmd_name in FILTER_COMMANDS and ":" in current:
