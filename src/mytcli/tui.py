@@ -58,6 +58,9 @@ class MytTUI:
         self._prompt_event = threading.Event()
         self._prompt_result = None
         self._dispatching = False
+        # Notification popup state (F8)
+        self._notification_visible = False
+        self._notification_float = None
 
     def _get_task_counts(self):
         """Get pending task counts for the toolbar."""
@@ -113,7 +116,7 @@ class MytTUI:
                 counts = " | Pending: {} | Hidden: {}".format(total, hidden)
         status = ""
         if self._status_message:
-            status = "  |  " + self._status_message
+            status = "  |  " + self._status_message + "  [F8]"
         nav = ""
         if self._table_focused:
             nav = " | [F5] TABLE NAV"
@@ -424,6 +427,59 @@ class MytTUI:
         self._app.invalidate()
         self._prompt_event.set()
 
+    def _get_notification_text(self):
+        """Build formatted text for the F8 notification popup."""
+        if not self._notification_visible:
+            return []
+        msg = self._status_message or "(no message)"
+        max_w = 74
+        fragments = []
+        fragments.append(("class:dialog.border", "┌" + "─" * (max_w + 2) + "┐\n"))
+        # Word-wrap message into lines
+        words = msg.split()
+        lines = []
+        current = ""
+        for word in words:
+            if current and len(current) + 1 + len(word) > max_w:
+                lines.append(current)
+                current = word
+            else:
+                current = (current + " " + word).strip()
+        if current:
+            lines.append(current)
+        for line in lines:
+            fragments.append(("class:dialog.border", "│ "))
+            fragments.append(("class:dialog.text", "{:<{}}".format(line, max_w)))
+            fragments.append(("class:dialog.border", " │\n"))
+        fragments.append(("class:dialog.border", "│" + " " * (max_w + 2) + "│\n"))
+        hint = "Esc / F8: close"
+        fragments.append(("class:dialog.border", "│ "))
+        fragments.append(("class:dialog.hint", "{:<{}}".format(hint, max_w)))
+        fragments.append(("class:dialog.border", " │\n"))
+        fragments.append(("class:dialog.border", "└" + "─" * (max_w + 2) + "┘"))
+        return fragments
+
+    def _show_notification(self):
+        """Show the last status message in a floating popup."""
+        notification_window = Window(
+            content=FormattedTextControl(self._get_notification_text),
+            dont_extend_width=True,
+            dont_extend_height=True,
+        )
+        self._notification_float = Float(content=notification_window)
+        self._notification_visible = True
+        self._float_container.floats.append(self._notification_float)
+        self._app.invalidate()
+
+    def _dismiss_notification(self):
+        """Hide the notification popup."""
+        if (self._notification_float and
+                self._notification_float in self._float_container.floats):
+            self._float_container.floats.remove(self._notification_float)
+        self._notification_visible = False
+        self._notification_float = None
+        self._app.invalidate()
+
     def _build_layout(self):
         toolbar = Window(
             content=FormattedTextControl(self._get_toolbar_text),
@@ -510,7 +566,10 @@ class MytTUI:
 
         @kb.add("escape", eager=True)
         def dismiss_completions(event):
-            """Escape: close autocomplete menu, dismiss dialog, or exit table nav."""
+            """Escape: close autocomplete menu, dismiss dialog/notification, or exit table nav."""
+            if self._notification_visible:
+                self._dismiss_notification()
+                return
             if self._dialog_visible:
                 # Leave _prompt_result as its default (set during callback init)
                 self._dismiss_dialog()
@@ -585,6 +644,14 @@ class MytTUI:
             """F7: toggle compact view (hide end/duration/hide/version/age/date/score)."""
             constants.COMPACT_VIEW = not constants.COMPACT_VIEW
             self._refresh_view()
+
+        @kb.add("f8", filter=Condition(lambda: bool(self._status_message)))
+        def toggle_notification(event):
+            """F8: show/hide last status message in a popup."""
+            if self._notification_visible:
+                self._dismiss_notification()
+            else:
+                self._show_notification()
 
         return kb
 
