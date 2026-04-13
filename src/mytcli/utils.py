@@ -1,3 +1,4 @@
+import math
 import os
 import re
 import uuid
@@ -442,106 +443,83 @@ def generate_tags(tags):
 
 def calc_task_scores(task_list):
     """
-    Assigns a score for tasks based on the below task properties. Each property
-    has a weight assigned to it. The final score for the task is then written
-    back to the Workspace object.
+    Assigns a score to each task based on weighted properties.
+    Final score = sum(components) / 100.
 
-    Initial Scoring:
-        Now - Yes then 100 else 0. Weight of 15
-        Priority - High, Medium, Normal, Low - 100, 95, 85, 70
-        Status - STARTED 100, TO_DO, 75
-        Groups - If any then 50 else 0
-        Tags - If any then 50 else 0
-        Notes - If any then 50 else 0
-        Inception - Older tasks score higher
-        Due - Tasks closer to due date score higher with bias towards tasks
-        in the future compared to overdue tasks
+    Weights (sum to 100):
+        Now       - 15   (now_flag=1: 100, else 0)
+        Priority  - 15   (H=100, M=95, N=85, L=70)
+        Status    - 14   (STARTED=100, TODO=75)
+        Groups    -  1   (any: 10, none: 0)
+        Tags      -  1   (any: 10, none: 0)
+        Notes     -  1   (any: 10, none: 0)
+        Inception -  3   (proportional to age; older scores higher)
+        Due       - 50   (exponential decay; overdue > today > future)
 
-    Weights assigned are as below totalling to 100:
-        Now - 15
-        Priority - 10
-        Status - 14
-        Groups - 1
-        Tags - 1
-        Notes - 1
-        Inception - 8
-        Due - 50
+    Due date scoring uses list-independent exponential decay so the same
+    task always scores the same regardless of what else is in view:
+
+        d = days until due  (negative means overdue)
+        today   (d = 0):  due_raw = 1.0
+        future  (d > 0):  due_raw = exp(-d / DUE_LAMBDA_FUTURE)  → (0, 1)
+        overdue (d < 0):  due_raw = 1 + (1 - exp(d / DUE_MU_PAST)) → (1, 2)
+
+    DUE_LAMBDA_FUTURE = 14 days  (score halves roughly every ~10 days)
+    DUE_MU_PAST       =  7 days  (overdue urgency rises steeply in first week)
 
     Parameters:
-        task_list(list): List of Workspace objects for which the tasks are
-        scored
+        task_list(list): List of Workspace objects to score.
 
     Returns:
-        list: List of Workspace objects recieved as input but with the task
-        score written to the score property
+        dict: {uuid: score} mapping, or None on error.
     """
     from src.mytcli.queries import get_tags
-    sc_now = {1:100}
-    sc_priority = {PRIORITY_HIGH[0]:100, PRIORITY_MEDIUM[0]:95,
-                   PRIORITY_NORMAL[0]:85, PRIORITY_LOW[0]:70}
-    sc_status = {TASK_STATUS_STARTED:100, TASK_STATUS_TODO:75}
-    sc_groups = {"yes":10}
-    sc_tags = {"yes":10}
-    sc_notes = {"yes":10}
-    sc_due = {"today":100, "past":99, "fut":99.5}
-    weights = {"now":15, "due":50, "priority":15, "status":14, "inception":3,
-               "groups":1,"tags":1,"notes":1}
-    due_sum = 0
-    incep_sum = 0
-    for task in task_list:
-        if task.due is not None:
-            #For Due scoring
-            due_sum = (due_sum + abs(task.due_diff_today))
-        #For inception scoring
-        incep_sum = (incep_sum + task.incep_diff_now)
-    if due_sum == 0:
-        due_sum = 1
+
+    DUE_LAMBDA_FUTURE = 14.0   # characteristic days for future decay
+    DUE_MU_PAST = 7.0          # characteristic days for overdue rise
+
+    sc_now = {1: 100}
+    sc_priority = {PRIORITY_HIGH[0]: 100, PRIORITY_MEDIUM[0]: 95,
+                   PRIORITY_NORMAL[0]: 85, PRIORITY_LOW[0]: 70}
+    sc_status = {TASK_STATUS_STARTED: 100, TASK_STATUS_TODO: 75}
+    sc_groups = {"yes": 10}
+    sc_tags = {"yes": 10}
+    sc_notes = {"yes": 10}
+    weights = {"now": 15, "due": 50, "priority": 15, "status": 14,
+               "inception": 3, "groups": 1, "tags": 1, "notes": 1}
+
+    incep_sum = sum(task.incep_diff_now for task in task_list) or 1
+
     ret_score_list = {}
     for task in task_list:
         tags = get_tags(task.uuid, task.version, expunge=False)
         score = {}
         try:
-            #Now
-            score["now"] = ((sc_now.get(task.now_flag) or 0)
-                                * weights.get("now"))
-            #Priority
-            score["pri"] = ((sc_priority.get(task.priority) or 0)
-                                    * weights.get("priority"))
-            #Status
-            score["sts"] = ((sc_status.get(task.status) or 0)
-                                    * weights.get("status"))
-            #Groups
+            score["now"] = (sc_now.get(task.now_flag) or 0) * weights["now"]
+            score["pri"] = (sc_priority.get(task.priority) or 0) * weights["priority"]
+            score["sts"] = (sc_status.get(task.status) or 0) * weights["status"]
             if task.groups:
-                score["grp"] =  (sc_groups.get("yes")) * weights.get("groups")
-            #Tags
+                score["grp"] = sc_groups["yes"] * weights["groups"]
             if tags:
-                score["tag"] =  (sc_tags.get("yes")) * weights.get("tags")
-            #Notes
+                score["tag"] = sc_tags["yes"] * weights["tags"]
             if task.notes:
-                score["notes"] =  (sc_notes.get("yes")) * weights.get("tags")
-            #Inception
-            score["incp"] = ((sc_due.get("today") * int(task.incep_diff_now)
-                                /incep_sum) * weights.get("inception"))
-            #Due
+                score["notes"] = sc_notes["yes"] * weights["notes"]
+            score["incp"] = (100 * task.incep_diff_now / incep_sum) * weights["inception"]
             if task.due is not None:
-                if int(task.due_diff_today) == 0:
-                    score["due"] =  (sc_due.get("today")) * weights.get("due")
-                elif int(task.due_diff_today) < 0:
-                    score["due"] =  ((sc_due.get("past")
-                                        - abs(int(pow(task.due_diff_today, 2))
-                                            /due_sum))
-                                    * weights.get("due"))
+                d = int(task.due_diff_today)
+                if d == 0:
+                    due_raw = 1.0
+                elif d > 0:
+                    due_raw = math.exp(-d / DUE_LAMBDA_FUTURE)
                 else:
-                    score["due"] = ((sc_due.get("fut")
-                                        - (int(pow(task.due_diff_today, 2))
-                                            /due_sum))
-                                    * weights.get("due"))
-        except ZeroDivisionError as e:
+                    due_raw = 1.0 + (1.0 - math.exp(d / DUE_MU_PAST))
+                score["due"] = due_raw * 100 * weights["due"]
+        except ZeroDivisionError:
             CONSOLE.print("Unable to calculate task scores...")
             return None
         LOGGER.debug("Score for task id {} as below".format(task.uuid))
         LOGGER.debug(score)
-        ret_score_list[task.uuid] = round(sum(score.values())/100,2)
+        ret_score_list[task.uuid] = round(sum(score.values()) / 100, 2)
     return ret_score_list
 
 

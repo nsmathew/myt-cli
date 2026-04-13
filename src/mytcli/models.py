@@ -70,7 +70,7 @@ class Workspace(Base):
     def incep_diff_now(self):
         curr_date = datetime.now()
         return round((curr_date -
-                      datetime.strptime(self.inception, FMT_DATETIME)).seconds)
+                      datetime.strptime(self.inception, FMT_DATETIME)).total_seconds())
 
     @incep_diff_now.expression
     def incep_diff_now(cls):
