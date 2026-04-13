@@ -1,4 +1,4 @@
-Run started:2026-04-12 13:56:09.169953+00:00
+Run started:2026-04-13 21:31:39.145010+00:00
 
 Test results:
 >> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
@@ -23,7 +23,7 @@ Test results:
 --------------------------------------------------
 
 Code scanned:
-	Total lines of code: 7716
+	Total lines of code: 7739
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
 
@@ -41,4 +41,4 @@ Run metrics:
 Files skipped (0):
 
 myt-cli app version for bandit run is:
-version = "0.7.0"
+version = "0.7.1"

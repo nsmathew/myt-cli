@@ -1,5 +1,36 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.7.1 - Released on 13-Apr-2026
+
+-- Features --
+* Notes: support markdown link format [Title](https://url) in add/modify
+  commands in addition to the existing https://url [Title] format. Works
+  with urlopen for listing and opening links
+* Notes: &"https://url" shorthand now expands correctly — URLs containing
+  ':' were previously passed through unexpanded due to a filter-check
+  ordering bug in the shorthand preprocessor
+
+-- Fixes --
+* TUI: urlopen no longer hangs — it was dispatched synchronously on the
+  main event loop thread, causing a deadlock when _tui_prompt_callback
+  tried to schedule a dialog on the same blocked thread. It now runs in a
+  background thread via a new PROMPT_COMMANDS set
+* TUI: urlopen dialog now shows the actual URL strings as choices instead
+  of bare index numbers
+* TUI: urlopen result is shown in the status bar instead of the main view,
+  keeping the task list intact and not corrupting the auto-refresh command
+* TUI: browser noise (e.g. "Opening in existing browser session.") no
+  longer appears in the command input area — stdout/stderr are suppressed
+  at the file-descriptor level during webbrowser.open() in TUI mode
+* Scoring: replace quadratic due-date formula (d²/due_sum) with
+  exponential decay. Due score is now list-independent, cannot go negative,
+  and correctly orders overdue > today > future (old base values 99 vs 99.5
+  had this backwards). See commit message for full formula details
+* Scoring: fix incep_diff_now using timedelta.seconds (wraps at 86 400 s)
+  instead of total_seconds() — tasks older than 24 h had random inception
+  scores
+
+----------------------------------------------------------------
 v0.7.0 - Released on 12-Apr-2026
 
 -- Features --
