@@ -125,6 +125,32 @@ def perform_undo():
     return SUCCESS
 
 
+def _extract_url(match_str):
+    """Extract the bare URL from a matched notes fragment.
+
+    Handles both markdown format '[Title](https://url)' and the legacy
+    format 'https://url [Description]' or plain 'https://url'.
+    """
+    md = re.match(r'\[[^\]]*\]\((https?://[^\)]+)\)', match_str)
+    if md:
+        return md.group(1)
+    plain = re.findall(r'https?://\S+', match_str)
+    return plain[0] if plain else None
+
+
+def _extract_desc(match_str):
+    """Extract the display description from a matched notes fragment.
+
+    Returns a string like ' [Title]' for use in prompts, or '' if there
+    is no description.  Handles both markdown and legacy formats.
+    """
+    md = re.match(r'\[([^\]]*)\]\(https?://[^\)]+\)', match_str)
+    if md:
+        return " [" + md.group(1) + "]"
+    old = re.search(r'\[.*?\]', match_str)
+    return " " + old.group(0) if old else ""
+
+
 def process_url(potential_filters, urlno=None):
     """
     Processes the notes for a task to identify the URLs and then list them for
@@ -146,11 +172,9 @@ def process_url(potential_filters, urlno=None):
         (int): 0 is successful else returns 1
     """
     ret = SUCCESS
-    #URL + description, ex: 'https://www.abc.com [ABC's website]'
-    regex_1 = r"(http?://\S+\s+\[.*?\]|http?://\S+\
-                |https?://\S+\s+\[.*?\]|https?://\S+)"
-    #URL only
-    regex_2 = r"(http?://\S+|https?://\S+)"
+    # Matches markdown '[Title](https://url)', legacy 'https://url [Desc]',
+    # or plain 'https://url'. Markdown pattern must come first.
+    regex_1 = r"(\[[^\]]+\]\(https?://[^\)]+\)|https?://\S+\s+\[.*?\]|https?://\S+)"
     uuid_version_results = get_task_uuid_n_ver(potential_filters)
     if not uuid_version_results:
         CONSOLE.print("No applicable tasks with this ID/UUID",
@@ -163,8 +187,6 @@ def process_url(potential_filters, urlno=None):
     if ws_task.notes is None:
         CONSOLE.print("No notes for this task")
         return SUCCESS
-    #Get all URLs along with their descriptions
-    #ex: 'https://www.abc.com [ABC's website]'
     url_list = re.findall(regex_1, ws_task.notes)
     LOGGER.debug("Identified URLs:")
     LOGGER.debug(url_list)
@@ -177,31 +199,21 @@ def process_url(potential_filters, urlno=None):
                 .format(urlno))
             else:
                 LOGGER.debug("urlno is valid, attempting to open")
-                #Attempt to open a URL at position given by user
-                # Extract the URL description if available
-                pattern = r'\[(.*?)\]'
-                match = re.search(pattern, url_list[urlno-1])
-                if match:
-                    url_desc = " " + match.group(0)
-                else:
-                    url_desc = ""
+                matched = url_list[urlno-1]
+                url_ = _extract_url(matched)
+                url_desc = _extract_desc(matched)
                 try:
-                    #Extract just the URL
-                    #ex: 'https://www.abc.com'
-                    url_ = re.findall(regex_2, url_list[urlno-1])
                     if confirm_prompt("Would you like to open "
-                                        + url_[0] + url_desc):
-                        ret = open_url(url_[0])
+                                        + url_ + url_desc):
+                        ret = open_url(url_)
                     return ret
-                except IndexError as e:
-                    #No URL exists in this position, print message and move
-                    #to default behaviour
+                except (IndexError, TypeError):
                     CONSOLE.print("No URL found at the position provided {}. "
                                 "Attempting to identify URLs..."
                                 .format(urlno))
 
         LOGGER.debug("URLs found")
-        #More than 1 URLavailable so ask user to choose
+        #More than 1 URL available so ask user to choose
         cnt = 1
         for cnt, u in enumerate(url_list, start=1):
             LOGGER.debug("Printing URL - {}".format(u))
@@ -212,9 +224,11 @@ def process_url(potential_filters, urlno=None):
         choice_rng = [str(x) for x in list(range(1,cnt+1))]
         if constants.TUI_MODE:
             if constants.TUI_PROMPT_CALLBACK:
+                # Pass the URL strings as choices so the dialog shows them.
+                # The returned value is the chosen URL string (or "none").
                 res = constants.TUI_PROMPT_CALLBACK(
                     "Choose the URL to open:",
-                    [*choice_rng, "none"], "none"
+                    [*url_list, "none"], "none"
                 )
             else:
                 CONSOLE.print("Multiple URLs found. Re-run with -ur <number> to open one.")
@@ -222,8 +236,7 @@ def process_url(potential_filters, urlno=None):
             if res == "none":
                 ret = SUCCESS
             else:
-                url_ = re.findall(regex_2, url_list[int(res)-1])
-                ret = open_url(url_[0])
+                ret = open_url(_extract_url(res))
         else:
             res = Prompt.ask("Choose the URL to be openned:",
                                 choices=[*choice_rng,"none"],
@@ -231,8 +244,7 @@ def process_url(potential_filters, urlno=None):
             if res == "none":
                 ret = SUCCESS
             else:
-                url_ = re.findall(regex_2, url_list[int(res)-1])
-                ret = open_url(url_[0])
+                ret = open_url(_extract_url(url_list[int(res)-1]))
         return ret
     else:
         CONSOLE.print("No URLS found in notes for this task")

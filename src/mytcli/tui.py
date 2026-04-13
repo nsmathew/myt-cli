@@ -28,7 +28,7 @@ import src.mytcli.constants as constants
 from src.mytcli.constants import (LOGGER, HISTORY_FILE, REFRESH_INTERVAL,
                                   SUCCESS)
 from src.mytcli.db import connect_to_tasksdb
-from src.mytcli.dispatcher import TUIDispatcher, MUTATION_COMMANDS
+from src.mytcli.dispatcher import TUIDispatcher, MUTATION_COMMANDS, PROMPT_COMMANDS
 from src.mytcli.completer import MytCompleter
 
 
@@ -284,7 +284,7 @@ class MytTUI:
         cmd_name = text.split()[0] if text.split() else ""
 
         # Check if this command might need interactive prompts
-        if cmd_name in MUTATION_COMMANDS:
+        if cmd_name in MUTATION_COMMANDS or cmd_name in PROMPT_COMMANDS:
             self._dispatch_in_thread(text, cmd_name)
         else:
             self._dispatch_sync(text, cmd_name)
@@ -343,6 +343,20 @@ class MytTUI:
             self._status_message = stripped
             self._completer.invalidate_cache()
             self._refresh_view()
+        elif cmd_name in PROMPT_COMMANDS:
+            # Show the outcome in the status bar; leave the main view intact.
+            # Prefer the "Opening URL:" line — fall back to the full output.
+            stripped = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
+            stripped = re.sub(
+                r"\x1b\].*?(?:\x07|\x1b\\)", "", stripped, flags=re.DOTALL)
+            lines = [l.strip() for l in stripped.splitlines() if l.strip()]
+            status = next(
+                (l for l in lines if l.startswith("Opening URL")
+                 or "No" in l or "Error" in l),
+                " ".join(stripped.split()),
+            )
+            self._status_message = status
+            self._app.invalidate()
         else:
             self._last_command = text
             self._update_display(output)

@@ -112,7 +112,7 @@ def version():
               "-no",
               type=str,
               help="Add some notes. You can also add URLs with a description "
-              "for them using the format 'https://abc.com [ABC's website]'.",
+              "using markdown format '[ABC\\'s website](https://abc.com)'.",
               )
 @click.option("--verbose",
               "-v",
@@ -368,7 +368,7 @@ def add(desc, priority, due, hide, group, context, tag, recur, end, notes,
               "-no",
               type=str,
               help="Add some notes. You can also add URLs with a description "
-              "for them using the format 'https://abc.com [ABC's website]'. "
+              "using markdown format '[ABC\\'s website](https://abc.com)'. "
               "Use 'clr' to clear notes.",
               )
 @click.option("--verbose",

@@ -19,6 +19,10 @@ MUTATION_COMMANDS = {
     "revert", "reset", "now", "undo",
 }
 
+# Commands that show interactive prompts and must run in a background thread
+# so they don't deadlock the TUI event loop via _tui_prompt_callback.
+PROMPT_COMMANDS = {"urlopen"}
+
 
 class TUIDispatcher:
     """Dispatches raw input to the myt Click commands, capturing output."""

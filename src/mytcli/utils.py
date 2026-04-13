@@ -1,3 +1,4 @@
+import os
 import re
 import uuid
 import webbrowser
@@ -51,7 +52,25 @@ def open_url(url_):
     """
     CONSOLE.print("Opening URL: {}".format(url_))
     try:
-        webbrowser.open(url_, new=0, autoraise=True)
+        if constants.TUI_MODE:
+            # Suppress fd-level stdout/stderr so browser noise (e.g.
+            # "Opening in existing browser session.") doesn't corrupt
+            # the prompt_toolkit display.
+            devnull_fd = os.open(os.devnull, os.O_WRONLY)
+            saved_out = os.dup(1)
+            saved_err = os.dup(2)
+            os.dup2(devnull_fd, 1)
+            os.dup2(devnull_fd, 2)
+            try:
+                webbrowser.open(url_, new=0, autoraise=True)
+            finally:
+                os.dup2(saved_out, 1)
+                os.dup2(saved_err, 2)
+                os.close(saved_out)
+                os.close(saved_err)
+                os.close(devnull_fd)
+        else:
+            webbrowser.open(url_, new=0, autoraise=True)
     except webbrowser.Error as e:
         CONSOLE.print("Error while trying open URL")
         return FAILURE

@@ -914,6 +914,33 @@ def test_urlopen_6(set_full_db_path):
     assert "Choose the URL to be openned" in result.output
     runner.invoke(delete, ['tg:tag13', '-db', set_full_db_path])    
         
+# Test markdown format URLs [Title](https://url) are listed correctly
+def test_urlopen_markdown_1(set_full_db_path):
+    result = runner.invoke(add, ['-de', 'Test task markdown 1', '-du', '+0', '-no',
+                            '[Example](https://example.com) [Other](https://other.com)',
+                            '-tg', 'tag13md', '-db', set_full_db_path])
+    temp = result.output.replace("\n"," ")
+    idn = temp.split(" ")[3]
+    with mock.patch('builtins.input', return_value="none"):
+        result = runner.invoke(urlopen, ['id:' + idn, '-db', set_full_db_path])
+    assert result.exit_code == 0
+    assert "1 - [Example](https://example.com)" in result.output
+    assert "2 - [Other](https://other.com)" in result.output
+    runner.invoke(delete, ['id:' + idn, '-db', set_full_db_path])
+
+# Test markdown format URL with -ur option shows correct prompt
+def test_urlopen_markdown_2(set_full_db_path):
+    result = runner.invoke(add, ['-de', 'Test task markdown 2', '-du', '+0', '-no',
+                            '[Example](https://example.com) [Other](https://other.com)',
+                            '-tg', 'tag13md', '-db', set_full_db_path])
+    temp = result.output.replace("\n"," ")
+    idn = temp.split(" ")[3]
+    with mock.patch('builtins.input', return_value="no"):
+        result = runner.invoke(urlopen, ['id:' + idn, '-ur', str(1), '-db', set_full_db_path])
+    assert result.exit_code == 0
+    assert "Would you like to open https://example.com [Example]" in result.output
+    runner.invoke(delete, ['tg:tag13md', '-db', set_full_db_path])
+
 # Tests stats view 2
 def test_stats(set_full_db_path, caplog):
     caplog.set_level(logging.DEBUG)

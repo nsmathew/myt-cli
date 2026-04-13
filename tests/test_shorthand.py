@@ -117,6 +117,12 @@ class TestExpandShorthand:
         result = expand_shorthand('add "Task" &urgent')
         assert "-no urgent" in result
 
+    def test_notes_shorthand_url(self):
+        result = expand_shorthand('add "Task" &"https://example.com"')
+        assert "-no" in result
+        assert "https://example.com" in result
+        assert "&https://example.com" not in result
+
     def test_recur_shorthand_end_only(self):
         result = expand_shorthand("modify id:3 *|+120")
         assert "-en +120" in result

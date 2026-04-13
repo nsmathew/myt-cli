@@ -90,12 +90,6 @@ def expand_shorthand(input_text):
                 i += 1
             continue
 
-        # Filter tokens (key:value) pass through unchanged
-        if ":" in token and not token.startswith(":"):
-            expanded.append(token)
-            i += 1
-            continue
-
         # Recurrence shorthand: *value, *value|end, or *|end (end date only)
         if token.startswith("*") and len(token) > 1:
             parts = token[1:].split("|", 1)
@@ -110,13 +104,21 @@ def expand_shorthand(input_text):
             i += 1
             continue
 
-        # Check for shorthand prefixes
+        # Check for shorthand prefixes before the filter check — a token like
+        # &https://example.com starts with a shorthand prefix but also contains
+        # ":", so it must be expanded rather than treated as a filter.
         prefix = token[0] if token else ""
         if prefix in SHORTHAND_MAP and len(token) > 1:
             flag = SHORTHAND_MAP[prefix]
             value = token[1:]
             expanded.append(flag)
             expanded.append(value)
+            i += 1
+            continue
+
+        # Filter tokens (key:value) pass through unchanged
+        if ":" in token and not token.startswith(":"):
+            expanded.append(token)
             i += 1
             continue
 
