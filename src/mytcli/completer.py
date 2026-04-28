@@ -140,7 +140,14 @@ class MytCompleter(Completer):
             commands = list(COMMAND_FLAGS.keys()) + ["quit", "exit", "q"]
             for cmd in commands:
                 if cmd.startswith(prefix):
-                    yield Completion(cmd, start_position=-len(prefix))
+                    if cmd == "add":
+                        yield Completion('add "', start_position=-len(prefix))
+                        yield Completion("add", start_position=-len(prefix))
+                    elif cmd == "modify":
+                        yield Completion("modify id:", start_position=-len(prefix))
+                        yield Completion("modify", start_position=-len(prefix))
+                    else:
+                        yield Completion(cmd, start_position=-len(prefix))
             return
 
         cmd_name = parts[0]
