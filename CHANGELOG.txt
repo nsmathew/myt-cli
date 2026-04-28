@@ -1,5 +1,23 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.7.2 - Released on 28-Apr-2026
+
+-- Features --
+* View --groups: now breaks down each group by context, showing @NONE for
+  tasks without a context assigned
+* View --7day: context sub-headers (1-space indent) now appear under each
+  group, with task count in brackets; tasks are indented 2 spaces
+* View --groups and --7day: ungrouped tasks now shown as +NONE; tasks
+  without a context shown as @NONE
+* TUI autocomplete: 'add' completes to 'add "' (primary) and 'add'
+  (secondary); 'modify' and 'urlopen' complete to '<cmd> id:' (primary)
+  and '<cmd>' (secondary)
+* TUI autocomplete: now, start, stop, done, reset, delete also complete
+  to '<cmd> id:' (primary) and '<cmd>' (secondary)
+* TUI autocomplete: '&' shorthand completes to '&"[' for markdown link notes
+* TUI URL dialog: long URLs now wrap across multiple lines in the choice dialog
+
+----------------------------------------------------------------
 v0.7.1 - Released on 13-Apr-2026
 
 -- Features --
