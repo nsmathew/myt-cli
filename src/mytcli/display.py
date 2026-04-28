@@ -139,6 +139,7 @@ def display_7day(potential_filters, pager):
                                Workspace.id.label("id"),
                                is_recur.label("is_recur"),
                                drvd_groups.label("drvd_groups"),
+                               Workspace.context.label("context"),
                                Workspace.description.label("description"),
                                Workspace.status.label("status"))
                      .filter(and_(tuple_(Workspace.uuid, Workspace.version)
@@ -147,7 +148,8 @@ def display_7day(potential_filters, pager):
                                  cast(Workspace.due_diff_today,
                                              Numeric(10, 0)) <= 7),
                              Workspace.area == WS_AREA_PENDING))
-                     .order_by(drvd_due.asc(), drvd_groups.asc())
+                     .order_by(drvd_due.asc(), drvd_groups.asc(),
+                               Workspace.context.asc())
                      .all())
     except SQLAlchemyError as e:
         LOGGER.error(str(e))
@@ -159,76 +161,27 @@ def display_7day(potential_filters, pager):
         CONSOLE.print("No tasks to display")
         return SUCCESS
 
-    date_tasks_dict = {}
     # Populate the dictionary with dates from today until +6 days
+    # Structure: {due_date: {group: {context: [tasks]}}}
+    date_tasks_dict = {}
     start_date = datetime.today()
     for i in range(7):
         date = start_date + timedelta(days=i)
         date_tasks_dict[date.strftime('%Y-%m-%d')] = None
     date_tasks_dict["No Due Date"] = None
-    prev_due = None
-    prev_group = None
-    group_tasks_dict = {}
-    group_tasks = []
-    reset = True
 
-    # Populate a heirarchy of Dict->Dict->List to populate the tables
-    # {Due Date 1: {
-    #   Group 1:
-    #       [task1, task2, ...],
-    #   Group 2:
-    #       [task1, task2, ...],
-    #   ...
-    #   },
-    #  Due Date 2: {
-    #   Group 1:
-    #       [task1, task2, ...],
-    #   Group 2:
-    #       [task1, task2, ...]
-    #   ...
-    #   },
-    #   ...
-    # }
-    for cnt, task in enumerate(task_list, start=1):
-        # To kickoff the process we need to initialise the 'prev' variables
-        # with values of the first task
-        if reset:
-            prev_due = task.drvd_due
-            prev_group = task.drvd_groups
-        if prev_due == task.drvd_due and prev_group == task.drvd_groups:
-            group_tasks.append((task.id,
-                                task.description,
-                                task.is_recur,
-                                task.status,
-                                task.is_overdue))
-            reset = False
-        elif prev_group != task.drvd_groups and prev_due == task.drvd_due:
-            group_tasks_dict[prev_group] = copy(group_tasks)
-            group_tasks.clear()
-            group_tasks.append((task.id,
-                                task.description,
-                                task.is_recur,
-                                task.status,
-                                task.is_overdue))
-        elif prev_due != task.drvd_due:
-            group_tasks_dict[prev_group] = copy(group_tasks)
-            group_tasks.clear()
-            date_tasks_dict[prev_due] = copy(group_tasks_dict)
-            group_tasks_dict.clear()
-            group_tasks.append((task.id,
-                                task.description,
-                                task.is_recur,
-                                task.status,
-                                task.is_overdue))
-
-        if cnt == len(task_list):
-            group_tasks_dict[task.drvd_groups] = copy(group_tasks)
-            date_tasks_dict[task.drvd_due] = copy(group_tasks_dict)
-            group_tasks.clear()
-            group_tasks_dict.clear()
-
-        prev_due = task.drvd_due
-        prev_group = task.drvd_groups
+    for task in task_list:
+        cx = task.context if task.context is not None else "@NONE"
+        grp_dict = date_tasks_dict.setdefault(task.drvd_due, {})
+        if grp_dict is None:
+            grp_dict = {}
+            date_tasks_dict[task.drvd_due] = grp_dict
+        cx_dict = grp_dict.setdefault(task.drvd_groups, {})
+        cx_dict.setdefault(cx, []).append((task.id,
+                                           task.description,
+                                           task.is_recur,
+                                           task.status,
+                                           task.is_overdue))
 
     # The data will be displayed kanban style with each due date representing
     # a swimlane. Individual rich Tables are used for each swim lane and are
@@ -246,27 +199,29 @@ def display_7day(potential_filters, pager):
         if g_tasks is None:
             table.add_row("-")
         else:
-            for grp, tasks in g_tasks.items():
-                task_cnt = len(tasks)
-                table.add_row(grp + "  (" + str(task_cnt) + ")",
+            for grp, cx_dict in g_tasks.items():
+                total_cnt = sum(len(t) for t in cx_dict.values())
+                table.add_row(grp + "  (" + str(total_cnt) + ")",
                               style="subheader")
-                for task in tasks:
-                    # Intepret the is_recur flag which is used for the display
-                    recur_flag = str(" " + INDC_RECUR \
-                                        if  int(task[-3]) == 1 else "")
-                    # Set colours based on tasks status and if they are overdue
-                    if task[-1] == 1:
-                        table.add_row(": ".join(str(item) \
-                            for item in task[:2]) + recur_flag,
-                                      style="overdue")
-                    elif task[-2] == TASK_STARTED:
-                        table.add_row(": ".join(str(item) \
-                            for item in task[:2]) + recur_flag,
-                                      style="started")
-                    else:
-                        table.add_row(": ".join(str(item) \
-                            for item in task[:2]) + recur_flag,
-                                      style="")
+                for cx, tasks in cx_dict.items():
+                    cx_cnt = len(tasks)
+                    table.add_row("  " + cx + "  (" + str(cx_cnt) + ")",
+                                  style="info")
+                    for task in tasks:
+                        recur_flag = str(" " + INDC_RECUR \
+                                            if int(task[-3]) == 1 else "")
+                        if task[-1] == 1:
+                            table.add_row(": ".join(str(item) \
+                                for item in task[:2]) + recur_flag,
+                                          style="overdue")
+                        elif task[-2] == TASK_STARTED:
+                            table.add_row(": ".join(str(item) \
+                                for item in task[:2]) + recur_flag,
+                                          style="started")
+                        else:
+                            table.add_row(": ".join(str(item) \
+                                for item in task[:2]) + recur_flag,
+                                          style="")
                 table.add_row("")
         tables.append(table)
 
@@ -884,7 +839,7 @@ def display_by_groups(potential_filters, pager=False, top=None):
     # task_cnt: {grp: {context: {status: count}}}
     task_cnt = {}
     for task in task_list:
-        cx = task.context if task.context is not None else "/NONE/"
+        cx = task.context if task.context is not None else "@NONE"
         grp_key = task.groups if task.groups is not None else "No Group"
         grp_list = grp_key.split(".") if task.groups is not None else [grp_key]
         accumulated_grp = ""
