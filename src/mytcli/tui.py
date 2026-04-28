@@ -399,9 +399,20 @@ class MytTUI:
         for i, choice in enumerate(self._dialog_choices):
             prefix = " ● " if i == self._dialog_selected else " ○ "
             style = "class:dialog.selected" if i == self._dialog_selected else "class:dialog.text"
+            indent = " " * len(prefix)
+            first_w = max_w - len(prefix)
+            choice_text = prefix + choice
+            first_line = choice_text[:max_w]
+            rest = choice_text[max_w:]
             fragments.append(("class:dialog.border", "│ "))
-            fragments.append((style, "{:<56}".format(prefix + choice)))
+            fragments.append((style, "{:<56}".format(first_line)))
             fragments.append(("class:dialog.border", " │\n"))
+            while rest:
+                cont = indent + rest[:first_w]
+                rest = rest[first_w:]
+                fragments.append(("class:dialog.border", "│ "))
+                fragments.append((style, "{:<56}".format(cont)))
+                fragments.append(("class:dialog.border", " │\n"))
         fragments.append(("class:dialog.border", "│" + " " * 58 + "│\n"))
         # Hint
         hint = "↑/↓: select  Enter: confirm  Esc: cancel"

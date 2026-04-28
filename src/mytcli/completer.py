@@ -146,6 +146,9 @@ class MytCompleter(Completer):
                     elif cmd == "modify":
                         yield Completion("modify id:", start_position=-len(prefix))
                         yield Completion("modify", start_position=-len(prefix))
+                    elif cmd == "urlopen":
+                        yield Completion("urlopen id:", start_position=-len(prefix))
+                        yield Completion("urlopen", start_position=-len(prefix))
                     else:
                         yield Completion(cmd, start_position=-len(prefix))
             return
@@ -241,6 +244,10 @@ class MytCompleter(Completer):
                     if not val_part or v.startswith(val_part.upper()):
                         yield Completion("*" + v,
                                          start_position=-len(current))
+                return
+            elif prefix_char == "&":
+                # &notes — suggest markdown link template
+                yield Completion('&"[', start_position=-len(current))
                 return
 
         # Level 5: filter value completion (e.g., after typing "gr:")
