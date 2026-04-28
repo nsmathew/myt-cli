@@ -881,35 +881,24 @@ def display_by_groups(potential_filters, pager=False, top=None):
         CONSOLE.print("Preparing view...", style="default")
     task_list = get_tasks(uuid_version_results)
     area = task_list[0].area
+    # task_cnt: {grp: {context: {status: count}}}
     task_cnt = {}
-    last_parent = None
     for task in task_list:
-        if task.groups is not None:
-            grp_list = task.groups.split(".")
-            grp = ""
-            for item in grp_list:
-                grp = grp + "." + item
-                status_cnt = task_cnt.get(grp.lstrip("."))
-                if status_cnt is None:
-                    status_cnt = {}
-                status_cnt[task.status] = ((status_cnt.get(task.status) or 0)
-                                            + 1)
-                task_cnt[grp.lstrip(".")] = status_cnt
-        else:
-            """
-            Added for Bug-7. Shows additional rows for tasks which do not
-            have a group
-            """
-            status_cnt = task_cnt.get("No Group")
-            if status_cnt is None:
-                status_cnt = {}
-            status_cnt[task.status] = ((status_cnt.get(task.status) or 0)
-                                        + 1)
-            task_cnt["No Group"] = status_cnt
+        cx = task.context if task.context is not None else "/NONE/"
+        grp_key = task.groups if task.groups is not None else "No Group"
+        grp_list = grp_key.split(".") if task.groups is not None else [grp_key]
+        accumulated_grp = ""
+        for item in grp_list:
+            accumulated_grp = (accumulated_grp + "." + item
+                               if accumulated_grp else item)
+            cx_cnt = task_cnt.setdefault(accumulated_grp, {})
+            status_cnt = cx_cnt.setdefault(cx, {})
+            status_cnt[task.status] = (status_cnt.get(task.status) or 0) + 1
     LOGGER.debug("Total grps to print {}".format(len(task_cnt)))
     table = RichTable(box=box.HORIZONTALS, show_header=True,
                       header_style="header", expand=False)
     table.add_column("group", justify="left")
+    table.add_column("context", justify="left")
     table.add_column("area", justify="left")
     table.add_column("status", justify="left")
     table.add_column("no. of tasks", justify="right")
@@ -918,31 +907,31 @@ def display_by_groups(potential_filters, pager=False, top=None):
     else:
         top = int(top)
     prev_grp = None
-    #For each group in the hierarchy create a row for each task status
     for cnt, grp in enumerate(sorted(task_cnt, reverse=True), start=1):
         if cnt > top:
             break
-        status_cnt = task_cnt.get(grp)
-        #1 row for each task status under that group hierarchy
-        for status in sorted(status_cnt):
-            trow = []
-            if grp == prev_grp:
-                trow.append(None)
-            else:
-                trow.append(grp)
-                prev_grp = grp
-            trow.append(area)
-            trow.append(status)
-            trow.append(str(status_cnt.get(status)))
-            if area == WS_AREA_COMPLETED:
-                table.add_row(*trow, style="done")
-            elif area == WS_AREA_BIN:
-                table.add_row(*trow, style="binn")
-            else:
-                table.add_row(*trow, style="default")
-        #Add a separator after each hierarchy
+        cx_cnt = task_cnt.get(grp)
+        first_grp_row = True
+        for cx in sorted(cx_cnt):
+            status_cnt = cx_cnt[cx]
+            first_cx_row = True
+            for status in sorted(status_cnt):
+                trow = []
+                trow.append(grp if first_grp_row else None)
+                trow.append(cx if first_cx_row else None)
+                trow.append(area if first_grp_row else None)
+                trow.append(status)
+                trow.append(str(status_cnt[status]))
+                first_grp_row = False
+                first_cx_row = False
+                if area == WS_AREA_COMPLETED:
+                    table.add_row(*trow, style="done")
+                elif area == WS_AREA_BIN:
+                    table.add_row(*trow, style="binn")
+                else:
+                    table.add_row(*trow, style="default")
         if "." not in grp and cnt != len(task_cnt):
-            table.add_row("--", "--","--","--")
+            table.add_row("--", "--", "--", "--", "--")
     grid = RichTable.grid(padding=3)
     grid.add_column(justify="right")
     grid.add_row("NOTE: Tasks rolled up through GROUP hierarchy")
