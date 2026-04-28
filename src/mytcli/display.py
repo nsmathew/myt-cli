@@ -128,7 +128,7 @@ def display_7day(potential_filters, pager):
                             datetime.now().date().strftime('%Y-%m-%d')),
                          (Workspace.due == None, "No Due Date"),
                          else_=Workspace.due).label("drvd_due")
-        drvd_groups = case((Workspace.groups == None, "No Group"),
+        drvd_groups = case((Workspace.groups == None, "+NONE"),
                            else_=Workspace.groups)
         is_recur = case((Workspace.task_type == TASK_TYPE_DRVD, "1"),
                            else_=0)
@@ -839,7 +839,7 @@ def display_by_groups(potential_filters, pager=False, top=None):
     task_cnt = {}
     for task in task_list:
         cx = task.context if task.context is not None else "@NONE"
-        grp_key = task.groups if task.groups is not None else "No Group"
+        grp_key = task.groups if task.groups is not None else "+NONE"
         grp_list = grp_key.split(".") if task.groups is not None else [grp_key]
         accumulated_grp = ""
         for item in grp_list:
