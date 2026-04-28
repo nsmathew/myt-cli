@@ -205,22 +205,21 @@ def display_7day(potential_filters, pager):
                               style="subheader")
                 for cx, tasks in cx_dict.items():
                     cx_cnt = len(tasks)
-                    table.add_row("  " + cx + "  (" + str(cx_cnt) + ")",
+                    table.add_row(" " + cx + "  (" + str(cx_cnt) + ")",
                                   style="info")
                     for task in tasks:
                         recur_flag = str(" " + INDC_RECUR \
                                             if int(task[-3]) == 1 else "")
+                        task_str = "  " + ": ".join(str(item)
+                                                     for item in task[:2])
                         if task[-1] == 1:
-                            table.add_row(": ".join(str(item) \
-                                for item in task[:2]) + recur_flag,
+                            table.add_row(task_str + recur_flag,
                                           style="overdue")
                         elif task[-2] == TASK_STARTED:
-                            table.add_row(": ".join(str(item) \
-                                for item in task[:2]) + recur_flag,
+                            table.add_row(task_str + recur_flag,
                                           style="started")
                         else:
-                            table.add_row(": ".join(str(item) \
-                                for item in task[:2]) + recur_flag,
+                            table.add_row(task_str + recur_flag,
                                           style="")
                 table.add_row("")
         tables.append(table)
