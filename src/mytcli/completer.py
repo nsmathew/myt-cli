@@ -146,9 +146,10 @@ class MytCompleter(Completer):
                     elif cmd == "modify":
                         yield Completion("modify id:", start_position=-len(prefix))
                         yield Completion("modify", start_position=-len(prefix))
-                    elif cmd == "urlopen":
-                        yield Completion("urlopen id:", start_position=-len(prefix))
-                        yield Completion("urlopen", start_position=-len(prefix))
+                    elif cmd in {"urlopen", "now", "start", "stop",
+                                   "done", "reset", "delete"}:
+                        yield Completion(cmd + " id:", start_position=-len(prefix))
+                        yield Completion(cmd, start_position=-len(prefix))
                     else:
                         yield Completion(cmd, start_position=-len(prefix))
             return
