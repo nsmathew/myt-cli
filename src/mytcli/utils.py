@@ -18,7 +18,7 @@ from sqlalchemy import inspect
 
 import src.mytcli.constants as constants
 from src.mytcli.constants import (LOGGER, CONSOLE, SUCCESS, FAILURE,
-                               TASK_OVERDUE, TASK_TODAY, TASK_HIDDEN,
+                               TASK_OVERDUE, TASK_TODAY, TASK_TOMMR, TASK_HIDDEN,
                                TASK_BIN, TASK_COMPLETE, TASK_STARTED,
                                TASK_NOW, TASK_ALL, TASK_UNRECOGNIZED, HL_FILTERS_ONLY,
                                CLR_STR, FUTDT,
@@ -293,6 +293,8 @@ def parse_filters(filters):
                 potential_filters[TASK_OVERDUE] = "yes"
             if str(fl).upper() == TASK_TODAY:
                 potential_filters[TASK_TODAY] = "yes"
+            if str(fl).upper() == TASK_TOMMR:
+                potential_filters[TASK_TOMMR] = "yes"
             if str(fl).upper() == TASK_HIDDEN:
                 potential_filters[TASK_HIDDEN] = "yes"
             if str(fl).upper() == TASK_COMPLETE:

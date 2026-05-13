@@ -1,11 +1,12 @@
 from datetime import datetime
 
+from dateutil.relativedelta import relativedelta
 from sqlalchemy import (and_, or_, case, func, tuple_, distinct,
                         cast, Numeric)
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.mytcli.constants import (LOGGER, CONSOLE, SUCCESS, FAILURE,
-                               TASK_OVERDUE, TASK_TODAY, TASK_HIDDEN,
+                               TASK_OVERDUE, TASK_TODAY, TASK_TOMMR, TASK_HIDDEN,
                                TASK_BIN, TASK_COMPLETE, TASK_STARTED,
                                TASK_NOW, TASK_ALL, HL_FILTERS_ONLY, FUTDT,
                                WS_AREA_PENDING, WS_AREA_COMPLETED, WS_AREA_BIN,
@@ -154,6 +155,7 @@ def get_task_uuid_n_ver(potential_filters):
     all_tasks = potential_filters.get(TASK_ALL)
     overdue_task = potential_filters.get(TASK_OVERDUE)
     today_task = potential_filters.get(TASK_TODAY)
+    tomorrow_task = potential_filters.get(TASK_TOMMR)
     hidden_task = potential_filters.get(TASK_HIDDEN)
     done_task = potential_filters.get(TASK_COMPLETE)
     bin_task = potential_filters.get(TASK_BIN)
@@ -743,6 +745,24 @@ def get_task_uuid_n_ver(potential_filters):
                                                 Workspace.hide ==
                                                 None))))
             innrqr_list.append(innrqr_today)
+        if tomorrow_task is not None:
+            LOGGER.debug("Inside tomorrow filter")
+            tommr = curr_date + relativedelta(days=1)
+            innrqr_tomorrow = (db.SESSION.query(Workspace.uuid,
+                                            Workspace.version)
+                            .join(max_ver_sqr,
+                                    and_(Workspace.version ==
+                                        max_ver_sqr.c.maxver,
+                                        Workspace.uuid ==
+                                        max_ver_sqr.c.uuid))
+                            .filter(and_(Workspace.area ==
+                                            WS_AREA_PENDING,
+                                            Workspace.due == tommr,
+                                            or_(Workspace.hide <=
+                                                curr_date,
+                                                Workspace.hide ==
+                                                None))))
+            innrqr_list.append(innrqr_tomorrow)
         if hidden_task is not None:
             LOGGER.debug("Inside hidden filter")
             innrqr_hidden = (db.SESSION.query(Workspace.uuid,
