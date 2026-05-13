@@ -1,5 +1,11 @@
 CHANGELOG
 ----------------------------------------------------------------
+v0.7.3 - Released on 13-May-2026
+
+-- Fixes --
+* View tomorrow: fixed the broken filter for tasks due tomorrow
+
+----------------------------------------------------------------
 v0.7.2 - Released on 28-Apr-2026
 
 -- Features --
